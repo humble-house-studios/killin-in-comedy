@@ -25,6 +25,6 @@ text = "Ordering drinks. -1 mic time next turn"
 script = ExtResource("2_15n3e")
 id = "open_mic"
 title = "Open Mic Crowd"
-laughs_needed = 40
+laughs_needed = 45
 is_boss = false
 intents = Array[ExtResource("1_0lkke")]([SubResource("Resource_1wgli"), SubResource("Resource_rtlgn"), SubResource("Resource_el1t5")])

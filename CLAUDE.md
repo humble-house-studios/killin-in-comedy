@@ -13,6 +13,8 @@ right there, it's right on iPhone, Android and Steam. To keep that true:
 
 - **Phones = vertical. Steam = horizontal.** Same game, same code, two layouts.
   - Base resolution 720×1280, stretch mode `canvas_items`, aspect `expand`.
+    When the screen is wider than tall, `main.gd` swaps the base to 1280×720
+    so text stays readable sideways.
   - Mobile exports lock to portrait (`display/window/handheld/orientation`).
   - Desktop opens a 1280×720 window (`window_width_override.pc` /
     `window_height_override.pc`).

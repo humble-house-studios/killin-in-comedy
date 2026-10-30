@@ -41,6 +41,20 @@ static func _score(battle: Battle, card: CardData) -> float:
 	return score - card.cost * 0.1
 
 
+## Picks the reward with the most raw value; good enough for balance checks.
+static func pick_reward(choices: Array[CardData]) -> CardData:
+	var best: CardData = null
+	var best_value := -INF
+	for c in choices:
+		var value := float(c.laughs + c.combo_bonus + c.crowd_energy * 2 + c.draw * 3 \
+			+ c.mic_gain * 4 + c.setups * 5 + c.laughs_per_card_this_set * 6 \
+			+ c.laughs_per_card_this_turn * 3) / maxf(1.0, c.cost)
+		if value > best_value:
+			best_value = value
+			best = c
+	return best
+
+
 static func _hand_has_punchline(battle: Battle) -> bool:
 	for c in battle.hand:
 		if c.is_punchline:
