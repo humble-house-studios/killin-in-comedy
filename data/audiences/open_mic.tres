@@ -13,18 +13,21 @@ text = "Polite golf claps."
 script = ExtResource("1_0lkke")
 kind = 1
 amount = 2
-text = "Chatting at the bar. -2 Crowd Energy"
+text = "Chatting at the bar. -2 Heat"
 
 [sub_resource type="Resource" id="Resource_el1t5"]
 script = ExtResource("1_0lkke")
 kind = 2
 amount = 1
-text = "Ordering drinks. -1 mic time next turn"
+text = "Ordering drinks. -1 mic time next minute"
 
 [resource]
 script = ExtResource("2_15n3e")
 id = "open_mic"
 title = "Open Mic Crowd"
-laughs_needed = 45
+laughs_needed = 100
 is_boss = false
+minutes = 4
+loves = Array[String](["animals"])
+hates = Array[String]([])
 intents = Array[ExtResource("1_0lkke")]([SubResource("Resource_1wgli"), SubResource("Resource_rtlgn"), SubResource("Resource_el1t5")])

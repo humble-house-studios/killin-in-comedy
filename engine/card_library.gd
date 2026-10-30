@@ -28,11 +28,19 @@ static func audience(id: String) -> AudienceData:
 	return audiences().get(id)
 
 
-static func starter_deck() -> Array[CardData]:
+## The starting deck. With an rng, each joke card rolls a topic, spread so the
+## deck covers every topic; without one, cards are topic-free (for tests).
+static func starter_deck(rng: RandomNumberGenerator = null) -> Array[CardData]:
 	var deck: Array[CardData] = []
+	var topics := _topic_bag(rng)
 	for id in Balance.STARTER_DECK:
 		for i in Balance.STARTER_DECK[id]:
-			deck.append(card(id))
+			var c := card(id)
+			if rng and c.is_joke():
+				if topics.is_empty():
+					topics = _topic_bag(rng)
+				c = c.with_topic(topics.pop_back())
+			deck.append(c)
 	return deck
 
 
@@ -49,8 +57,22 @@ static func reward_choices(rng: RandomNumberGenerator, count := Balance.REWARD_C
 	var pool := reward_pool()
 	var picks: Array[CardData] = []
 	while picks.size() < count and not pool.is_empty():
-		picks.append(pool.pop_at(rng.randi_range(0, pool.size() - 1)))
+		var c: CardData = pool.pop_at(rng.randi_range(0, pool.size() - 1))
+		if c.is_joke():
+			c = c.with_topic(CardData.TOPICS[rng.randi_range(0, CardData.TOPICS.size() - 1)])
+		picks.append(c)
 	return picks
+
+
+static func _topic_bag(rng: RandomNumberGenerator) -> Array:
+	var bag := CardData.TOPICS.duplicate()
+	if rng:
+		for i in range(bag.size() - 1, 0, -1):
+			var j := rng.randi_range(0, i)
+			var tmp = bag[i]
+			bag[i] = bag[j]
+			bag[j] = tmp
+	return bag
 
 
 static func _load_dir(dir_path: String) -> Dictionary:

@@ -7,7 +7,7 @@ extends Control
 ## shadows, a pixel-art stage, and an old-TV filter (crt.gdshader) on top.
 
 const MIN_TOUCH_HEIGHT := 88.0
-const CARD_HEIGHT := 200.0
+const CARD_HEIGHT := 214.0
 const HAND_COLUMNS := 3
 
 const COLOR_PUNCHLINE := Color(0.80, 0.42, 0.12)
@@ -50,6 +50,9 @@ var _deck_label: Label
 var _audience_label: Label
 var _intent_label: Label
 var _peek_label: Label
+var _taste_label: Label
+var _bit_label: Label
+var _clock_label: Label
 var _bubble_area: Control
 var _bubble: PanelContainer
 var _bubble_label: Label
@@ -176,6 +179,11 @@ func _build_stage() -> Control:
 
 	_audience_label = _neon("", 32, COLOR_NEON)
 	box.add_child(_audience_label)
+	_taste_label = _label("", 20, Color(0.85, 1, 0.85))
+	_taste_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_taste_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_shadow(_taste_label)
+	box.add_child(_taste_label)
 	_intent_label = _label("", 21, Color(1, 0.75, 0.75))
 	_intent_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_intent_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -224,9 +232,15 @@ func _build_stage() -> Control:
 	var mbox := VBoxContainer.new()
 	mbox.add_theme_constant_override("separation", 4)
 	meters.add_child(mbox)
+	var laugh_row := HBoxContainer.new()
+	mbox.add_child(laugh_row)
 	_laugh_label = _label("", 22, COLOR_GOLD)
 	_laugh_label.add_theme_font_override("font", _heading_font)
-	mbox.add_child(_laugh_label)
+	_laugh_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	laugh_row.add_child(_laugh_label)
+	_clock_label = _label("", 22, Color.WHITE)
+	_clock_label.add_theme_font_override("font", _heading_font)
+	laugh_row.add_child(_clock_label)
 	_laugh_bar = _bar(COLOR_GOLD)
 	mbox.add_child(_laugh_bar)
 	_energy_label = _label("", 22)
@@ -235,6 +249,13 @@ func _build_stage() -> Control:
 	_energy_bar = _bar(COLOR_HOT)
 	_energy_bar.max_value = Balance.MAX_CROWD_ENERGY
 	mbox.add_child(_energy_bar)
+	# The bit being built this minute, Balatro-style: laughs × multiplier.
+	_bit_label = _label("", 20, COLOR_NEON_BLUE)
+	_bit_label.add_theme_font_override("font", _pixel_font)
+	_bit_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_bit_label.add_theme_color_override("font_outline_color", COLOR_OUTLINE)
+	_bit_label.add_theme_constant_override("outline_size", 6)
+	mbox.add_child(_bit_label)
 	return column
 
 
@@ -263,7 +284,7 @@ func _build_hand_area() -> Control:
 	_mic_label.add_theme_font_override("font", _pixel_font)
 	_mic_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	controls.add_child(_mic_label)
-	_end_turn_button = _button("End Turn", Color(0.62, 0.08, 0.18))
+	_end_turn_button = _button("Land It", Color(0.62, 0.08, 0.18))
 	_end_turn_button.custom_minimum_size = Vector2(260, MIN_TOUCH_HEIGHT)
 	_end_turn_button.pressed.connect(_on_end_turn)
 	controls.add_child(_end_turn_button)
@@ -317,8 +338,9 @@ func _show_title() -> void:
 	_overlay_box.add_child(sign)
 	_flicker(sign)
 	_overlay_box.add_child(_neon("COMEDY", 64, COLOR_NEON_BLUE))
-	var how := _label("Tap cards to tell jokes and fill the Laugh meter.\n" +
-		"Keep the Crowd Energy up: if it hits zero, you lose the room.\n" +
+	var how := _label("Build a bit each minute, then Land It: laughs × Heat.\n" +
+		"Setup > Punchline > Tag chains add to the multiplier.\n" +
+		"Play topics the crowd loves. Hit the target before the light!\n" +
 		"Beat 3 crowds, then headline against The Critic.", 24)
 	how.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	how.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -356,10 +378,12 @@ func _on_card_pressed(slot: int) -> void:
 	_slots[slot] = null
 	var card := _battle.hand[index]
 	var linked := _battle.is_linked(card)
-	var before_laughs := _battle.laughs
+	var chained := _battle.chains(card)
+	var taste := _battle.taste(card)
+	var before_laughs := _battle.bit_laughs
 	var before_energy := _battle.crowd_energy
 	_battle.play_card(index)
-	var gained := _battle.laughs - before_laughs
+	var gained := _battle.bit_laughs - before_laughs
 	var energy := _battle.crowd_energy - before_energy
 	var line := _patter.line_for(card, _battle.audience.id)
 	# Stage directions (*sips water*) aren't speech, so no quote marks.
@@ -367,12 +391,21 @@ func _on_card_pressed(slot: int) -> void:
 	_play_reaction(card, gained, energy)
 	if gained > 0:
 		_float_text("+%d" % gained, COLOR_GOLD, gained >= 12)
-	if linked:
+	if chained:
+		_float_text("CHAIN! +%.1fx" % Balance.CHAIN_MULT, COLOR_NEON, false, false, 0.22)
+		_sound.play("chime")
+		_stage_view.react(0.6)
+	elif linked:
 		_float_text("LINK!", COLOR_NEON_BLUE, false, false, 0.30)
 		_sound.play("chime")
 		_stage_view.react(0.5)
+	if taste > 0:
+		_float_text("THEY LOVE %s!" % CardData.TOPIC_NAMES[card.topic].to_upper(), Color(0.6, 1, 0.6), false, false, 0.38)
+	elif taste < 0:
+		_float_text("GROAN...", COLOR_COLD, false, false, 0.38)
+		_sound.play_later("groan", 0.2, -4.0)
 	if energy != 0:
-		_float_text("%+d energy" % energy, COLOR_ENERGY.lightened(0.4) if energy > 0 else COLOR_HOT, false, true)
+		_float_text("%+d Heat" % energy, COLOR_ENERGY.lightened(0.4) if energy > 0 else COLOR_HOT, false, true)
 	_refresh()
 	_check_result()
 
@@ -382,9 +415,18 @@ func _on_end_turn() -> void:
 		return
 	var seen := _battle.history.size()
 	var before_energy := _battle.crowd_energy
+	var bit := _battle.bit_laughs
 	var intent := _battle.current_intent()
-	_battle.end_turn()
+	_battle.land_bit()
 	_sound.play("thump", -4.0)
+	if bit > 0:
+		var score := _battle.last_landed
+		_float_text("%d × %.1f = %d" % [bit, _battle.last_landed_mult, score], COLOR_GOLD, true, false, 0.30)
+		_sound.play_later("laugh_huge" if score >= 60 else ("laugh_big" if score >= 25 else "laugh_small"), 0.1)
+		if score >= 60:
+			_sound.play_later("applause", 0.5, -4.0)
+		_stage_view.react(minf(score / 40.0, 1.5))
+		_shake(minf(score / 10.0, 12.0))
 	if _battle.history.slice(seen).any(func(l): return l.begins_with("You bombed")):
 		_sound.play("crickets")
 	elif intent and intent.kind != IntentData.Kind.CALM:
@@ -392,12 +434,13 @@ func _on_end_turn() -> void:
 	var lines := _battle.history.slice(seen)
 	var crowd_lines: Array[String] = []
 	for line in lines:
-		if not line.begins_with("The room") and not line.begins_with("You lost"):
+		if not line.begins_with("The room") and not line.begins_with("You lost") \
+				and not line.begins_with("The bit lands") and not line.begins_with("You got the light"):
 			crowd_lines.append(line.trim_prefix(_battle.audience.title + ": "))
 	_say("\n".join(crowd_lines), Color(1, 0.82, 0.82))
 	var lost := _battle.crowd_energy - before_energy
 	if lost < 0:
-		_float_text("%d energy" % lost, COLOR_HOT, false, true)
+		_float_text("%d Heat" % lost, COLOR_HOT, false, true)
 		_flash(_energy_bar)
 	_refresh()
 	_check_result()
@@ -452,7 +495,10 @@ func _show_next_up() -> void:
 	var heading := "HEADLINE SHOW" if next.is_boss else "NEXT SET"
 	_overlay_box.add_child(_neon(heading, 40, COLOR_NEON_BLUE))
 	_overlay_box.add_child(_centered(_label(next.title, 36)))
-	_overlay_box.add_child(_centered(_label("Laughs needed: %d    Deck: %d cards" % [next.laughs_needed, _run.deck.size()], 24)))
+	_overlay_box.add_child(_centered(_label("%d laughs in %d minutes    Deck: %d cards" % [next.laughs_needed, next.minutes, _run.deck.size()], 24)))
+	var tastes := _taste_text(next)
+	if tastes != "":
+		_overlay_box.add_child(_centered(_label(tastes, 24, Color(0.85, 1, 0.85))))
 	var go := _button("Take the stage", COLOR_PUNCHLINE)
 	go.pressed.connect(_start_set)
 	go.pressed.connect(_sound.play.bind("click"))
@@ -461,7 +507,8 @@ func _show_next_up() -> void:
 
 func _show_lost() -> void:
 	_open_overlay()
-	_overlay_box.add_child(_neon("YOU LOST THE ROOM", 40, COLOR_HOT))
+	var why := "YOU GOT THE LIGHT" if _battle.loss == Battle.Loss.LIGHT else "YOU LOST THE ROOM"
+	_overlay_box.add_child(_neon(why, 40, COLOR_HOT))
 	_overlay_box.add_child(_centered(_label("%s.  Set %d of %d.  Laughs %d / %d" % [
 		_battle.audience.title, _run.set_index + 1, _run.lineup.size(), _battle.laughs, _battle.laughs_needed], 24)))
 	var again := _button("Try again", COLOR_PUNCHLINE)
@@ -485,6 +532,7 @@ func _refresh() -> void:
 	_set_label.text = "Set %d of %d" % [_run.set_index + 1, _run.lineup.size()]
 	_deck_label.text = "Draw %d   Discard %d" % [b.draw_pile.size(), b.discard_pile.size()]
 	_audience_label.text = b.audience.title
+	_taste_label.text = _taste_text(b.audience)
 	var heat := clampf(float(b.crowd_energy) / Balance.HOT_ENERGY, 0.0, 1.0)
 	_stage_view.heat = heat
 	_stage_mat.set_shader_parameter("heat", heat)
@@ -494,23 +542,32 @@ func _refresh() -> void:
 	_peek_label.text = "After that: %s" % peek.text if b.next_intent_revealed and peek else ""
 
 	_laugh_label.text = "LAUGHS  %d / %d" % [b.laughs, b.laughs_needed]
+	var left := b.minutes_left()
+	_clock_label.text = "LAST MINUTE!" if left <= 1 else "%d MIN LEFT" % left
+	_clock_label.add_theme_color_override("font_color", COLOR_HOT if left <= 1 else Color.WHITE)
+	if b.bit_laughs > 0 or b.chain_links > 0:
+		_bit_label.text = "BIT  %d × %.1f = %d" % [b.bit_laughs, b.bit_multiplier(), b.bit_score()]
+	else:
+		_bit_label.text = "HEAT ×%.1f  play cards to build a bit" % b.heat_multiplier()
 	_laugh_bar.max_value = b.laughs_needed
 	create_tween().tween_property(_laugh_bar, "value", float(mini(b.laughs, b.laughs_needed)), 0.35) \
 		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 
-	var mult := b.laugh_multiplier()
-	var mood := "  HOT! laughs x%.1f" % mult if mult > 1.0 else ("  COLD: laughs x%.2f" % mult if mult < 1.0 else "")
-	_energy_label.text = "CROWD ENERGY  %d / %d%s" % [b.crowd_energy, Balance.MAX_CROWD_ENERGY, mood]
+	var hot := b.crowd_energy >= Balance.HOT_ENERGY
+	var cold := b.crowd_energy <= Balance.COLD_ENERGY
+	var mood := "  ON FIRE!" if hot else ("  DYING..." if cold else "")
+	_energy_label.text = "HEAT  %d / %d  (×%.1f)%s" % [b.crowd_energy, Balance.MAX_CROWD_ENERGY, b.heat_multiplier(), mood]
 	_energy_label.add_theme_color_override("font_color",
-		COLOR_HOT if mult > 1.0 else (COLOR_COLD if mult < 1.0 else Color.WHITE))
+		COLOR_HOT if hot else (COLOR_COLD if cold else Color.WHITE))
 	_energy_bar.value = b.crowd_energy
 	var fill := _energy_bar.get_theme_stylebox("fill") as StyleBoxFlat
-	fill.bg_color = COLOR_HOT if mult > 1.0 else (COLOR_COLD if mult < 1.0 else COLOR_ENERGY.lightened(0.2))
+	fill.bg_color = COLOR_HOT if hot else (COLOR_COLD if cold else COLOR_ENERGY.lightened(0.2))
 
 	_mic_label.text = "MIC TIME  %d / %d" % [b.mic, Balance.MIC_PER_TURN]
 	_end_turn_button.disabled = b.result != Battle.Result.ONGOING
 
-	if _slots_turn != b.turn:
+	# New minute, or the hand was discarded (the set ended on a landed bit).
+	if _slots_turn != b.turn or _slots.size() - _slots.count(null) > b.hand.size():
 		_slots_turn = b.turn
 		_slots.assign(b.hand)
 	# Cards drawn mid-turn join at the end, keeping slot order == hand order.
@@ -535,6 +592,16 @@ func _refresh() -> void:
 		if _hand_turn_shown != b.turn:
 			_pop_in(widget, slot * 0.05)
 	_hand_turn_shown = b.turn
+
+
+## "Loves: Dating   Hates: Work" for an audience, or "".
+func _taste_text(a: AudienceData) -> String:
+	var parts: Array[String] = []
+	if not a.loves.is_empty():
+		parts.append("Loves: " + ", ".join(a.loves.map(func(t): return CardData.TOPIC_NAMES[t])))
+	if not a.hates.is_empty():
+		parts.append("Hates: " + ", ".join(a.hates.map(func(t): return CardData.TOPIC_NAMES[t])))
+	return "   ".join(parts)
 
 
 func _hand_index(slot: int) -> int:
@@ -609,6 +676,21 @@ func _card_widget(card: CardData, preview: int, playable: bool) -> Button:
 	var body := VBoxContainer.new()
 	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	margin.add_child(body)
+	if card.is_joke():
+		var tag_text := CardData.beat_name(card.beat)
+		var tag_color := Color(0.35, 0.3, 0.3)
+		if card.topic != "":
+			tag_text += " · " + CardData.TOPIC_NAMES[card.topic]
+			var taste := _battle.taste(card) if _battle != null and preview >= 0 else 0
+			if taste > 0:
+				tag_text += "  LOVED"
+				tag_color = Color(0.1, 0.5, 0.15)
+			elif taste < 0:
+				tag_text += "  HATED"
+				tag_color = Color(0.7, 0.1, 0.1)
+		var beat_label := _label(tag_text, 15, tag_color)
+		beat_label.add_theme_font_override("font", _heading_font)
+		body.add_child(beat_label)
 	var rules := _label(card.rules, 19, COLOR_INK)
 	rules.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	rules.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -616,7 +698,17 @@ func _card_widget(card: CardData, preview: int, playable: bool) -> Button:
 	body.add_child(rules)
 
 	var linked := _battle != null and preview >= 0 and playable and _battle.is_linked(card)
-	if linked:
+	var chain := _battle != null and preview >= 0 and playable and _battle.chains(card)
+	if chain:
+		for state in ["normal", "hover", "pressed"]:
+			var frame: StyleBoxFlat = button.get_theme_stylebox(state)
+			frame.border_color = COLOR_NEON
+		var badge_chain := _label("CHAIN +%.1fx" % Balance.CHAIN_MULT, 14, COLOR_NEON)
+		badge_chain.add_theme_font_override("font", _pixel_font)
+		badge_chain.add_theme_color_override("font_outline_color", COLOR_OUTLINE)
+		badge_chain.add_theme_constant_override("outline_size", 6)
+		body.add_child(badge_chain)
+	elif linked:
 		# Lit gold frame and a badge: playing this now earns its link bonus.
 		for state in ["normal", "hover", "pressed"]:
 			var frame: StyleBoxFlat = button.get_theme_stylebox(state)

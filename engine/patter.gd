@@ -73,24 +73,26 @@ func opener() -> String:
 
 
 func line_for(card: CardData, audience_id := "") -> String:
+	# A joke card with a topic opens jokes on that topic.
+	var want := card.topic if card.topic != "" else _theme
 	if card.setups > 0:
-		var joke: Dictionary = _draw("jokes", Jokes.JOKES, _theme)
+		var joke: Dictionary = _draw("jokes", Jokes.JOKES, want)
 		var bridge := _bridge_to(joke)
 		_pending.append(joke)
 		_set_thread(joke.topic)
 		return joke.setup if bridge == "" else bridge + " " + joke.setup
 	if card.is_punchline:
-		return _punchline(card)
+		return _punchline(card, want)
 	if card.laughs_per_card_this_set > 0:
 		return _callback()
 	if _thread == "" and card.id in NEEDS_A_JOKE:
-		return _fresh_bit()
+		return _fresh_bit(want)
 	var follow := _follow_up(card.id)
 	if follow != "":
 		return follow
 	if card.id in NEEDS_A_JOKE:
 		# Said everything it can about the live joke: move on to a new one.
-		return _fresh_bit()
+		return _fresh_bit(want)
 	if card.reveals_intent and card.id != "read_the_room":
 		var pool: Array = Jokes.CROWD_WORK.get(audience_id, []) + Jokes.CROWD_WORK["any"]
 		return _draw("crowd_" + audience_id, pool)
@@ -121,7 +123,7 @@ func _follow_up(card_id: String) -> String:
 	return _fill(line.trim_prefix(Jokes.AFTER).trim_prefix(Jokes.OPEN), _thread)
 
 
-func _punchline(card: CardData) -> String:
+func _punchline(card: CardData, want := "") -> String:
 	if not _pending.is_empty():
 		var joke: Dictionary = _pending.pop_back()
 		var resumed: bool = joke.topic != _thread
@@ -136,12 +138,12 @@ func _punchline(card: CardData) -> String:
 		if not _again:
 			_again = true
 			return _draw("close_again", Jokes.CLOSE_AGAIN)
-		return _fresh_bit()
+		return _fresh_bit(want)
 	if closer and _thread == "" and _topics.is_empty():
 		if not _early:
 			_early = true
 			return _draw("close_early", Jokes.CLOSE_EARLY)
-		return _fresh_bit()
+		return _fresh_bit(want)
 	if _thread != "":
 		var follow := _follow_up(card.id)
 		if follow != "":
@@ -150,12 +152,12 @@ func _punchline(card: CardData) -> String:
 	if closer:
 		_closed = true
 		return _draw("closers", Jokes.CLOSERS)
-	return _fresh_bit()
+	return _fresh_bit(want)
 
 
 ## A stand-alone one-liner. It becomes the live joke other cards follow up.
-func _fresh_bit() -> String:
-	var one: Dictionary = _draw("one_liners", Jokes.ONE_LINERS, _theme)
+func _fresh_bit(theme := "") -> String:
+	var one: Dictionary = _draw("one_liners", Jokes.ONE_LINERS, theme if theme != "" else _theme)
 	var bridge := _bridge_to(one)
 	_remember(one.topic)
 	_set_thread(one.topic)

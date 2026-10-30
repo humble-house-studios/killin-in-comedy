@@ -13,7 +13,7 @@ var _rng := RandomNumberGenerator.new()
 
 func _init(rng_seed := 0) -> void:
 	_rng.seed = rng_seed
-	deck = CardLibrary.starter_deck()
+	deck = CardLibrary.starter_deck(_rng)
 	lineup = _make_lineup()
 
 

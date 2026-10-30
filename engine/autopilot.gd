@@ -28,15 +28,21 @@ static func play_turn(battle: Battle) -> void:
 
 static func _score(battle: Battle, card: CardData) -> float:
 	var gained := battle.laughs_for(card)
-	if battle.laughs + gained >= battle.laughs_needed:
+	var heat := card.crowd_energy + battle.taste(card) * Balance.LOVED_HEAT
+	if battle.is_linked(card):
+		heat += card.link_energy
+	var mult := battle.bit_multiplier() + heat * Balance.HEAT_MULT_PER_POINT \
+		+ (Balance.CHAIN_MULT if battle.chains(card) else 0.0)
+	var projected := int(floor((battle.bit_laughs + gained) * mult))
+	if battle.laughs + projected >= battle.laughs_needed:
 		return 1000.0
-	if battle.crowd_energy + card.crowd_energy <= 0:
+	if battle.crowd_energy + heat <= 0:
 		return -1.0
 	var energy_weight := 3.0 if battle.crowd_energy <= 6 else 0.5
-	var score := float(gained) + card.crowd_energy * energy_weight \
+	var score := float(projected - battle.bit_score()) + heat * energy_weight \
 		+ card.draw * 3.0 + card.mic_gain * 4.0
 	if battle.is_linked(card):
-		score += card.link_energy * energy_weight + card.link_draw * 3.0
+		score += card.link_draw * 3.0
 	if card.setups > 0 and _hand_has_punchline(battle):
 		score += 8.0
 	# Cheap cards first when scores tie, so mic time isn't wasted.

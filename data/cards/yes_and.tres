@@ -5,10 +5,10 @@
 [resource]
 script = ExtResource("1_qti4e")
 id = "yes_and"
-title = "Yes, And"
+title = "Topper"
 cost = 1
-rules = "+4 laughs. +3 more if it isn't your first card this turn."
-line = "Yes! And..."
+rules = "+4 laughs. +3 more if it isn't your first card this minute."
+line = "And another thing..."
 laughs = 4
 combo_after = 1
 combo_bonus = 3
@@ -19,4 +19,5 @@ mic_gain = 0
 draw = 0
 setups = 0
 is_punchline = false
+beat = 3
 reveals_intent = false

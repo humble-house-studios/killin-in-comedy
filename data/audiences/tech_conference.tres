@@ -13,18 +13,21 @@ text = "Arms crossed. +5 laughs needed"
 script = ExtResource("1_c81jf")
 kind = 1
 amount = 3
-text = "Checking phones. -3 Crowd Energy"
+text = "Checking phones. -3 Heat"
 
 [sub_resource type="Resource" id="Resource_iurqm"]
 script = ExtResource("1_c81jf")
 kind = 2
 amount = 1
-text = "Live-tweeting. -1 mic time next turn"
+text = "Live-tweeting. -1 mic time next minute"
 
 [resource]
 script = ExtResource("2_vpxoq")
 id = "tech_conference"
 title = "Tech Conference"
-laughs_needed = 60
+laughs_needed = 165
 is_boss = false
+minutes = 5
+loves = Array[String](["tech", "work"])
+hates = Array[String](["dating"])
 intents = Array[ExtResource("1_c81jf")]([SubResource("Resource_aom1r"), SubResource("Resource_ehfuh"), SubResource("Resource_iurqm")])

@@ -5,9 +5,9 @@
 [resource]
 script = ExtResource("1_nb46r")
 id = "heighten"
-title = "Heighten"
+title = "Escalate"
 cost = 1
-rules = "+2 laughs for each card played earlier this turn."
+rules = "+2 laughs for each card played earlier this minute."
 line = "And it gets WORSE."
 laughs = 0
 combo_after = 1
@@ -19,4 +19,5 @@ mic_gain = 0
 draw = 0
 setups = 0
 is_punchline = false
+beat = 3
 reveals_intent = false

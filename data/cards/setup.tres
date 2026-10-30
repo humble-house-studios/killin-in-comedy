@@ -19,4 +19,5 @@ mic_gain = 0
 draw = 0
 setups = 1
 is_punchline = false
+beat = 1
 reveals_intent = false

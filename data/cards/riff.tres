@@ -19,6 +19,7 @@ mic_gain = 0
 draw = 1
 setups = 0
 is_punchline = false
+beat = 0
 reveals_intent = false
 link_from = "setup"
 link_laughs = 0
