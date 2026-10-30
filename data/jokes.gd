@@ -623,4 +623,32 @@ const TOPIC_LINES := {
 		"Somebody shout a location! ...{Topic}? Fine.",
 		"Who wants to play {topic} in this scene?",
 	],
+	"punchline": [
+		"And that, folks, is the whole problem with {topic}.",
+		"I'm not saying {topic} ruined my life. I'm saying it tried.",
+		"Honestly? {Topic} deserved better. And so did I.",
+		"That's what I get for trusting {topic}.",
+		"Nobody warned me about {topic}. Nobody ever does.",
+		"And THAT'S why I stopped asking about {topic}.",
+		"Turns out {topic} had been the easy part.",
+		"I asked the universe about {topic}. The universe laughed. It's on tape.",
+		"So, to recap: {topic}. Never again. Probably again.",
+		"Which is why I said no to {topic} twice. It didn't take.",
+	],
+	"crowd_work": [
+		"Show of hands: who else has dealt with {topic}?",
+		"Be honest, how many of you have a story about {topic}?",
+		"Has anyone here survived {topic}? Stand up. Bow.",
+		"Who here's had {topic} ruin their week? Don't be shy.",
+	],
+	"read_the_room": [
+		"Some of you laughed at {topic}, some blinked. I'll take it.",
+		"Okay, {topic} is working on this side. The other side is on their phones.",
+		"Is {topic} landing? Blink twice if it is.",
+	],
+	"second_wind": [
+		"*sips water, still thinking about {topic}*",
+		"*deep breath* Okay. Back to {topic}.",
+		"*wipes forehead* {Topic} takes a lot out of a person.",
+	],
 }

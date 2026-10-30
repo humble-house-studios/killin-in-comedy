@@ -50,41 +50,36 @@ func _check(seq: Array, seed: int, audience := "open_mic") -> Array:
 				pending.append(joke)
 				thread = joke.topic
 		elif _is_punch_card(card) and not pending.is_empty():
-			var joke: Dictionary = pending.pop_front()
+			var joke: Dictionary = pending.pop_back()
 			if line != joke.punch:
 				problems.append("punch doesn't match its setup (%s) %s" % [joke.punch, where])
 			joked.append(joke.topic)
 			thread = joke.topic
-		elif card.is_punchline and card.id == "punchline":
+		elif thread == "" and (card.id == "tag" or card.id == "punchline" or card.laughs_per_card_this_set > 0 \
+				or card.id in Patter.NEEDS_A_JOKE):
 			var one := {}
 			for o in Jokes.ONE_LINERS:
 				if o.line == line:
 					one = o
 			if one.is_empty():
-				problems.append("lone punchline isn't a one-liner " + where)
+				problems.append("nothing live, so should be a fresh one-liner " + where)
 			else:
 				joked.append(one.topic)
 				thread = one.topic
+		elif card.id == "punchline" and thread != "":
+			if not _mentions(line, thread):
+				problems.append("punchline ignores the live joke (%s) %s" % [thread, where])
 		elif card.laughs_per_card_this_set > 0:
 			var options := joked.duplicate()
 			if thread != "":
 				options.append(thread)
-			if options.is_empty():
-				if not Patter.FALLBACK_CALLBACKS.has(line):
-					problems.append("callback with nothing to call back " + where)
-			elif not options.any(func(t): return _mentions(line, t)):
+			if not options.any(func(t): return _mentions(line, t)):
 				problems.append("callback to something never joked about " + where)
 			else:
 				thread = options.filter(func(t): return _mentions(line, t))[0]
 		elif Jokes.TOPIC_LINES.has(id) and thread != "":
-			# Either riffs on the live joke, or is a stock line that names no
-			# topic and so can't clash with it.
-			var stock: Array = Jokes.CARD_LINES.get(id, []) + (Jokes.TAGS if id == "tag" else []) \
-				+ (Jokes.CLOSERS if id == "big_finish" or id == "mic_drop" else [])
-			if not _mentions(line, thread) and not stock.has(line):
-				problems.append("neither on topic (%s) nor a stock line %s" % [thread, where])
-			if id == "tag" and not _mentions(line, thread):
-				problems.append("tag after a joke ignores it " + where)
+			if not _mentions(line, thread):
+				problems.append("ignores the live joke (%s) %s" % [thread, where])
 		if p._thread != thread and not (card.laughs_per_card_this_set > 0):
 			problems.append("thread is '%s', expected '%s' %s" % [p._thread, thread, where])
 	return problems

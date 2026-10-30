@@ -40,6 +40,7 @@ func test_no_repeats_until_pool_is_used_up() -> void:
 	var p := Patter.new(5)
 	var seen := {}
 	for i in Jokes.ONE_LINERS.size():
+		p.start_set()  # nothing live, so each Punchline is a fresh one-liner
 		seen[p.line_for(CardLibrary.card("punchline"))] = true
 	assert_eq(seen.size(), Jokes.ONE_LINERS.size())
 
@@ -54,9 +55,10 @@ func test_callback_brings_back_an_earlier_topic() -> void:
 	assert_false(line.contains("{"), line)
 
 
-func test_callback_with_nothing_to_call_back() -> void:
+func test_callback_with_nothing_to_call_back_tells_a_fresh_joke() -> void:
 	var p := Patter.new(2)
-	assert_has(Patter.FALLBACK_CALLBACKS, p.line_for(CardLibrary.card("callback")))
+	var line := p.line_for(CardLibrary.card("callback"))
+	assert_true(Jokes.ONE_LINERS.any(func(o): return o.line == line), line)
 
 
 func test_crowd_work_fits_the_crowd() -> void:
@@ -86,18 +88,25 @@ func test_every_joke_topic_has_a_theme() -> void:
 		assert_ne(Jokes.theme_of(joke.topic), "", joke.topic)
 
 
-func test_setups_mostly_stay_on_theme() -> void:
-	var same := 0
-	var total := 0
+func test_setups_stay_on_theme() -> void:
 	for seed in 40:
 		var p := Patter.new(seed)
 		p.line_for(CardLibrary.card("setup"))
 		var theme: String = p._theme
 		p.line_for(CardLibrary.card("setup"))
-		same += 1 if p._theme == theme else 0
-		total += 1
-	assert_gt(same, total / 2, "%d of %d stayed on theme" % [same, total])
-	assert_lt(same, total, "should still vary now and then")
+		assert_eq(p._theme, theme)
+
+
+func test_punchline_answers_the_newest_setup() -> void:
+	var p := Patter.new(3)
+	var first := p.line_for(CardLibrary.card("setup"))
+	var second := p.line_for(CardLibrary.card("setup"))
+	var punch := p.line_for(CardLibrary.card("punchline"))
+	var joke := {}
+	for j in Jokes.JOKES:
+		if j.setup == second:
+			joke = j
+	assert_eq(punch, joke.punch, "after '%s' / '%s'" % [first, second])
 
 
 func test_other_cards_riff_on_the_live_joke() -> void:
@@ -109,9 +118,12 @@ func test_other_cards_riff_on_the_live_joke() -> void:
 		var line := p.line_for(CardLibrary.card("heighten"))
 		assert_false(line.contains("{"), line)
 		riffed += 1 if line.to_lower().contains(topic.to_lower()) else 0
-	assert_gt(riffed, 20)
+	assert_eq(riffed, 40)
 
 
-func test_no_riffing_before_any_joke() -> void:
+func test_follow_up_cards_with_no_joke_start_one() -> void:
 	var p := Patter.new(8)
-	assert_has(Jokes.CARD_LINES["heighten"], p.line_for(CardLibrary.card("heighten")))
+	var line := p.line_for(CardLibrary.card("heighten"))
+	assert_true(Jokes.ONE_LINERS.any(func(o): return o.line == line), line)
+	var next := p.line_for(CardLibrary.card("yes_and"))
+	assert_true(next.to_lower().contains(p._thread.to_lower()), next)

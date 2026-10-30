@@ -7,23 +7,21 @@ extends RefCounted
 ## cards riff on the joke that's live ("thread") so a turn hangs together.
 ## Lives for a whole run so later sets get fresh material.
 
-const FALLBACK_CALLBACK := "Remember the guy at the bar?"
-## Callback with nothing to call back to yet.
-const FALLBACK_CALLBACKS := [
-	FALLBACK_CALLBACK,
-	"Remember that thing from earlier? Yeah. That.",
-	"This is a callback to a joke I haven't told yet. Spoilers!",
-	"Callback! To... the vibe. We all felt it.",
-]
+## Cards whose lines only make sense after a joke. Played with nothing live,
+## they tell a fresh one-liner instead, which becomes the joke to follow up.
+const NEEDS_A_JOKE := ["yes_and", "heighten", "riff", "act_out", "spit_take", "rule_of_three",
+	"crowd_favorite", "tag"]
 ## Chance a Setup/one-liner stays on the current theme, and that a card
-## riffs on the live joke instead of using a stock line. Under 1 so sets vary.
-const THEME_CHANCE := 0.7
-const RIFF_CHANCE := 0.7
+## riffs on the live joke instead of using a stock line. Both are 1: a joke
+## that's been started is followed through, so a turn always makes sense.
+const THEME_CHANCE := 1.0
+const RIFF_CHANCE := 1.0
 
 var _rng := RandomNumberGenerator.new()
 ## Pool name -> indices not yet used this cycle.
 var _bags := {}
-## Jokes set up and waiting for a punchline, oldest first.
+## Jokes set up and waiting for a punchline, newest last. A Punchline finishes
+## the newest, so it always answers the Setup you just heard.
 var _pending: Array = []
 ## Topics joked about this set, for callbacks.
 var _topics: Array[String] = []
@@ -57,12 +55,14 @@ func line_for(card: CardData, audience_id := "") -> String:
 		return _punchline(card)
 	if card.laughs_per_card_this_set > 0:
 		return _callback()
-	if card.reveals_intent and card.id != "read_the_room":
-		var pool: Array = Jokes.CROWD_WORK.get(audience_id, []) + Jokes.CROWD_WORK["any"]
-		return _draw("crowd_" + audience_id, pool)
+	if _thread == "" and card.id in NEEDS_A_JOKE:
+		return _fresh_bit()
 	var threaded := _threaded(card.id)
 	if threaded != "":
 		return threaded
+	if card.reveals_intent and card.id != "read_the_room":
+		var pool: Array = Jokes.CROWD_WORK.get(audience_id, []) + Jokes.CROWD_WORK["any"]
+		return _draw("crowd_" + audience_id, pool)
 	if Jokes.CARD_LINES.has(card.id):
 		return _draw(card.id, Jokes.CARD_LINES[card.id])
 	return card.line
@@ -90,7 +90,7 @@ func _fill(template: String, topic: String) -> String:
 
 func _punchline(card: CardData) -> String:
 	if not _pending.is_empty():
-		var joke: Dictionary = _pending.pop_front()
+		var joke: Dictionary = _pending.pop_back()
 		_topics.append(joke.topic)
 		_set_thread(joke.topic)
 		return joke.punch
@@ -98,11 +98,17 @@ func _punchline(card: CardData) -> String:
 	if threaded != "":
 		return threaded
 	if card.id == "tag":
-		return _draw("tags", Jokes.TAGS)
+		return _fresh_bit()
 	if card.id == "big_finish" or card.id == "mic_drop":
 		return _draw("closers", Jokes.CLOSERS)
+	return _fresh_bit()
+
+
+## A stand-alone one-liner. It becomes the live joke other cards riff on.
+func _fresh_bit() -> String:
 	var one: Dictionary = _draw("one_liners", Jokes.ONE_LINERS, _theme)
-	_topics.append(one.topic)
+	if not _topics.has(one.topic):
+		_topics.append(one.topic)
 	_set_thread(one.topic)
 	return one.line
 
@@ -112,7 +118,7 @@ func _callback() -> String:
 	if _thread != "" and not options.has(_thread):
 		options.append(_thread)
 	if options.is_empty():
-		return _draw("fallback_callbacks", FALLBACK_CALLBACKS)
+		return _fresh_bit()
 	var topic: String = options[_rng.randi_range(0, options.size() - 1)]
 	var template: String = _draw("callbacks", Jokes.CALLBACKS)
 	_set_thread(topic)
