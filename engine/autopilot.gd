@@ -1,0 +1,48 @@
+class_name Autopilot
+## Plays a set with simple greedy rules. Used by tests to check that sets
+## finish and by the demo screen until the real battle UI exists.
+
+
+static func play_set(battle: Battle, max_turns := 40) -> Battle.Result:
+	while battle.result == Battle.Result.ONGOING and battle.turn <= max_turns:
+		play_turn(battle)
+	return battle.result
+
+
+static func play_turn(battle: Battle) -> void:
+	while battle.result == Battle.Result.ONGOING:
+		var best := -1
+		var best_score := -INF
+		for i in battle.hand.size():
+			if not battle.can_play(i):
+				continue
+			var score := _score(battle, battle.hand[i])
+			if score > best_score:
+				best_score = score
+				best = i
+		if best < 0 or best_score < 0:
+			break
+		battle.play_card(best)
+	battle.end_turn()
+
+
+static func _score(battle: Battle, card: CardData) -> float:
+	var gained := battle.laughs_for(card)
+	if battle.laughs + gained >= battle.laughs_needed:
+		return 1000.0
+	if battle.crowd_energy + card.crowd_energy <= 0:
+		return -1.0
+	var energy_weight := 3.0 if battle.crowd_energy <= 6 else 0.5
+	var score := float(gained) + card.crowd_energy * energy_weight \
+		+ card.draw * 3.0 + card.mic_gain * 4.0
+	if card.setups > 0 and _hand_has_punchline(battle):
+		score += 8.0
+	# Cheap cards first when scores tie, so mic time isn't wasted.
+	return score - card.cost * 0.1
+
+
+static func _hand_has_punchline(battle: Battle) -> bool:
+	for c in battle.hand:
+		if c.is_punchline:
+			return true
+	return false

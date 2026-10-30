@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://engine/card_data.gd" id="1_qti4e"]
+
+[resource]
+script = ExtResource("1_qti4e")
+id = "yes_and"
+title = "Yes, And"
+cost = 1
+rules = "+4 laughs. If you already played a card this turn, +3 more."
+line = "Yes! And..."
+laughs = 4
+combo_after = 1
+combo_bonus = 3
+laughs_per_card_this_set = 0
+laughs_per_card_this_turn = 0
+crowd_energy = 0
+mic_gain = 0
+draw = 0
+setups = 0
+is_punchline = false
+reveals_intent = false

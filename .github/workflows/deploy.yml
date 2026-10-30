@@ -36,6 +36,19 @@ jobs:
       - name: Import project
         run: godot --headless --import || true
 
+      # Engine tests (GUT). A failing test stops the build, so a broken
+      # engine never reaches the play link.
+      - name: Run engine tests
+        shell: bash
+        run: |
+          set +e
+          godot --headless -s addons/gut/gut_cmdln.gd 2>&1 | tee test.log
+          code=${PIPESTATUS[0]}
+          sed 's/\x1b\[[0-9;]*m//g' test.log | grep -E "\[Failed\]|SCRIPT ERROR|Parse Error" | head -20 | while IFS= read -r line; do
+            echo "::error title=Engine test::${line}"
+          done
+          exit $code
+
       - name: Export web build
         shell: bash
         run: |

@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://engine/card_data.gd" id="1_ebloo"]
+
+[resource]
+script = ExtResource("1_ebloo")
+id = "big_finish"
+title = "Big Finish"
+cost = 2
+rules = "+12 laughs. Punchline."
+line = "AND THAT'S MY TIME!"
+laughs = 12
+combo_after = 1
+combo_bonus = 0
+laughs_per_card_this_set = 0
+laughs_per_card_this_turn = 0
+crowd_energy = 0
+mic_gain = 0
+draw = 0
+setups = 0
+is_punchline = true
+reveals_intent = false

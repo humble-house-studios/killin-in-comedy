@@ -1,15 +1,22 @@
 extends Control
-## Step 1 placeholder: proves the scaling rule.
+## Step 2 placeholder: proves the scaling rule and shows the engine working.
 ## Upright screen = phone layout (stage above hand).
 ## Sideways screen = Steam layout (stage beside hand).
+## "Simulate a set" lets the autopilot play the starter deck against a random
+## audience; the real card UI replaces this in step 3.
 
 const MIN_TOUCH_HEIGHT := 88.0
+const LOG_LINES := 14
 
 var _safe_margin: MarginContainer
 var _body: BoxContainer
 var _layout_label: Label
-var _tap_button: Button
-var _taps := 0
+var _sim_button: Button
+var _stage_label: Label
+var _log_label: Label
+var _rng := RandomNumberGenerator.new()
+var _sets := 0
+var _wins := 0
 
 
 func _ready() -> void:
@@ -44,15 +51,20 @@ func _build_ui() -> void:
 	_body.add_theme_constant_override("separation", 16)
 	root.add_child(_body)
 
-	_body.add_child(_make_panel("STAGE\n(audience + Laugh meter)", Color(0.35, 0.18, 0.45), 2.0))
-	_body.add_child(_make_panel("HAND\n(your cards)", Color(0.15, 0.32, 0.42), 1.0))
+	var stage := _make_panel("STAGE\n(audience + Laugh meter)", Color(0.35, 0.18, 0.45), 1.0)
+	_stage_label = stage.get_child(0)
+	_body.add_child(stage)
+	var log_panel := _make_panel("Tap below to watch the engine\nplay a whole set.", Color(0.15, 0.32, 0.42), 2.0)
+	_log_label = log_panel.get_child(0)
+	_log_label.add_theme_font_size_override("font_size", 20)
+	_body.add_child(log_panel)
 
-	_tap_button = Button.new()
-	_tap_button.text = "Tap to test touch"
-	_tap_button.custom_minimum_size = Vector2(0, MIN_TOUCH_HEIGHT)
-	_tap_button.add_theme_font_size_override("font_size", 28)
-	_tap_button.pressed.connect(_on_tap)
-	root.add_child(_tap_button)
+	_sim_button = Button.new()
+	_sim_button.text = "Simulate a set"
+	_sim_button.custom_minimum_size = Vector2(0, MIN_TOUCH_HEIGHT)
+	_sim_button.add_theme_font_size_override("font_size", 28)
+	_sim_button.pressed.connect(_on_simulate)
+	root.add_child(_sim_button)
 
 
 func _make_panel(text: String, color: Color, stretch: float) -> PanelContainer:
@@ -70,6 +82,9 @@ func _make_panel(text: String, color: Color, stretch: float) -> PanelContainer:
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.add_theme_font_size_override("font_size", 28)
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.clip_text = true
+	label.custom_minimum_size = Vector2(1, 1)
 	panel.add_child(label)
 	return panel
 
@@ -110,6 +125,16 @@ func _apply_safe_area() -> void:
 	_safe_margin.add_theme_constant_override("margin_bottom", int(bottom))
 
 
-func _on_tap() -> void:
-	_taps += 1
-	_tap_button.text = "Taps: %d" % _taps
+func _on_simulate() -> void:
+	var audiences := CardLibrary.audiences().values()
+	var audience: AudienceData = audiences[_rng.randi_range(0, audiences.size() - 1)]
+	var battle := Battle.new(audience, CardLibrary.starter_deck(), _rng.randi())
+	var result := Autopilot.play_set(battle)
+	_sets += 1
+	var won := result == Battle.Result.WON
+	if won:
+		_wins += 1
+	_stage_label.text = "%s\n%s after %d turns\nLaughs %d / %d   Crowd Energy %d\nSets won: %d of %d" % [
+		audience.title, "KILLED" if won else "BOMBED", battle.turn,
+		battle.laughs, battle.laughs_needed, battle.crowd_energy, _wins, _sets]
+	_log_label.text = "\n".join(battle.history.slice(-LOG_LINES))

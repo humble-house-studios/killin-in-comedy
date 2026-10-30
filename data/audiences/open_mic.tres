@@ -1,0 +1,30 @@
+[gd_resource type="Resource" script_class="AudienceData" load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://engine/intent_data.gd" id="1_0lkke"]
+[ext_resource type="Script" path="res://engine/audience_data.gd" id="2_15n3e"]
+
+[sub_resource type="Resource" id="Resource_1wgli"]
+script = ExtResource("1_0lkke")
+kind = 0
+amount = 0
+text = "Polite golf claps."
+
+[sub_resource type="Resource" id="Resource_rtlgn"]
+script = ExtResource("1_0lkke")
+kind = 1
+amount = 2
+text = "Chatting at the bar. -2 Crowd Energy"
+
+[sub_resource type="Resource" id="Resource_el1t5"]
+script = ExtResource("1_0lkke")
+kind = 2
+amount = 1
+text = "Ordering drinks. -1 mic time next turn"
+
+[resource]
+script = ExtResource("2_15n3e")
+id = "open_mic"
+title = "Open Mic Crowd"
+laughs_needed = 40
+is_boss = false
+intents = Array[ExtResource("1_0lkke")]([SubResource("Resource_1wgli"), SubResource("Resource_rtlgn"), SubResource("Resource_el1t5")])

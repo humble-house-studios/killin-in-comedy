@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://engine/card_data.gd" id="1_1bmky"]
+
+[resource]
+script = ExtResource("1_1bmky")
+id = "second_wind"
+title = "Second Wind"
+cost = 0
+rules = "+1 mic time."
+line = "*sips water*"
+laughs = 0
+combo_after = 1
+combo_bonus = 0
+laughs_per_card_this_set = 0
+laughs_per_card_this_turn = 0
+crowd_energy = 0
+mic_gain = 1
+draw = 0
+setups = 0
+is_punchline = false
+reveals_intent = false

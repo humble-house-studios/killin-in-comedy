@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://engine/card_data.gd" id="1_g1h4r"]
+
+[resource]
+script = ExtResource("1_g1h4r")
+id = "read_the_room"
+title = "Read the Room"
+cost = 1
+rules = "Reveal the next audience move. Draw 2 cards."
+line = "Tough crowd? No? Great."
+laughs = 0
+combo_after = 1
+combo_bonus = 0
+laughs_per_card_this_set = 0
+laughs_per_card_this_turn = 0
+crowd_energy = 0
+mic_gain = 0
+draw = 2
+setups = 0
+is_punchline = false
+reveals_intent = true

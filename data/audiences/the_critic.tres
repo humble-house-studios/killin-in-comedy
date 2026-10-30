@@ -1,0 +1,36 @@
+[gd_resource type="Resource" script_class="AudienceData" load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://engine/intent_data.gd" id="1_ll3vc"]
+[ext_resource type="Script" path="res://engine/audience_data.gd" id="2_e750h"]
+
+[sub_resource type="Resource" id="Resource_0v0pr"]
+script = ExtResource("1_ll3vc")
+kind = 3
+amount = 8
+text = "Taking notes. +8 laughs needed"
+
+[sub_resource type="Resource" id="Resource_lxv8d"]
+script = ExtResource("1_ll3vc")
+kind = 1
+amount = 5
+text = "Scathing heckle: -5 Crowd Energy"
+
+[sub_resource type="Resource" id="Resource_7v5j2"]
+script = ExtResource("1_ll3vc")
+kind = 2
+amount = 1
+text = "Loud sigh. -1 mic time next turn"
+
+[sub_resource type="Resource" id="Resource_p2h17"]
+script = ExtResource("1_ll3vc")
+kind = 1
+amount = 3
+text = "Walks out to take a call. -3 Crowd Energy"
+
+[resource]
+script = ExtResource("2_e750h")
+id = "the_critic"
+title = "The Critic (Headline Show)"
+laughs_needed = 110
+is_boss = true
+intents = Array[ExtResource("1_ll3vc")]([SubResource("Resource_0v0pr"), SubResource("Resource_lxv8d"), SubResource("Resource_7v5j2"), SubResource("Resource_p2h17")])

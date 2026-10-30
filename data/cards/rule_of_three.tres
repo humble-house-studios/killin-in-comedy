@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://engine/card_data.gd" id="1_15h57"]
+
+[resource]
+script = ExtResource("1_15h57")
+id = "rule_of_three"
+title = "Rule of Three"
+cost = 1
+rules = "+3 laughs. If this is your 3rd card this turn, +6 more."
+line = "Three things: one, two... potato."
+laughs = 3
+combo_after = 2
+combo_bonus = 6
+laughs_per_card_this_set = 0
+laughs_per_card_this_turn = 0
+crowd_energy = 0
+mic_gain = 0
+draw = 0
+setups = 0
+is_punchline = false
+reveals_intent = false
