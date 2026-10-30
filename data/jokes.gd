@@ -613,7 +613,7 @@ const TOPIC_LINES := {
 		"That's my time! Say no to {topic}!",
 	],
 	"mic_drop": [
-		"*drops mic* That's what {topic} gets you.",
+		"*drops mic* That's what you get from {topic}.",
 		"*drops mic* Case closed on {topic}.",
 		"*drops mic* And that's on {topic}.",
 		"*drops mic* {Topic}, out.",
