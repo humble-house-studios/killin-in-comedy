@@ -533,7 +533,33 @@ const CARD_LINES := {
 	],
 }
 
-## Lines for cards played while a joke is "live" (after a Setup or a Punchline).
+## How a set stays coherent (see res://engine/patter.gd): the comedian tracks the
+## bit being told, and every card is rendered from that state.
+##  - A joke is "live" after a Setup, a one-liner or a Callback. Its topic fills
+##    {topic} / {Topic} below, so every card talks about the same thing.
+##  - A live joke is "open" until its Punchline lands, then "landed". Lines
+##    starting with AFTER only make sense once it has landed.
+##  - Whenever the topic changes, a bridge phrase explains the jump.
+const AFTER := "after|"
+
+## Bridge before a new Setup. {theme} is the theme name from THEME_NAMES.
+const BRIDGE_SAME_THEME := ["Speaking of {theme}:", "While we're on {theme}:", "More {theme}:",
+	"And since we're talking {theme}:"]
+const BRIDGE_NEW_THEME := ["Totally different note:", "Unrelated, but:", "New bit:", "Okay, switching gears:"]
+## Bridge before a Setup when another joke is still waiting for its punchline.
+const BRIDGE_ANOTHER_OPEN := ["Hold that thought:", "Wait, I've got another one:", "Hang on, a second story:"]
+## Bridge before a new joke after a closer (Big Finish / Mic Drop) already said goodnight.
+const BRIDGE_ENCORE := ["Encore!", "One more!", "Okay, okay, one more!", "You're not letting me leave, are you?"]
+## Bridge before a Punchline that finishes an older joke than the one being told.
+const BRIDGE_RESUME := ["Back to {topic}:", "Okay, {topic}, as promised:", "Where was I? {Topic}:"]
+
+const THEME_NAMES := {
+	"home": "home life", "tech": "technology", "family": "family", "dating": "dating",
+	"work": "work", "food": "food", "animals": "animals", "body": "my body",
+	"money": "money", "travel": "travel",
+}
+
+## Lines for cards played while a joke is live.
 ## {topic} / {Topic} is what that joke was about, so the whole turn hangs together.
 const TOPIC_LINES := {
 	"yes_and": [
@@ -544,7 +570,7 @@ const TOPIC_LINES := {
 		"Yes! And somehow {topic} got involved.",
 		"Yes, and {topic} had a lawyer.",
 		"Yes! And {topic} never forgave me.",
-		"Yes, and {topic} got everybody to clap.",
+		"after|Yes, and {topic} got everybody to clap.",
 	],
 	"heighten": [
 		"And then {topic} got involved.",
@@ -642,13 +668,14 @@ const TOPIC_LINES := {
 		"Who here's had {topic} ruin their week? Don't be shy.",
 	],
 	"read_the_room": [
-		"Some of you laughed at {topic}, some blinked. I'll take it.",
-		"Okay, {topic} is working on this side. The other side is on their phones.",
-		"Is {topic} landing? Blink twice if it is.",
+		"after|Some of you laughed at {topic}, some blinked. I'll take it.",
+		"I can feel the room leaning in on {topic}.",
+		"after|Okay, {topic} worked on this side. The other side is on their phones.",
+		"How's {topic} landing? Blink twice if it's going well.",
 	],
 	"second_wind": [
 		"*sips water, still thinking about {topic}*",
 		"*deep breath* Okay. Back to {topic}.",
-		"*wipes forehead* {Topic} takes a lot out of a person.",
+		"*wipes forehead* {Topic}: it takes a lot out of a person.",
 	],
 }

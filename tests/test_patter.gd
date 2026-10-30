@@ -104,7 +104,7 @@ func test_punchline_answers_the_newest_setup() -> void:
 	var punch := p.line_for(CardLibrary.card("punchline"))
 	var joke := {}
 	for j in Jokes.JOKES:
-		if j.setup == second:
+		if second.ends_with(j.setup):
 			joke = j
 	assert_eq(punch, joke.punch, "after '%s' / '%s'" % [first, second])
 
