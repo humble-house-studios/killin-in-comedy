@@ -1,33 +1,46 @@
-[gd_resource type="Resource" script_class="AudienceData" load_steps=6 format=3]
+[gd_resource type="Resource" script_class="AudienceData" load_steps=8 format=3]
 
-[ext_resource type="Script" path="res://engine/intent_data.gd" id="1_l6426"]
-[ext_resource type="Script" path="res://engine/audience_data.gd" id="2_52xvd"]
+[ext_resource type="Script" path="res://engine/intent_data.gd" id="1_intent"]
+[ext_resource type="Script" path="res://engine/audience_data.gd" id="2_audience"]
 
-[sub_resource type="Resource" id="Resource_bumjy"]
-script = ExtResource("1_l6426")
+[sub_resource type="Resource" id="Intent_0"]
+script = ExtResource("1_intent")
+kind = 4
+amount = 5
+text = "WOOOO! +5 Heat"
+
+[sub_resource type="Resource" id="Intent_1"]
+script = ExtResource("1_intent")
 kind = 1
-amount = 3
-text = "WOOOO! -3 Heat"
+amount = 4
+text = "The bride starts crying. -4 Heat"
 
-[sub_resource type="Resource" id="Resource_nwba3"]
-script = ExtResource("1_l6426")
+[sub_resource type="Resource" id="Intent_2"]
+script = ExtResource("1_intent")
 kind = 0
 amount = 0
 text = "Taking selfies."
 
-[sub_resource type="Resource" id="Resource_fniva"]
-script = ExtResource("1_l6426")
+[sub_resource type="Resource" id="Intent_3"]
+script = ExtResource("1_intent")
+kind = 4
+amount = 4
+text = "Shots! +4 Heat"
+
+[sub_resource type="Resource" id="Intent_4"]
+script = ExtResource("1_intent")
 kind = 1
-amount = 5
-text = "Heckler: -5 Heat"
+amount = 6
+text = "Heckler! -6 Heat"
 
 [resource]
-script = ExtResource("2_52xvd")
+script = ExtResource("2_audience")
 id = "bachelorette"
 title = "Bachelorette Party"
-laughs_needed = 135
+laughs_needed = 22000
 is_boss = false
-minutes = 5
+seconds = 75.0
+event_every = 6.0
 loves = Array[String](["dating"])
 hates = Array[String](["work"])
-intents = Array[ExtResource("1_l6426")]([SubResource("Resource_bumjy"), SubResource("Resource_nwba3"), SubResource("Resource_fniva")])
+intents = Array[ExtResource("1_intent")]([SubResource("Intent_0"), SubResource("Intent_1"), SubResource("Intent_2"), SubResource("Intent_3"), SubResource("Intent_4")])

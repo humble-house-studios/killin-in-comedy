@@ -3,6 +3,7 @@ extends Control
 ## Upright screen = phone layout (stage above hand).
 ## Sideways screen = Steam layout (stage beside hand).
 ## All rules live in res://engine/; this script only draws state and forwards taps.
+## The set is live: _process() ticks the battle every frame (unless paused).
 ## Look: 8-bit arcade. Pixel fonts, square panels with thick outlines and hard
 ## shadows, a pixel-art stage, and an old-TV filter (crt.gdshader) on top.
 
@@ -36,7 +37,6 @@ var _heading_font: FontVariation
 ## Press Start 2P: signs, big numbers and buttons. Wide, so short text only.
 var _pixel_font: FontFile
 var _crt_mat: ShaderMaterial
-var _hand_turn_shown := -1
 var _stage_view: StageView
 ## Top layer of the stage for floating numbers.
 var _fx_layer: Control
@@ -59,16 +59,23 @@ var _bubble_label: Label
 var _laugh_label: Label
 var _laugh_bar: ProgressBar
 var _energy_label: Label
-var _energy_bar: ProgressBar
 var _hand_grid: GridContainer
-## Cards on screen this turn, by position; null where a card was played, so
-## the rest of the hand stays put and taps don't land on the wrong card.
-var _slots: Array = []
-var _slots_turn := -1
 var _mic_label: Label
 var _end_turn_button: Button
 var _overlay: Control
 var _overlay_box: VBoxContainer
+var _room_chart: RoomChart
+var _mic_bar: ProgressBar
+var _pause_button: Button
+var _paused := false
+## Whole mic points last drawn, so the hand only redraws when playability changes.
+var _mic_whole := -1
+## The laugh counter on screen, rolling up toward the real total.
+var _shown_laughs := 0.0
+## What was said for each card in the bit being built: {card, line}.
+var _bit_lines: Array = []
+## Card objects in hand last drawn, to pop in only the new ones.
+var _hand_shown: Array = []
 
 
 func _ready() -> void:
@@ -120,6 +127,10 @@ func _build_ui() -> void:
 	_mute_button.pressed.connect(_on_mute)
 	top.add_child(_mute_button)
 	_update_mute_label()
+	_pause_button = _button("II", Color(0.2, 0.15, 0.25))
+	_pause_button.custom_minimum_size = Vector2(96, MIN_TOUCH_HEIGHT * 0.75)
+	_pause_button.pressed.connect(_on_pause)
+	top.add_child(_pause_button)
 
 	_body = BoxContainer.new()
 	_body.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -188,12 +199,10 @@ func _build_stage() -> Control:
 	_intent_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_intent_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_shadow(_intent_label)
-	box.add_child(_intent_label)
 	_peek_label = _label("", 18, Color(1, 0.85, 0.85, 0.8))
 	_peek_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_peek_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_shadow(_peek_label)
-	box.add_child(_peek_label)
 
 	# Speech bubble and floating numbers, above the mic.
 	_bubble_area = Control.new()
@@ -238,17 +247,23 @@ func _build_stage() -> Control:
 	_laugh_label.add_theme_font_override("font", _heading_font)
 	_laugh_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	laugh_row.add_child(_laugh_label)
-	_clock_label = _label("", 22, Color.WHITE)
-	_clock_label.add_theme_font_override("font", _heading_font)
+	_clock_label = _label("", 26, Color.WHITE)
+	_clock_label.add_theme_font_override("font", _pixel_font)
 	laugh_row.add_child(_clock_label)
 	_laugh_bar = _bar(COLOR_GOLD)
 	mbox.add_child(_laugh_bar)
 	_energy_label = _label("", 22)
 	_energy_label.add_theme_font_override("font", _heading_font)
 	mbox.add_child(_energy_label)
-	_energy_bar = _bar(COLOR_HOT)
-	_energy_bar.max_value = Balance.MAX_CROWD_ENERGY
-	mbox.add_child(_energy_bar)
+	_room_chart = RoomChart.new()
+	_room_chart.font = _pixel_font
+	_room_chart.max_value = Balance.MAX_CROWD_ENERGY
+	mbox.add_child(_room_chart)
+	# Ticker under the chart: the crowd's next move, with a countdown.
+	_intent_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	_peek_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	mbox.add_child(_intent_label)
+	mbox.add_child(_peek_label)
 	# The bit being built this minute, Balatro-style: laughs × multiplier.
 	_bit_label = _label("", 20, COLOR_NEON_BLUE)
 	_bit_label.add_theme_font_override("font", _pixel_font)
@@ -280,12 +295,18 @@ func _build_hand_area() -> Control:
 	var controls := HBoxContainer.new()
 	controls.add_theme_constant_override("separation", 12)
 	side.add_child(controls)
+	var mic_box := VBoxContainer.new()
+	mic_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	mic_box.alignment = BoxContainer.ALIGNMENT_CENTER
+	controls.add_child(mic_box)
 	_mic_label = _label("", 18)
 	_mic_label.add_theme_font_override("font", _pixel_font)
-	_mic_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	controls.add_child(_mic_label)
+	mic_box.add_child(_mic_label)
+	_mic_bar = _bar(COLOR_NEON_BLUE)
+	_mic_bar.max_value = Balance.MIC_MAX
+	mic_box.add_child(_mic_bar)
 	_end_turn_button = _button("Land It", Color(0.62, 0.08, 0.18))
-	_end_turn_button.custom_minimum_size = Vector2(260, MIN_TOUCH_HEIGHT)
+	_end_turn_button.custom_minimum_size = Vector2(330, MIN_TOUCH_HEIGHT)
 	_end_turn_button.pressed.connect(_on_end_turn)
 	controls.add_child(_end_turn_button)
 	return side
@@ -338,10 +359,11 @@ func _show_title() -> void:
 	_overlay_box.add_child(sign)
 	_flicker(sign)
 	_overlay_box.add_child(_neon("COMEDY", 64, COLOR_NEON_BLUE))
-	var how := _label("Build a bit each minute, then Land It: laughs × Heat.\n" +
-		"Setup > Punchline > Tag chains add to the multiplier.\n" +
-		"Play topics the crowd loves. Hit the target before the light!\n" +
-		"Beat 3 crowds, then headline against The Critic.", 24)
+	var how := _label("It's live! Mic time refills every second, so keep firing jokes.\n" +
+		"Cards build a bit. LAND IT to cash in: laughs × the Room × chains.\n" +
+		"Setup > Punchline > Tag chains multiply. Tags re-fire the punchline.\n" +
+		"Watch the Room line: land at a peak, before a heckle cuts your bit.\n" +
+		"Hit the target before the light!", 23)
 	how.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	how.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_overlay_box.add_child(how)
@@ -359,9 +381,12 @@ func _new_run() -> void:
 
 func _start_set() -> void:
 	_close_overlay()
+	_paused = false
 	_battle = _run.start_set()
-	_slots_turn = -1
-	_hand_turn_shown = -1
+	_hand_shown = []
+	_bit_lines = []
+	_mic_whole = -1
+	_shown_laughs = 0.0
 	_patter.start_set()
 	var crowd: int = CROWD_SIZES.get(_battle.audience.id, 9)
 	_stage_view.set_crowd(crowd, _battle.audience.is_boss)
@@ -371,11 +396,62 @@ func _start_set() -> void:
 	_refresh()
 
 
-func _on_card_pressed(slot: int) -> void:
-	var index := _hand_index(slot)
-	if not _battle.can_play(index):
+func _process(delta: float) -> void:
+	if _battle == null:
 		return
-	_slots[slot] = null
+	# Roll the laugh counter toward the real total, like a slot machine.
+	if _shown_laughs < _battle.laughs:
+		_shown_laughs = minf(_battle.laughs, _shown_laughs + maxf(40.0, (_battle.laughs - _shown_laughs) * 6.0) * delta)
+	if _battle.result == Battle.Result.ONGOING and not _paused and not _overlay.visible:
+		_battle.tick(delta)
+		for ev in _battle.pop_events():
+			_on_battle_event(ev)
+		var whole := int(_battle.mic)
+		if whole != _mic_whole:
+			_mic_whole = whole
+			_refresh()
+	_update_live()
+
+
+func _notification(what: int) -> void:
+	# Phone locked or app switched: pause so the light doesn't run out unseen.
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT and _battle and _battle.result == Battle.Result.ONGOING \
+			and not _overlay.visible:
+		_set_paused(true)
+
+
+func _on_battle_event(ev: String) -> void:
+	match ev:
+		"event":
+			var line: String = _battle.history.back()
+			_say(line.trim_prefix(_battle.audience.title + ": "), Color(1, 0.82, 0.82))
+			var intent := _battle.audience.intents[(_battle._intent_index - 1) % _battle.audience.intents.size()]
+			match intent.kind:
+				IntentData.Kind.SPIKE:
+					_sound.play("cheer", -4.0)
+					_float_text("+%d HEAT" % intent.amount, COLOR_ENERGY.lightened(0.4), false, true)
+					_stage_view.react(0.5)
+				IntentData.Kind.CALM:
+					pass
+				_:
+					_sound.play("groan", -4.0)
+					_flash(_room_chart)
+		"interrupt":
+			_float_text("INTERRUPTED! BIT CUT", COLOR_HOT, false, false, 0.25)
+			_sound.play("crickets", -2.0)
+			_shake(6.0)
+			_refresh()
+		"landed":
+			# The light auto-landed the last bit.
+			_cascade()
+		"won", "lost":
+			_refresh()
+			_check_result()
+
+
+func _on_card_pressed(index: int) -> void:
+	if _battle == null or not _battle.can_play(index) or _paused:
+		return
 	var card := _battle.hand[index]
 	var linked := _battle.is_linked(card)
 	var chained := _battle.chains(card)
@@ -384,21 +460,22 @@ func _on_card_pressed(slot: int) -> void:
 	var before_energy := _battle.crowd_energy
 	_battle.play_card(index)
 	var gained := _battle.bit_laughs - before_laughs
-	var energy := _battle.crowd_energy - before_energy
+	var energy := int(round(_battle.crowd_energy - before_energy))
 	var line := _patter.line_for(card, _battle.audience.id)
 	# Stage directions (*sips water*) aren't speech, so no quote marks.
-	_say(line if line.begins_with("*") else "\"%s\"" % line, COLOR_PAPER)
+	line = line if line.begins_with("*") else "\"%s\"" % line
+	_bit_lines.append({"card": card, "line": line, "laughs": gained})
+	_say(line, COLOR_PAPER)
 	_play_reaction(card, gained, energy)
 	if gained > 0:
-		_float_text("+%d" % gained, COLOR_GOLD, gained >= 12)
+		_float_text("+%s" % _num(gained), COLOR_GOLD, gained >= 150)
 	if chained:
-		_float_text("CHAIN! +%.1fx" % Balance.CHAIN_MULT, COLOR_NEON, false, false, 0.22)
-		_sound.play("chime")
+		_float_text("CHAIN! ×%.1f" % _battle.chain_multiplier(), COLOR_NEON, false, false, 0.22)
+		_sound.play("chime", 0.0, 1.0 + 0.12 * _battle.chain_links)
 		_stage_view.react(0.6)
 	elif linked:
 		_float_text("LINK!", COLOR_NEON_BLUE, false, false, 0.30)
 		_sound.play("chime")
-		_stage_view.react(0.5)
 	if taste > 0:
 		_float_text("THEY LOVE %s!" % CardData.TOPIC_NAMES[card.topic].to_upper(), Color(0.6, 1, 0.6), false, false, 0.38)
 	elif taste < 0:
@@ -407,43 +484,62 @@ func _on_card_pressed(slot: int) -> void:
 	if energy != 0:
 		_float_text("%+d Heat" % energy, COLOR_ENERGY.lightened(0.4) if energy > 0 else COLOR_HOT, false, true)
 	_refresh()
-	_check_result()
+	for ev in _battle.pop_events():
+		_on_battle_event(ev)
 
 
 func _on_end_turn() -> void:
-	if _battle == null or _battle.result != Battle.Result.ONGOING:
+	if _battle == null or _battle.result != Battle.Result.ONGOING or _paused or not _battle.bit_open():
 		return
-	var seen := _battle.history.size()
-	var before_energy := _battle.crowd_energy
-	var bit := _battle.bit_laughs
-	var intent := _battle.current_intent()
 	_battle.land_bit()
-	_sound.play("thump", -4.0)
-	if bit > 0:
-		var score := _battle.last_landed
-		_float_text("%d × %.1f = %d" % [bit, _battle.last_landed_mult, score], COLOR_GOLD, true, false, 0.30)
-		_sound.play_later("laugh_huge" if score >= 60 else ("laugh_big" if score >= 25 else "laugh_small"), 0.1)
-		if score >= 60:
-			_sound.play_later("applause", 0.5, -4.0)
-		_stage_view.react(minf(score / 40.0, 1.5))
-		_shake(minf(score / 10.0, 12.0))
-	if _battle.history.slice(seen).any(func(l): return l.begins_with("You bombed")):
-		_sound.play("crickets")
-	elif intent and intent.kind != IntentData.Kind.CALM:
-		_sound.play_later("groan", 0.15, -3.0)
-	var lines := _battle.history.slice(seen)
-	var crowd_lines: Array[String] = []
-	for line in lines:
-		if not line.begins_with("The room") and not line.begins_with("You lost") \
-				and not line.begins_with("The bit lands") and not line.begins_with("You got the light"):
-			crowd_lines.append(line.trim_prefix(_battle.audience.title + ": "))
-	_say("\n".join(crowd_lines), Color(1, 0.82, 0.82))
-	var lost := _battle.crowd_energy - before_energy
-	if lost < 0:
-		_float_text("%d Heat" % lost, COLOR_HOT, false, true)
-		_flash(_energy_bar)
+	for ev in _battle.pop_events():
+		_on_battle_event(ev)
+
+
+## The landing, casino-style: every joke in the bit fires in quick succession
+## with a rising pitch, the multiplier slams in, then the total pays out.
+func _cascade() -> void:
+	var jokes := _battle.landed_jokes.duplicate()
+	var raw := _battle.landed_raw
+	var mult := _battle.landed_mult
+	var score := _battle.last_landed
+	var lines := _bit_lines.duplicate()
+	_bit_lines = []
 	_refresh()
-	_check_result()
+	_sound.play("thump", -4.0)
+	var gap := clampf(0.9 / maxf(1.0, jokes.size()), 0.05, 0.12)
+	var running := 0
+	for k in jokes.size():
+		var joke: Dictionary = jokes[k]
+		running += joke.laughs
+		var c: CardData = joke.card
+		var label := ("AGAIN! +%s" if joke.retrigger else "+%s") % _num(joke.laughs)
+		_float_burst(label, COLOR_GOLD if not joke.retrigger else COLOR_NEON, 28 + mini(k * 2, 20))
+		_sound.play("card", -6.0, 1.0 + 0.08 * k)
+		if k % 2 == 0:
+			_sound.play("laugh_small", -10.0, 1.0 + 0.05 * k)
+		_stage_view.react(0.3 + 0.05 * k)
+		await get_tree().create_timer(gap).timeout
+	_float_text("%s × %.1f" % [_num(raw), mult], COLOR_NEON_BLUE, true, false, 0.18)
+	_sound.play("rimshot", -2.0)
+	_shake(4.0)
+	await get_tree().create_timer(0.25).timeout
+	_float_text("= %s!" % _num(score), COLOR_GOLD, true, false, 0.34)
+	_sound.play("laugh_huge" if score >= 2000 else ("laugh_big" if score >= 600 else "laugh_small"))
+	if score >= 2000:
+		_sound.play_later("applause", 0.3, -4.0)
+		for n in mini(12, 3 + score / 1000):
+			_float_burst("HA", COLOR_GOLD.lightened(0.3), 22)
+	_stage_view.react(minf(score / 1500.0, 1.6))
+	_shake(minf(3.0 + score / 500.0, 14.0))
+	_flash(_laugh_label)
+	# The hero joke: the biggest line of the bit, shown big at the end.
+	var hero: Dictionary = {}
+	for l in lines:
+		if hero.is_empty() or l.laughs > hero.laughs:
+			hero = l
+	if not hero.is_empty() and _battle.result == Battle.Result.ONGOING:
+		_say(hero.line, COLOR_GOLD.lightened(0.5))
 
 
 func _check_result() -> void:
@@ -452,7 +548,7 @@ func _check_result() -> void:
 			_end_turn_button.disabled = true
 			_stage_view.react(1.2)
 			_sound.play_later("applause", 0.5)
-			await get_tree().create_timer(1.3).timeout
+			await get_tree().create_timer(2.0).timeout
 			if _run.is_final_set():
 				_sound.play("fanfare")
 				_show_run_won()
@@ -461,14 +557,34 @@ func _check_result() -> void:
 		Battle.Result.LOST:
 			_end_turn_button.disabled = true
 			_sound.play_later("sad_trombone", 0.4)
-			await get_tree().create_timer(1.2).timeout
+			await get_tree().create_timer(1.6).timeout
 			_show_lost()
+
+
+func _on_pause() -> void:
+	_sound.play("click")
+	_set_paused(not _paused)
+
+
+func _set_paused(on: bool) -> void:
+	if _battle == null or _battle.result != Battle.Result.ONGOING:
+		return
+	_paused = on
+	if on:
+		_open_overlay()
+		_overlay_box.add_child(_neon("PAUSED", 48, COLOR_NEON_BLUE))
+		_overlay_box.add_child(_centered(_label("The crowd waits. Barely.", 24)))
+		var resume := _button("Back to the mic", COLOR_PUNCHLINE)
+		resume.pressed.connect(_set_paused.bind(false))
+		_overlay_box.add_child(resume)
+	else:
+		_close_overlay()
 
 
 func _show_reward() -> void:
 	_open_overlay()
 	_overlay_box.add_child(_neon("YOU KILLED!", 48, COLOR_GOLD))
-	_overlay_box.add_child(_centered(_label("Add a new bit to your act:", 26)))
+	_overlay_box.add_child(_centered(_label("%s laughs. Add a new bit to your act:" % _num(_battle.laughs), 26)))
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 12)
 	_overlay_box.add_child(row)
@@ -486,6 +602,33 @@ func _show_reward() -> void:
 func _take_reward(card: CardData) -> void:
 	_sound.play("chime" if card else "click")
 	_run.finish_set(card)
+	if _run.crew_choices().is_empty():
+		_show_next_up()
+	else:
+		_show_crew()
+
+
+## Hire crew between sets: each helps every set but takes a cut of every bit.
+func _show_crew() -> void:
+	_open_overlay()
+	_overlay_box.add_child(_neon("HIRE YOUR CREW", 40, COLOR_NEON_BLUE))
+	_overlay_box.add_child(_centered(_label("They help every set, for a cut of every bit.", 24)))
+	for id in _run.crew_choices():
+		var info := Crew.info(id)
+		var b := _button("%s\n%s  (takes %d%%)" % [info.title, info.perk, roundi(info.cut * 100)], COLOR_SETUP)
+		b.custom_minimum_size.y = MIN_TOUCH_HEIGHT * 1.4
+		b.add_theme_font_override("font", _heading_font)
+		b.add_theme_font_size_override("font_size", 24)
+		b.pressed.connect(_hire.bind(id))
+		_overlay_box.add_child(b)
+	var skip := _button("Work alone", Color(0.3, 0.3, 0.35))
+	skip.pressed.connect(_hire.bind(""))
+	_overlay_box.add_child(skip)
+
+
+func _hire(id: String) -> void:
+	_sound.play("chime" if id != "" else "click")
+	_run.hire(id)
 	_show_next_up()
 
 
@@ -495,10 +638,13 @@ func _show_next_up() -> void:
 	var heading := "HEADLINE SHOW" if next.is_boss else "NEXT SET"
 	_overlay_box.add_child(_neon(heading, 40, COLOR_NEON_BLUE))
 	_overlay_box.add_child(_centered(_label(next.title, 36)))
-	_overlay_box.add_child(_centered(_label("%d laughs in %d minutes    Deck: %d cards" % [next.laughs_needed, next.minutes, _run.deck.size()], 24)))
+	_overlay_box.add_child(_centered(_label("%s laughs in %d seconds    Deck: %d cards" % [_num(next.laughs_needed), int(next.seconds), _run.deck.size()], 24)))
 	var tastes := _taste_text(next)
 	if tastes != "":
 		_overlay_box.add_child(_centered(_label(tastes, 24, Color(0.85, 1, 0.85))))
+	if not _run.crew.is_empty():
+		var names := _run.crew.map(func(id): return Crew.info(id).title)
+		_overlay_box.add_child(_centered(_label("Crew: " + ", ".join(names), 22, Color(0.8, 0.75, 1))))
 	var go := _button("Take the stage", COLOR_PUNCHLINE)
 	go.pressed.connect(_start_set)
 	go.pressed.connect(_sound.play.bind("click"))
@@ -509,8 +655,8 @@ func _show_lost() -> void:
 	_open_overlay()
 	var why := "YOU GOT THE LIGHT" if _battle.loss == Battle.Loss.LIGHT else "YOU LOST THE ROOM"
 	_overlay_box.add_child(_neon(why, 40, COLOR_HOT))
-	_overlay_box.add_child(_centered(_label("%s.  Set %d of %d.  Laughs %d / %d" % [
-		_battle.audience.title, _run.set_index + 1, _run.lineup.size(), _battle.laughs, _battle.laughs_needed], 24)))
+	_overlay_box.add_child(_centered(_label("%s.  Set %d of %d.  Laughs %s / %s" % [
+		_battle.audience.title, _run.set_index + 1, _run.lineup.size(), _num(_battle.laughs), _num(_battle.laughs_needed)], 24)))
 	var again := _button("Try again", COLOR_PUNCHLINE)
 	again.pressed.connect(_new_run)
 	_overlay_box.add_child(again)
@@ -527,71 +673,103 @@ func _show_run_won() -> void:
 
 # ---------------------------------------------------------------- drawing
 
-func _refresh() -> void:
+## Things that change every frame: the clock, the Room line, mic, the pot.
+func _update_live() -> void:
 	var b := _battle
-	_set_label.text = "Set %d of %d" % [_run.set_index + 1, _run.lineup.size()]
-	_deck_label.text = "Draw %d   Discard %d" % [b.draw_pile.size(), b.discard_pile.size()]
-	_audience_label.text = b.audience.title
-	_taste_label.text = _taste_text(b.audience)
-	var heat := clampf(float(b.crowd_energy) / Balance.HOT_ENERGY, 0.0, 1.0)
+	var t := ceili(b.time_left)
+	_clock_label.text = "%d:%02d" % [t / 60, t % 60]
+	var urgent := b.time_left <= 10.0 and b.result == Battle.Result.ONGOING
+	_clock_label.add_theme_color_override("font_color",
+		COLOR_HOT if urgent and fmod(b.time_left, 1.0) > 0.5 else (COLOR_HOT.lightened(0.3) if urgent else Color.WHITE))
+	_laugh_label.text = "LAUGHS  %s / %s" % [_num(int(_shown_laughs)), _num(b.laughs_needed)]
+	_laugh_bar.max_value = b.laughs_needed
+	_laugh_bar.value = minf(_shown_laughs, b.laughs_needed)
+
+	var heat := clampf(b.crowd_energy / Balance.HOT_ENERGY, 0.0, 1.0)
 	_stage_view.heat = heat
 	_stage_mat.set_shader_parameter("heat", heat)
-	var intent := b.current_intent()
-	_intent_label.text = "Crowd's next move: %s" % (intent.text if intent else "nothing")
-	var peek := b.next_intent()
-	_peek_label.text = "After that: %s" % peek.text if b.next_intent_revealed and peek else ""
-
-	_laugh_label.text = "LAUGHS  %d / %d" % [b.laughs, b.laughs_needed]
-	var left := b.minutes_left()
-	_clock_label.text = "LAST MINUTE!" if left <= 1 else "%d MIN LEFT" % left
-	_clock_label.add_theme_color_override("font_color", COLOR_HOT if left <= 1 else Color.WHITE)
-	if b.bit_laughs > 0 or b.chain_links > 0:
-		_bit_label.text = "BIT  %d × %.1f = %d" % [b.bit_laughs, b.bit_multiplier(), b.bit_score()]
-	else:
-		_bit_label.text = "HEAT ×%.1f  play cards to build a bit" % b.heat_multiplier()
-	_laugh_bar.max_value = b.laughs_needed
-	create_tween().tween_property(_laugh_bar, "value", float(mini(b.laughs, b.laughs_needed)), 0.35) \
-		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-
+	var line: Array[float] = b.heat_history.duplicate()
+	line.append(b.crowd_energy)
+	_room_chart.set_data(line, b.heat_multiplier())
 	var hot := b.crowd_energy >= Balance.HOT_ENERGY
 	var cold := b.crowd_energy <= Balance.COLD_ENERGY
 	var mood := "  ON FIRE!" if hot else ("  DYING..." if cold else "")
-	_energy_label.text = "HEAT  %d / %d  (×%.1f)%s" % [b.crowd_energy, Balance.MAX_CROWD_ENERGY, b.heat_multiplier(), mood]
+	_energy_label.text = "THE ROOM  ×%.1f%s" % [b.heat_multiplier(), mood]
 	_energy_label.add_theme_color_override("font_color",
 		COLOR_HOT if hot else (COLOR_COLD if cold else Color.WHITE))
-	_energy_bar.value = b.crowd_energy
-	var fill := _energy_bar.get_theme_stylebox("fill") as StyleBoxFlat
-	fill.bg_color = COLOR_HOT if hot else (COLOR_COLD if cold else COLOR_ENERGY.lightened(0.2))
 
-	_mic_label.text = "MIC TIME  %d / %d" % [b.mic, Balance.MIC_PER_TURN]
-	_end_turn_button.disabled = b.result != Battle.Result.ONGOING
+	var intent := b.current_intent()
+	if intent:
+		_intent_label.text = "NEXT IN %ds: %s" % [ceili(b.event_in()), intent.text]
+		var bad := intent.kind == IntentData.Kind.DRAIN
+		_intent_label.add_theme_color_override("font_color",
+			COLOR_HOT if bad and b.event_in() < 2.0 and b.bit_open() else Color(1, 0.75, 0.75))
+	var peek := b.next_intent()
+	_peek_label.text = "Then: %s" % peek.text if b.sees_two_moves() and peek else ""
+	_peek_label.visible = _peek_label.text != ""
 
-	# New minute, or the hand was discarded (the set ended on a landed bit).
-	if _slots_turn != b.turn or _slots.size() - _slots.count(null) > b.hand.size():
-		_slots_turn = b.turn
-		_slots.assign(b.hand)
-	# Cards drawn mid-turn join at the end, keeping slot order == hand order.
-	var shown := _slots.size() - _slots.count(null)
-	for i in range(shown, b.hand.size()):
-		_slots.append(b.hand[i])
+	_mic_label.text = "MIC %.1f" % b.mic
+	_mic_bar.value = b.mic
+	if b.bit_open():
+		_bit_label.text = "BIT  %s × %.1f = %s" % [_num(b.bit_laughs), b.bit_multiplier(), _num(b.bit_score())]
+		_end_turn_button.text = "LAND IT  %s" % _num(b.bit_score())
+	else:
+		_bit_label.text = "play cards to build a bit"
+		_end_turn_button.text = "LAND IT"
+	_end_turn_button.disabled = b.result != Battle.Result.ONGOING or not b.bit_open()
+
+
+## Redraws the hand and the labels that only change on a tap or a crowd move.
+func _refresh() -> void:
+	var b := _battle
+	_set_label.text = "Set %d of %d" % [_run.set_index + 1, _run.lineup.size()]
+	_deck_label.text = "Deck %d" % (b.draw_pile.size() + b.discard_pile.size() + b.hand.size())
+	_audience_label.text = b.audience.title
+	_taste_label.text = _taste_text(b.audience)
+	_update_live()
 
 	for child in _hand_grid.get_children():
 		child.queue_free()
-	for slot in _slots.size():
-		if _slots[slot] == null:
-			var gap := Control.new()
-			gap.custom_minimum_size = Vector2(0, CARD_HEIGHT)
-			gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			_hand_grid.add_child(gap)
-			continue
-		var i := _hand_index(slot)
+	for i in b.hand.size():
 		var card := b.hand[i]
 		var widget := _card_widget(card, b.laughs_for(card), b.can_play(i))
-		widget.pressed.connect(_on_card_pressed.bind(slot))
+		widget.pressed.connect(_on_card_pressed.bind(i))
 		_hand_grid.add_child(widget)
-		if _hand_turn_shown != b.turn:
-			_pop_in(widget, slot * 0.05)
-	_hand_turn_shown = b.turn
+		if i >= _hand_shown.size() or _hand_shown[i] != card:
+			_pop_in(widget, 0.0)
+	_hand_shown = b.hand.duplicate()
+	_mic_whole = int(b.mic)
+
+
+## 12,345 / 1.2M style numbers.
+func _num(n: int) -> String:
+	if n >= 1000000:
+		return "%.1fM" % (n / 1000000.0)
+	var s := str(n)
+	var out := ""
+	while s.length() > 3:
+		out = "," + s.substr(s.length() - 3) + out
+		s = s.substr(0, s.length() - 3)
+	return s + out
+
+
+## A number popping up somewhere over the crowd, for the landing cascade.
+func _float_burst(text: String, color: Color, font_size: int) -> void:
+	var label := _label(text, font_size, color)
+	label.add_theme_font_override("font", _pixel_font)
+	label.add_theme_constant_override("outline_size", 10)
+	label.add_theme_color_override("font_outline_color", COLOR_OUTLINE)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_fx_layer.add_child(label)
+	var area := _fx_layer.size
+	label.position = Vector2(randf_range(0.1, 0.75) * area.x, randf_range(0.35, 0.75) * area.y)
+	label.pivot_offset = label.size / 2
+	label.scale = Vector2(0.4, 0.4)
+	var t := create_tween().set_parallel()
+	t.tween_property(label, "scale", Vector2.ONE, 0.15).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	t.tween_property(label, "position:y", label.position.y - 90, 0.8)
+	t.tween_property(label, "modulate:a", 0.0, 0.35).set_delay(0.45)
+	t.chain().tween_callback(label.queue_free)
 
 
 ## "Loves: Dating   Hates: Work" for an audience, or "".
@@ -602,10 +780,6 @@ func _taste_text(a: AudienceData) -> String:
 	if not a.hates.is_empty():
 		parts.append("Hates: " + ", ".join(a.hates.map(func(t): return CardData.TOPIC_NAMES[t])))
 	return "   ".join(parts)
-
-
-func _hand_index(slot: int) -> int:
-	return slot - _slots.slice(0, slot).count(null)
 
 
 func _card_widget(card: CardData, preview: int, playable: bool) -> Button:
@@ -690,6 +864,8 @@ func _card_widget(card: CardData, preview: int, playable: bool) -> Button:
 				tag_color = Color(0.7, 0.1, 0.1)
 		var beat_label := _label(tag_text, 15, tag_color)
 		beat_label.add_theme_font_override("font", _heading_font)
+		beat_label.clip_text = true
+		beat_label.custom_minimum_size.x = 40
 		body.add_child(beat_label)
 	var rules := _label(card.rules, 19, COLOR_INK)
 	rules.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -703,7 +879,7 @@ func _card_widget(card: CardData, preview: int, playable: bool) -> Button:
 		for state in ["normal", "hover", "pressed"]:
 			var frame: StyleBoxFlat = button.get_theme_stylebox(state)
 			frame.border_color = COLOR_NEON
-		var badge_chain := _label("CHAIN +%.1fx" % Balance.CHAIN_MULT, 14, COLOR_NEON)
+		var badge_chain := _label("CHAIN ×%.1f" % Balance.CHAIN_X, 14, COLOR_NEON)
 		badge_chain.add_theme_font_override("font", _pixel_font)
 		badge_chain.add_theme_color_override("font_outline_color", COLOR_OUTLINE)
 		badge_chain.add_theme_constant_override("outline_size", 6)
@@ -753,9 +929,9 @@ func _say(text: String, color: Color) -> void:
 
 
 func _play_reaction(card: CardData, gained: int, energy: int) -> void:
-	if gained >= 12:
+	if gained >= 150:
 		_sound.play_later("laugh_huge", 0.25 if card.is_punchline else 0.0)
-	elif gained >= 7:
+	elif gained >= 80:
 		_sound.play_later("laugh_big", 0.25 if card.is_punchline else 0.0)
 	elif gained > 0:
 		_sound.play("laugh_small")
@@ -764,7 +940,7 @@ func _play_reaction(card: CardData, gained: int, energy: int) -> void:
 	if card.is_punchline and gained > 0:
 		_sound.play("rimshot", -3.0)
 	if gained > 0:
-		_stage_view.react(gained / 14.0)
+		_stage_view.react(gained / 140.0)
 
 
 func _on_mute() -> void:

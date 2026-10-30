@@ -1,39 +1,52 @@
-[gd_resource type="Resource" script_class="AudienceData" load_steps=7 format=3]
+[gd_resource type="Resource" script_class="AudienceData" load_steps=9 format=3]
 
-[ext_resource type="Script" path="res://engine/intent_data.gd" id="1_ll3vc"]
-[ext_resource type="Script" path="res://engine/audience_data.gd" id="2_e750h"]
+[ext_resource type="Script" path="res://engine/intent_data.gd" id="1_intent"]
+[ext_resource type="Script" path="res://engine/audience_data.gd" id="2_audience"]
 
-[sub_resource type="Resource" id="Resource_0v0pr"]
-script = ExtResource("1_ll3vc")
+[sub_resource type="Resource" id="Intent_0"]
+script = ExtResource("1_intent")
 kind = 3
-amount = 8
-text = "Taking notes. +8 laughs needed"
+amount = 10
+text = "Taking notes. Target +10%"
 
-[sub_resource type="Resource" id="Resource_lxv8d"]
-script = ExtResource("1_ll3vc")
+[sub_resource type="Resource" id="Intent_1"]
+script = ExtResource("1_intent")
 kind = 1
 amount = 5
-text = "Scathing heckle: -5 Heat"
+text = "Scathing heckle! -5 Heat"
 
-[sub_resource type="Resource" id="Resource_7v5j2"]
-script = ExtResource("1_ll3vc")
+[sub_resource type="Resource" id="Intent_2"]
+script = ExtResource("1_intent")
+kind = 4
+amount = 4
+text = "A rare smirk. +4 Heat"
+
+[sub_resource type="Resource" id="Intent_3"]
+script = ExtResource("1_intent")
 kind = 2
-amount = 1
-text = "Loud sigh. -1 mic time next minute"
+amount = 2
+text = "Loud sigh. -2 mic"
 
-[sub_resource type="Resource" id="Resource_p2h17"]
-script = ExtResource("1_ll3vc")
+[sub_resource type="Resource" id="Intent_4"]
+script = ExtResource("1_intent")
 kind = 1
 amount = 3
 text = "Walks out to take a call. -3 Heat"
 
+[sub_resource type="Resource" id="Intent_5"]
+script = ExtResource("1_intent")
+kind = 4
+amount = 6
+text = "The Critic actually laughs! +6 Heat"
+
 [resource]
-script = ExtResource("2_e750h")
+script = ExtResource("2_audience")
 id = "the_critic"
 title = "The Critic"
-laughs_needed = 220
+laughs_needed = 60000
 is_boss = true
-minutes = 6
+seconds = 90.0
+event_every = 6.0
 loves = Array[String](["animals"])
 hates = Array[String](["food", "tech"])
-intents = Array[ExtResource("1_ll3vc")]([SubResource("Resource_0v0pr"), SubResource("Resource_lxv8d"), SubResource("Resource_7v5j2"), SubResource("Resource_p2h17")])
+intents = Array[ExtResource("1_intent")]([SubResource("Intent_0"), SubResource("Intent_1"), SubResource("Intent_2"), SubResource("Intent_3"), SubResource("Intent_4"), SubResource("Intent_5")])

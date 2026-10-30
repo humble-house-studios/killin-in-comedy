@@ -1,14 +1,17 @@
 extends GutTest
-## Rules of a single set. Each test builds a battle, sets up the exact hand it
-## needs, and checks the numbers.
+## Rules of a live set. Each test builds a battle with no random wobble, sets
+## up the exact hand it needs, and checks the numbers.
+
+const S := Balance.LAUGH_SCALE
 
 
-func _audience(intents: Array[IntentData] = [], needed := 100) -> AudienceData:
+func _audience(intents: Array[IntentData] = [], needed := 1000000, seconds := 999.0) -> AudienceData:
 	var a := AudienceData.new()
 	a.title = "Test Crowd"
 	a.laughs_needed = needed
 	a.intents = intents
-	a.minutes = 99
+	a.seconds = seconds
+	a.event_every = 5.0
 	return a
 
 
@@ -19,112 +22,97 @@ func _intent(kind: IntentData.Kind, amount: int) -> IntentData:
 	return i
 
 
-## A battle whose hand is exactly the given card ids, with a filler draw pile.
-func _battle_with_hand(ids: Array, audience: AudienceData = null) -> Battle:
-	var b := Battle.new(audience if audience else _audience(), CardLibrary.starter_deck(), 1)
+## A battle whose hand is exactly the given card ids, with full mic.
+func _battle_with_hand(ids: Array, audience: AudienceData = null, crew: Array = []) -> Battle:
+	var b := Battle.new(audience if audience else _audience(), CardLibrary.starter_deck(), 1, crew)
+	b.wobble_scale = 0.0
 	b.draw_pile.append_array(b.hand)
 	b.hand.clear()
+	b.hand_size = 0  # no auto-refill, so the hand stays exactly as given
 	for id in ids:
 		b.hand.append(CardLibrary.card(id))
+	b.mic = Balance.MIC_MAX
 	return b
 
 
 func test_battle_starts_with_full_hand_and_mic() -> void:
 	var b := Battle.new(_audience(), CardLibrary.starter_deck(), 1)
 	assert_eq(b.hand.size(), Balance.HAND_SIZE)
-	assert_eq(b.draw_pile.size(), 10 - Balance.HAND_SIZE)
-	assert_eq(b.mic, Balance.MIC_PER_TURN)
-	assert_eq(b.crowd_energy, Balance.START_CROWD_ENERGY)
-	assert_eq(b.turn, 1)
+	assert_eq(b.mic, Balance.MIC_START)
+	assert_eq(b.crowd_energy, float(Balance.START_CROWD_ENERGY))
 	assert_eq(b.result, Battle.Result.ONGOING)
 
 
-func test_punchline_gives_six_laughs_and_costs_mic() -> void:
+func test_playing_a_card_draws_the_next_one() -> void:
+	var b := Battle.new(_audience(), CardLibrary.starter_deck(), 1)
+	b.mic = Balance.MIC_MAX
+	var second := b.hand[1]
+	b.play_card(0)
+	assert_eq(b.hand.size(), Balance.HAND_SIZE)
+	assert_eq(b.hand[1], second, "the other cards keep their places")
+
+
+func test_mic_recharges_over_time() -> void:
+	var b := _battle_with_hand(["punchline"])
+	b.mic = 0.0
+	assert_false(b.can_play(0))
+	b.tick(1.0 / Balance.MIC_PER_SECOND + 0.01)
+	assert_true(b.can_play(0))
+	b.tick(100.0)
+
+
+func test_punchline_adds_scaled_laughs_to_the_bit() -> void:
 	var b := _battle_with_hand(["punchline"])
 	assert_true(b.play_card(0))
-	assert_eq(b.bit_laughs, 6)
-	assert_eq(b.mic, 2)
-	assert_eq(b.discard_pile.size(), 1)
+	assert_eq(b.bit_laughs, 6 * S)
+	assert_eq(b.laughs, 0, "laughs only score when the bit lands")
 
 
-func test_cannot_play_without_mic() -> void:
-	var b := _battle_with_hand(["punchline", "punchline", "punchline", "punchline"])
-	for i in 3:
-		assert_true(b.play_card(0))
-	assert_false(b.can_play(0))
-	assert_false(b.play_card(0))
-	assert_eq(b.bit_laughs, 18)
+func test_landing_scores_pot_times_heat() -> void:
+	var b := _battle_with_hand(["punchline"])
+	b.crowd_energy = 10.0
+	b.play_card(0)
+	assert_almost_eq(b.bit_multiplier(), 2.0, 0.001)
+	assert_eq(b.land_bit(), 120)
+	assert_eq(b.laughs, 120)
+	assert_false(b.bit_open())
 
 
-func test_setup_doubles_only_the_next_punchline() -> void:
+func test_landing_nothing_scores_nothing() -> void:
+	var b := _battle_with_hand([])
+	assert_eq(b.land_bit(), 0)
+
+
+func test_setup_doubles_the_next_punchline() -> void:
 	var b := _battle_with_hand(["setup", "punchline", "punchline"])
 	b.play_card(0)
 	b.play_card(0)
-	assert_eq(b.bit_laughs, 12)
+	assert_eq(b.bit_laughs, 12 * S)
 	b.play_card(0)
-	assert_eq(b.bit_laughs, 18)
+	assert_eq(b.bit_laughs, 18 * S)
 
 
-func test_yes_and_bonus_needs_an_earlier_card() -> void:
-	var b := _battle_with_hand(["yes_and", "yes_and"])
-	b.play_card(0)
-	assert_eq(b.bit_laughs, 4)
-	b.play_card(0)
-	assert_eq(b.bit_laughs, 4 + 7)
-
-
-func test_callback_counts_cards_played_this_set() -> void:
-	var b := _battle_with_hand(["punchline", "callback"])
-	b.play_card(0)
-	b.play_card(0)
-	assert_eq(b.bit_laughs, 6 + 2)
-
-
-func test_crowd_work_raises_energy_and_reveals_next_intent() -> void:
-	var b := _battle_with_hand(["crowd_work"])
-	b.play_card(0)
-	assert_eq(b.crowd_energy, Balance.START_CROWD_ENERGY + 3)
-	assert_true(b.next_intent_revealed)
-
-
-func test_pause_for_effect_is_free() -> void:
-	var b := _battle_with_hand(["pause_for_effect"])
-	b.play_card(0)
-	assert_eq(b.mic, Balance.MIC_PER_TURN)
-	assert_eq(b.crowd_energy, Balance.START_CROWD_ENERGY + 2)
-
-
-func test_heat_is_the_bit_multiplier() -> void:
-	var b := _battle_with_hand(["punchline"])
-	b.crowd_energy = 10
-	assert_almost_eq(b.heat_multiplier(), 2.0, 0.001)
-	b.play_card(0)
-	assert_eq(b.laughs, 0, "laughs only score when the bit lands")
-	assert_eq(b.bit_score(), 12)
-	b.land_bit()
-	assert_eq(b.laughs, 12)
-
-
-func test_chain_setup_punch_tag_adds_multiplier() -> void:
+func test_chains_multiply_and_tags_refire_the_punchline() -> void:
 	var b := _battle_with_hand(["setup", "punchline", "tag"])
-	b.crowd_energy = 10
+	b.crowd_energy = 10.0
 	b.play_card(0)
-	assert_eq(b.chain_links, 0)
 	assert_true(b.chains(b.hand[0]))
 	b.play_card(0)
 	assert_true(b.last_play_chained)
 	b.play_card(0)
 	assert_eq(b.chain_links, 2)
-	assert_almost_eq(b.bit_multiplier(), 2.0 + 2 * Balance.CHAIN_MULT, 0.001)
-	assert_eq(b.bit_laughs, 12 + 7)
-	assert_eq(b.bit_score(), int(floor(19 * 3.0)))
+	# Punchline 120 (doubled), tag 20 + 50 link, plus the punchline again: 120.
+	assert_eq(b.bit_laughs, 120 + 70 + 120)
+	assert_almost_eq(b.bit_multiplier(), 2.0 * Balance.CHAIN_X * Balance.CHAIN_X, 0.001)
+	var retriggers := b.bit_jokes.filter(func(j): return j.retrigger)
+	assert_eq(retriggers.size(), 1)
 
 
 func test_wrong_order_does_not_chain() -> void:
 	var b := _battle_with_hand(["punchline", "setup", "tag"])
 	b.play_card(0)
 	b.play_card(0)
-	assert_false(b.chains(b.hand[0]), "a tag after a setup is out of order")
+	assert_false(b.chains(b.hand[0]))
 	b.play_card(0)
 	assert_eq(b.chain_links, 0)
 
@@ -136,6 +124,22 @@ func test_other_cards_do_not_break_a_chain() -> void:
 	assert_true(b.chains(b.hand[0]))
 
 
+func test_rule_of_three_fires_three_times() -> void:
+	var b := _battle_with_hand(["rule_of_three"])
+	b.play_card(0)
+	assert_eq(b.bit_jokes.size(), 3)
+	assert_eq(b.bit_laughs, 3 * 3 * S)
+
+
+func test_topper_bonus_needs_an_earlier_card() -> void:
+	var b := _battle_with_hand(["yes_and", "yes_and"])
+	b.play_card(0)
+	assert_eq(b.bit_laughs, 4 * S)
+	b.play_card(0)
+	assert_eq(b.bit_laughs, 4 * S + 7 * S, "chains as a tag after a tag, but no punchline to re-fire")
+	assert_eq(b.chain_links, 1)
+
+
 func test_loved_and_hated_topics() -> void:
 	var a := _audience()
 	a.loves = ["dating"] as Array[String]
@@ -144,14 +148,12 @@ func test_loved_and_hated_topics() -> void:
 	b.hand.append(CardLibrary.card("punchline").with_topic("dating"))
 	b.hand.append(CardLibrary.card("punchline").with_topic("work"))
 	b.hand.append(CardLibrary.card("punchline").with_topic("food"))
-	assert_eq(b.laughs_for(b.hand[0]), 9)
-	assert_eq(b.laughs_for(b.hand[1]), 3)
-	assert_eq(b.laughs_for(b.hand[2]), 6)
+	assert_eq(b.laughs_for(b.hand[0]), 90)
+	assert_eq(b.laughs_for(b.hand[1]), 30)
+	assert_eq(b.laughs_for(b.hand[2]), 60)
 	var heat := b.crowd_energy
 	b.play_card(0)
 	assert_eq(b.crowd_energy, heat + Balance.LOVED_HEAT)
-	b.play_card(0)
-	assert_eq(b.crowd_energy, heat + Balance.LOVED_HEAT + Balance.HATED_HEAT)
 
 
 func test_only_joke_cards_get_topics() -> void:
@@ -159,74 +161,58 @@ func test_only_joke_cards_get_topics() -> void:
 	assert_eq(CardLibrary.card("setup").with_topic("food").topic, "food")
 
 
-func test_running_out_of_minutes_is_the_light() -> void:
-	var a := _audience([], 1000)
-	a.minutes = 2
-	var b := _battle_with_hand(["punchline"], a)
+func test_heat_cools_off_over_time() -> void:
+	var b := _battle_with_hand([])
+	b.tick(1.0)
+	assert_almost_eq(b.crowd_energy, Balance.START_CROWD_ENERGY - Balance.HEAT_DRIFT, 0.001)
+
+
+func test_dead_air_drains_faster() -> void:
+	var b := _battle_with_hand([])
+	b.tick(Balance.DEAD_AIR_AFTER)
+	var before := b.crowd_energy
+	b.tick(1.0)
+	assert_almost_eq(before - b.crowd_energy, Balance.HEAT_DRIFT + Balance.DEAD_AIR_DRAIN, 0.01)
+
+
+func test_crowd_moves_fire_on_their_clock() -> void:
+	var b := _battle_with_hand([], _audience([_intent(IntentData.Kind.SPIKE, 5)]))
+	b.tick(4.9)
+	var before := b.crowd_energy
+	b.tick(0.2)
+	assert_almost_eq(b.crowd_energy, before + 5 - Balance.HEAT_DRIFT * 0.2, 0.01)
+	assert_has(b.pop_events(), "event")
+
+
+func test_heckle_interrupts_an_open_bit() -> void:
+	var b := _battle_with_hand(["setup", "punchline"], _audience([_intent(IntentData.Kind.DRAIN, 2)]))
 	b.play_card(0)
-	b.land_bit()
-	assert_eq(b.result, Battle.Result.ONGOING)
-	assert_eq(b.minutes_left(), 1)
 	b.play_card(0)
-	b.land_bit()
-	assert_eq(b.result, Battle.Result.LOST)
-	assert_eq(b.loss, Battle.Loss.LIGHT)
+	var pot := b.bit_laughs
+	b.tick(5.1)
+	assert_eq(b.bit_laughs, int(pot * Balance.INTERRUPT_KEEP))
+	assert_eq(b.chain_links, 0)
+	assert_has(b.pop_events(), "interrupt")
 
 
-func test_end_turn_discards_hand_drifts_and_redraws() -> void:
-	var b := _battle_with_hand(["punchline", "punchline"])
+func test_lawyer_softens_heckles() -> void:
+	var b := _battle_with_hand(["punchline"], _audience([_intent(IntentData.Kind.DRAIN, 2)]), ["lawyer"])
 	b.play_card(0)
-	b.end_turn()
-	assert_eq(b.turn, 2)
-	assert_eq(b.mic, Balance.MIC_PER_TURN)
-	assert_eq(b.hand.size(), Balance.HAND_SIZE)
-	assert_eq(b.crowd_energy, Balance.START_CROWD_ENERGY - Balance.ENERGY_DRIFT)
+	b.tick(5.1)
+	assert_eq(b.bit_laughs, int(60 * 0.75))
 
 
-func test_bombing_costs_extra_energy() -> void:
-	var b := _battle_with_hand(["setup"])
-	b.end_turn()
-	assert_eq(b.crowd_energy,
-		Balance.START_CROWD_ENERGY - Balance.ENERGY_DRIFT - Balance.BOMB_PENALTY)
+func test_restless_drains_mic_and_tough_crowd_raises_target() -> void:
+	var b := _battle_with_hand([], _audience([_intent(IntentData.Kind.RESTLESS, 2), _intent(IntentData.Kind.TOUGH_CROWD, 10)], 1000))
+	b.mic = 0.0
+	b.tick(5.0)
+	assert_almost_eq(b.mic, 5.0 * Balance.MIC_PER_SECOND - 2.0, 0.01)
+	b.tick(5.0)
+	assert_eq(b.laughs_needed, 1100)
 
 
-func test_drain_intent_lowers_energy() -> void:
-	var b := _battle_with_hand(["punchline"], _audience([_intent(IntentData.Kind.DRAIN, 4)]))
-	b.play_card(0)
-	b.end_turn()
-	assert_eq(b.crowd_energy, Balance.START_CROWD_ENERGY - Balance.ENERGY_DRIFT - 4)
-
-
-func test_restless_intent_cuts_next_turns_mic() -> void:
-	var b := _battle_with_hand(["punchline"], _audience([_intent(IntentData.Kind.RESTLESS, 1)]))
-	b.play_card(0)
-	b.end_turn()
-	assert_eq(b.mic, Balance.MIC_PER_TURN - 1)
-	b.end_turn()
-	assert_eq(b.mic, Balance.MIC_PER_TURN - 1, "restless repeats because it's the only intent")
-
-
-func test_tough_crowd_raises_laughs_needed() -> void:
-	var b := _battle_with_hand(["punchline"], _audience([_intent(IntentData.Kind.TOUGH_CROWD, 5)], 40))
-	b.play_card(0)
-	b.end_turn()
-	assert_eq(b.laughs_needed, 45)
-
-
-func test_intents_cycle_in_order() -> void:
-	var drain := _intent(IntentData.Kind.DRAIN, 1)
-	var calm := _intent(IntentData.Kind.CALM, 0)
-	var b := _battle_with_hand(["punchline"], _audience([drain, calm]))
-	assert_eq(b.current_intent(), drain)
-	assert_eq(b.next_intent(), calm)
-	b.end_turn()
-	assert_eq(b.current_intent(), calm)
-	b.end_turn()
-	assert_eq(b.current_intent(), drain)
-
-
-func test_filling_the_laugh_meter_wins() -> void:
-	var b := _battle_with_hand(["punchline"], _audience([], 6))
+func test_filling_the_target_wins_when_the_bit_lands() -> void:
+	var b := _battle_with_hand(["punchline"], _audience([], 50))
 	b.play_card(0)
 	assert_eq(b.result, Battle.Result.ONGOING)
 	b.land_bit()
@@ -234,37 +220,47 @@ func test_filling_the_laugh_meter_wins() -> void:
 	assert_false(b.can_play(0))
 
 
-func test_zero_energy_loses_the_room() -> void:
-	var b := _battle_with_hand(["setup"], _audience([_intent(IntentData.Kind.DRAIN, 20)]))
-	b.end_turn()
-	assert_eq(b.crowd_energy, 0)
+func test_the_light_ends_the_set() -> void:
+	var b := _battle_with_hand([], _audience([], 1000000, 10.0))
+	b.crowd_energy = 20.0
+	b.tick(10.1)
+	assert_eq(b.result, Battle.Result.LOST)
+	assert_eq(b.loss, Battle.Loss.LIGHT)
+
+
+func test_last_bit_lands_as_the_light_goes_on() -> void:
+	var b := _battle_with_hand(["punchline"], _audience([], 50, 2.0))
+	b.play_card(0)
+	b.tick(2.1)
+	assert_eq(b.result, Battle.Result.WON)
+
+
+func test_zero_heat_loses_the_room() -> void:
+	var b := _battle_with_hand([], _audience([_intent(IntentData.Kind.DRAIN, 20)]))
+	b.tick(5.1)
 	assert_eq(b.result, Battle.Result.LOST)
 	assert_eq(b.loss, Battle.Loss.ROOM)
 
 
 func test_spit_take_can_lose_the_room() -> void:
 	var b := _battle_with_hand(["spit_take"])
-	b.crowd_energy = 2
+	b.crowd_energy = 2.0
 	b.play_card(0)
 	assert_eq(b.result, Battle.Result.LOST)
 
 
-func test_draw_pile_reshuffles_discard_when_empty() -> void:
-	var b := Battle.new(_audience(), CardLibrary.starter_deck(), 1)
-	b.end_turn()
-	b.end_turn()
-	assert_eq(b.hand.size(), Balance.HAND_SIZE)
-	assert_eq(b.hand.size() + b.draw_pile.size() + b.discard_pile.size(), 10)
+func test_crew_perks_and_cut() -> void:
+	var b := Battle.new(_audience([], 1000000, 60.0), CardLibrary.starter_deck(), 1, ["writer", "booker", "hype"])
+	assert_eq(b.hand.size(), Balance.HAND_SIZE + 1)
+	assert_eq(b.time_left, 75.0)
+	assert_eq(b.crowd_energy, Balance.START_CROWD_ENERGY + 5.0)
+	assert_almost_eq(b.keep_share(), 1.0 - 0.35, 0.001)
 
 
-func test_draw_cards_and_second_wind() -> void:
-	var b := _battle_with_hand(["scene_partner", "second_wind"])
-	var pile_before := b.draw_pile.size()
-	b.play_card(0)
-	assert_eq(b.hand.size(), 3)
-	assert_eq(b.draw_pile.size(), pile_before - 2)
-	b.play_card(b.hand.find(CardLibrary.card("second_wind")))
-	assert_eq(b.mic, Balance.MIC_PER_TURN + 1)
+func test_room_chart_records_heat() -> void:
+	var b := _battle_with_hand([])
+	b.tick(1.0)
+	assert_eq(b.heat_history.size(), 1 + int(1.0 / Balance.CHART_STEP))
 
 
 func test_same_seed_same_shuffle() -> void:
@@ -274,40 +270,23 @@ func test_same_seed_same_shuffle() -> void:
 	assert_eq(a.draw_pile, b.draw_pile)
 
 
-# ---- links: a bonus for playing a card right after the right kind of card
-
 func test_tag_after_a_punchline_is_linked() -> void:
 	var b := _battle_with_hand(["punchline", "tag"])
 	b.play_card(0)
 	assert_true(b.is_linked(b.hand[0]))
 	b.play_card(0)
-	assert_eq(b.bit_laughs, 6 + 2 + 5)
 	assert_true(b.last_play_linked)
 
 
-func test_tag_without_a_punchline_before_it_is_not_linked() -> void:
-	var b := _battle_with_hand(["yes_and", "tag"])
-	b.play_card(0)
-	assert_false(b.is_linked(b.hand[0]))
-	b.play_card(0)
-	assert_false(b.last_play_linked)
-
-
-func test_link_only_counts_the_card_just_before() -> void:
-	var b := _battle_with_hand(["punchline", "yes_and", "tag"])
-	b.play_card(0)
-	b.play_card(0)
-	assert_false(b.is_linked(b.hand[0]))
-
-
-func test_link_resets_each_turn() -> void:
+func test_link_resets_when_the_bit_lands() -> void:
 	var b := _battle_with_hand(["punchline", "tag"])
 	b.play_card(0)
-	b.end_turn()
+	b.land_bit()
 	assert_null(b.last_card)
+	assert_false(b.is_linked(b.hand[0]))
 
 
-func test_energy_link_gives_energy_and_draw_link_draws() -> void:
+func test_energy_link_gives_heat_and_draw_link_draws() -> void:
 	var b := _battle_with_hand(["punchline", "crowd_work"])
 	b.play_card(0)
 	var before := b.crowd_energy
@@ -317,11 +296,3 @@ func test_energy_link_gives_energy_and_draw_link_draws() -> void:
 	c.play_card(0)
 	c.play_card(0)
 	assert_eq(c.hand.size(), 2, "riff drew 1 plus 1 from the link")
-
-
-func test_spit_take_after_crowd_work_costs_no_energy() -> void:
-	var b := _battle_with_hand(["crowd_work", "spit_take"])
-	b.play_card(0)
-	var before := b.crowd_energy
-	b.play_card(0)
-	assert_eq(b.crowd_energy, before)

@@ -52,6 +52,7 @@ func test_runs_are_winnable_but_not_free() -> void:
 			if Autopilot.play_set(run.start_set()) != Battle.Result.WON:
 				break
 			run.finish_set(Autopilot.pick_reward(run.reward_choices()))
+			run.hire(Autopilot.pick_crew(run.crew_choices()))
 		if run.set_index >= run.lineup.size() - 1:
 			reached_boss += 1
 		if run.is_complete():
@@ -59,3 +60,16 @@ func test_runs_are_winnable_but_not_free() -> void:
 	gut.p("reached boss %d/60, beat boss %d/60" % [reached_boss, boss_wins])
 	assert_gte(reached_boss, 40)
 	assert_between(boss_wins, 6, 54)
+
+
+func test_crew_hires_up_to_three() -> void:
+	var run := Run.new(5)
+	for i in 5:
+		var choices := run.crew_choices()
+		if choices.is_empty():
+			break
+		assert_lte(choices.size(), Balance.CREW_CHOICES)
+		run.hire(choices[0])
+	assert_eq(run.crew.size(), Balance.MAX_CREW)
+	assert_eq(run.crew_choices(), [])
+	assert_eq(run.start_set().crew, run.crew)

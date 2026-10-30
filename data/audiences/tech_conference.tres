@@ -1,33 +1,46 @@
-[gd_resource type="Resource" script_class="AudienceData" load_steps=6 format=3]
+[gd_resource type="Resource" script_class="AudienceData" load_steps=8 format=3]
 
-[ext_resource type="Script" path="res://engine/intent_data.gd" id="1_c81jf"]
-[ext_resource type="Script" path="res://engine/audience_data.gd" id="2_vpxoq"]
+[ext_resource type="Script" path="res://engine/intent_data.gd" id="1_intent"]
+[ext_resource type="Script" path="res://engine/audience_data.gd" id="2_audience"]
 
-[sub_resource type="Resource" id="Resource_aom1r"]
-script = ExtResource("1_c81jf")
+[sub_resource type="Resource" id="Intent_0"]
+script = ExtResource("1_intent")
 kind = 3
-amount = 5
-text = "Arms crossed. +5 laughs needed"
+amount = 10
+text = "Arms crossed. Target +10%"
 
-[sub_resource type="Resource" id="Resource_ehfuh"]
-script = ExtResource("1_c81jf")
+[sub_resource type="Resource" id="Intent_1"]
+script = ExtResource("1_intent")
 kind = 1
 amount = 3
 text = "Checking phones. -3 Heat"
 
-[sub_resource type="Resource" id="Resource_iurqm"]
-script = ExtResource("1_c81jf")
+[sub_resource type="Resource" id="Intent_2"]
+script = ExtResource("1_intent")
+kind = 4
+amount = 3
+text = "Someone gets the reference! +3 Heat"
+
+[sub_resource type="Resource" id="Intent_3"]
+script = ExtResource("1_intent")
 kind = 2
 amount = 1
-text = "Live-tweeting. -1 mic time next minute"
+text = "Live-tweeting. -1 mic"
+
+[sub_resource type="Resource" id="Intent_4"]
+script = ExtResource("1_intent")
+kind = 1
+amount = 4
+text = "Demo-day stress. -4 Heat"
 
 [resource]
-script = ExtResource("2_vpxoq")
+script = ExtResource("2_audience")
 id = "tech_conference"
 title = "Tech Conference"
-laughs_needed = 165
+laughs_needed = 32000
 is_boss = false
-minutes = 5
+seconds = 75.0
+event_every = 7.0
 loves = Array[String](["tech", "work"])
 hates = Array[String](["dating"])
-intents = Array[ExtResource("1_c81jf")]([SubResource("Resource_aom1r"), SubResource("Resource_ehfuh"), SubResource("Resource_iurqm")])
+intents = Array[ExtResource("1_intent")]([SubResource("Intent_0"), SubResource("Intent_1"), SubResource("Intent_2"), SubResource("Intent_3"), SubResource("Intent_4")])

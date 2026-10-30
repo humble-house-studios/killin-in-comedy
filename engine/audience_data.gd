@@ -6,8 +6,10 @@ extends Resource
 @export var title := ""
 @export var laughs_needed := 40
 @export var is_boss := false
-## Length of the set in minutes (turns) before the light.
-@export var minutes := 5
+## Length of the set in seconds before the light.
+@export var seconds := 75.0
+## Seconds between crowd moves.
+@export var event_every := 7.0
 ## Topics this crowd loves / hates (see CardData.TOPICS).
 @export var loves: Array[String] = []
 @export var hates: Array[String] = []

@@ -7,6 +7,8 @@ var deck: Array[CardData] = []
 var lineup: Array[AudienceData] = []
 var set_index := 0
 var battle: Battle
+## Crew ids hired so far (see Crew).
+var crew: Array = []
 
 var _rng := RandomNumberGenerator.new()
 
@@ -22,7 +24,7 @@ func current_audience() -> AudienceData:
 
 
 func start_set() -> Battle:
-	battle = Battle.new(current_audience(), deck, _rng.randi())
+	battle = Battle.new(current_audience(), deck, _rng.randi(), crew)
 	return battle
 
 
@@ -32,6 +34,22 @@ func is_final_set() -> bool:
 
 func reward_choices() -> Array[CardData]:
 	return CardLibrary.reward_choices(_rng)
+
+
+## Crew you could hire now (none once the crew is full).
+func crew_choices() -> Array:
+	if crew.size() >= Balance.MAX_CREW:
+		return []
+	var pool := Crew.ALL.keys().filter(func(id): return not crew.has(id))
+	var picks := []
+	while picks.size() < Balance.CREW_CHOICES and not pool.is_empty():
+		picks.append(pool.pop_at(_rng.randi_range(0, pool.size() - 1)))
+	return picks
+
+
+func hire(id: String) -> void:
+	if id != "" and not crew.has(id) and crew.size() < Balance.MAX_CREW:
+		crew.append(id)
 
 
 ## Adds the picked card (or nothing, when skipped) and moves to the next set.

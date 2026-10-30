@@ -21,10 +21,12 @@ const TOPIC_NAMES := {
 @export var line := ""
 
 @export var laughs := 0
-## +combo_bonus laughs if at least combo_after cards were already played this turn.
+## Times the card fires when the bit lands (Rule of Three = 3).
+@export var triggers := 1
+## +combo_bonus laughs if at least combo_after cards were already played this bit.
 @export var combo_after := 1
 @export var combo_bonus := 0
-## Laughs for each card played earlier this set / this turn.
+## Laughs for each card played earlier this set / this bit.
 @export var laughs_per_card_this_set := 0
 @export var laughs_per_card_this_turn := 0
 @export var crowd_energy := 0
@@ -39,7 +41,7 @@ const TOPIC_NAMES := {
 @export var topic := ""
 @export var reveals_intent := false
 
-## Link: a bonus when the card played just before this one (same turn) is of
+## Link: a bonus when the card played just before this one (same bit) is of
 ## the kind named here: "setup", "punchline" or "energy" (gives Crowd Energy).
 @export var link_from := ""
 @export var link_laughs := 0
