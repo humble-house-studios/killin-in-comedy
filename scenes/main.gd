@@ -355,6 +355,7 @@ func _on_card_pressed(slot: int) -> void:
 		return
 	_slots[slot] = null
 	var card := _battle.hand[index]
+	var linked := _battle.is_linked(card)
 	var before_laughs := _battle.laughs
 	var before_energy := _battle.crowd_energy
 	_battle.play_card(index)
@@ -366,6 +367,10 @@ func _on_card_pressed(slot: int) -> void:
 	_play_reaction(card, gained, energy)
 	if gained > 0:
 		_float_text("+%d" % gained, COLOR_GOLD, gained >= 12)
+	if linked:
+		_float_text("LINK!", COLOR_NEON_BLUE, false, false, 0.30)
+		_sound.play("chime")
+		_stage_view.react(0.5)
 	if energy != 0:
 		_float_text("%+d energy" % energy, COLOR_ENERGY.lightened(0.4) if energy > 0 else COLOR_HOT, false, true)
 	_refresh()
@@ -610,6 +615,17 @@ func _card_widget(card: CardData, preview: int, playable: bool) -> Button:
 	rules.custom_minimum_size.x = 40
 	body.add_child(rules)
 
+	var linked := _battle != null and preview >= 0 and playable and _battle.is_linked(card)
+	if linked:
+		# Lit gold frame and a badge: playing this now earns its link bonus.
+		for state in ["normal", "hover", "pressed"]:
+			var frame: StyleBoxFlat = button.get_theme_stylebox(state)
+			frame.border_color = COLOR_GOLD
+		var badge_link := _label("LINK!", 16, COLOR_NEON_BLUE)
+		badge_link.add_theme_font_override("font", _pixel_font)
+		badge_link.add_theme_color_override("font_outline_color", COLOR_OUTLINE)
+		badge_link.add_theme_constant_override("outline_size", 6)
+		body.add_child(badge_link)
 	if preview > 0:
 		var gain := _label("+%d" % preview, 16, Color(0.75, 0.4, 0.0))
 		gain.add_theme_font_override("font", _pixel_font)
@@ -671,7 +687,7 @@ func _update_mute_label() -> void:
 
 ## Floats a number up over the stage: laughs near the top right, energy
 ## (low = true) just above the crowd so it never covers the speech bubble.
-func _float_text(text: String, color: Color, big: bool, low := false) -> void:
+func _float_text(text: String, color: Color, big: bool, low := false, y_frac := -1.0) -> void:
 	var label := _label(text, 48 if big else (24 if low else 32), color)
 	label.add_theme_font_override("font", _pixel_font)
 	label.add_theme_constant_override("outline_size", 12)
@@ -683,7 +699,7 @@ func _float_text(text: String, color: Color, big: bool, low := false) -> void:
 	if big:
 		_shake(14.0)
 	await get_tree().process_frame
-	var y := _fx_layer.size.y * (0.66 if low else 0.12)
+	var y := _fx_layer.size.y * (y_frac if y_frac >= 0.0 else (0.66 if low else 0.12))
 	label.position = Vector2(_fx_layer.size.x - label.size.x - 50, y)
 	label.pivot_offset = label.size / 2
 	label.scale = Vector2(1.6, 1.6)

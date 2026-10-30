@@ -25,3 +25,22 @@ extends Resource
 @export var setups := 0
 @export var is_punchline := false
 @export var reveals_intent := false
+
+## Link: a bonus when the card played just before this one (same turn) is of
+## the kind named here: "setup", "punchline" or "energy" (gives Crowd Energy).
+@export var link_from := ""
+@export var link_laughs := 0
+@export var link_energy := 0
+@export var link_draw := 0
+
+
+## True if this card counts as the given kind for a link.
+func is_kind(kind: String) -> bool:
+	match kind:
+		"setup":
+			return setups > 0
+		"punchline":
+			return is_punchline
+		"energy":
+			return crowd_energy > 0
+	return false

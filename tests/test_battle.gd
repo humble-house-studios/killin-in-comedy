@@ -203,3 +203,56 @@ func test_same_seed_same_shuffle() -> void:
 	var b := Battle.new(_audience(), CardLibrary.starter_deck(), 42)
 	assert_eq(a.hand, b.hand)
 	assert_eq(a.draw_pile, b.draw_pile)
+
+
+# ---- links: a bonus for playing a card right after the right kind of card
+
+func test_tag_after_a_punchline_is_linked() -> void:
+	var b := _battle_with_hand(["punchline", "tag"])
+	b.play_card(0)
+	assert_true(b.is_linked(b.hand[0]))
+	b.play_card(0)
+	assert_eq(b.laughs, 6 + 2 + 5)
+	assert_true(b.last_play_linked)
+
+
+func test_tag_without_a_punchline_before_it_is_not_linked() -> void:
+	var b := _battle_with_hand(["yes_and", "tag"])
+	b.play_card(0)
+	assert_false(b.is_linked(b.hand[0]))
+	b.play_card(0)
+	assert_false(b.last_play_linked)
+
+
+func test_link_only_counts_the_card_just_before() -> void:
+	var b := _battle_with_hand(["punchline", "yes_and", "tag"])
+	b.play_card(0)
+	b.play_card(0)
+	assert_false(b.is_linked(b.hand[0]))
+
+
+func test_link_resets_each_turn() -> void:
+	var b := _battle_with_hand(["punchline", "tag"])
+	b.play_card(0)
+	b.end_turn()
+	assert_null(b.last_card)
+
+
+func test_energy_link_gives_energy_and_draw_link_draws() -> void:
+	var b := _battle_with_hand(["punchline", "crowd_work"])
+	b.play_card(0)
+	var before := b.crowd_energy
+	b.play_card(0)
+	assert_eq(b.crowd_energy, before + 3 + 2)
+	var c := _battle_with_hand(["setup", "riff"])
+	c.play_card(0)
+	c.play_card(0)
+	assert_eq(c.hand.size(), 2, "riff drew 1 plus 1 from the link")
+
+
+func test_spit_take_after_crowd_work_costs_no_energy() -> void:
+	var b := _battle_with_hand(["crowd_work", "spit_take"])
+	b.play_card(0)
+	var before := b.crowd_energy
+	b.play_card(0)
+	assert_eq(b.crowd_energy, before)

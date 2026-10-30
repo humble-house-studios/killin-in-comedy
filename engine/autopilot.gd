@@ -35,6 +35,8 @@ static func _score(battle: Battle, card: CardData) -> float:
 	var energy_weight := 3.0 if battle.crowd_energy <= 6 else 0.5
 	var score := float(gained) + card.crowd_energy * energy_weight \
 		+ card.draw * 3.0 + card.mic_gain * 4.0
+	if battle.is_linked(card):
+		score += card.link_energy * energy_weight + card.link_draw * 3.0
 	if card.setups > 0 and _hand_has_punchline(battle):
 		score += 8.0
 	# Cheap cards first when scores tie, so mic time isn't wasted.
@@ -48,7 +50,8 @@ static func pick_reward(choices: Array[CardData]) -> CardData:
 	for c in choices:
 		var value := float(c.laughs + c.combo_bonus + c.crowd_energy * 2 + c.draw * 3 \
 			+ c.mic_gain * 4 + c.setups * 5 + c.laughs_per_card_this_set * 6 \
-			+ c.laughs_per_card_this_turn * 3) / maxf(1.0, c.cost)
+			+ c.laughs_per_card_this_turn * 3 \
+			+ c.link_laughs * 0.5 + c.link_energy + c.link_draw * 1.5) / maxf(1.0, c.cost)
 		if value > best_value:
 			best_value = value
 			best = c

@@ -78,3 +78,32 @@ func test_every_card_has_something_to_say() -> void:
 	for id in CardLibrary.cards():
 		for audience in CardLibrary.audiences():
 			assert_ne(p.line_for(CardLibrary.card(id), audience), "", id)
+
+
+func test_every_joke_topic_has_a_theme() -> void:
+	for joke in Jokes.JOKES + Jokes.ONE_LINERS:
+		assert_ne(Jokes.theme_of(joke.topic), "", joke.topic)
+
+
+func test_setups_stay_on_theme() -> void:
+	var p := Patter.new(7)
+	p.start_set()
+	p.line_for(CardLibrary.card("setup"))
+	var theme: String = p._theme
+	# Every theme has at least two two-part jokes.
+	p.line_for(CardLibrary.card("setup"))
+	assert_eq(p._theme, theme)
+
+
+func test_other_cards_riff_on_the_live_joke() -> void:
+	var p := Patter.new(8)
+	p.line_for(CardLibrary.card("setup"))
+	var topic: String = p._thread
+	var line := p.line_for(CardLibrary.card("heighten"))
+	assert_true(line.to_lower().contains(topic.to_lower()), "%s / %s" % [topic, line])
+	assert_false(line.contains("{"), line)
+
+
+func test_no_riffing_before_any_joke() -> void:
+	var p := Patter.new(8)
+	assert_has(Jokes.CARD_LINES["heighten"], p.line_for(CardLibrary.card("heighten")))

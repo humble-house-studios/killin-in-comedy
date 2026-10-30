@@ -20,6 +20,10 @@ var result := Result.ONGOING
 var cards_played_this_turn := 0
 var cards_played_this_set := 0
 var setups_pending := 0
+## The card played just before, this turn. Cards with a link bonus read it.
+var last_card: CardData
+## True if the card just played earned its link bonus (the UI celebrates it).
+var last_play_linked := false
 ## True once Crowd Work (or similar) shows the intent after the current one.
 var next_intent_revealed := false
 ## Plain-text record of the set, newest last. The UI turns these into bubbles.
@@ -56,9 +60,16 @@ func laugh_multiplier() -> float:
 	return 1.0
 
 
+## True if playing the card now would earn its link bonus.
+func is_linked(card: CardData) -> bool:
+	return card.link_from != "" and last_card != null and last_card.is_kind(card.link_from)
+
+
 ## Laughs the card would earn if played right now.
 func laughs_for(card: CardData) -> int:
 	var base := card.laughs
+	if is_linked(card):
+		base += card.link_laughs
 	if card.combo_bonus != 0 and cards_played_this_turn >= card.combo_after:
 		base += card.combo_bonus
 	base += card.laughs_per_card_this_set * cards_played_this_set
@@ -82,21 +93,24 @@ func play_card(hand_index: int) -> bool:
 	mic -= card.cost
 
 	var gained := laughs_for(card)
+	var linked := is_linked(card)
 	if card.is_punchline and setups_pending > 0:
 		setups_pending -= 1
 	laughs += gained
 	_laughs_this_turn += gained
 	setups_pending += card.setups
-	_change_energy(card.crowd_energy)
+	_change_energy(card.crowd_energy + (card.link_energy if linked else 0))
 	mic += card.mic_gain
 	if card.reveals_intent:
 		next_intent_revealed = true
 	cards_played_this_turn += 1
 	cards_played_this_set += 1
 	discard_pile.append(card)
-	history.append("%s: \"%s\" (+%d laughs)" % [card.title, card.line, gained])
+	history.append("%s: \"%s\" (+%d laughs)%s" % [card.title, card.line, gained, " LINK!" if linked else ""])
+	last_card = card
+	last_play_linked = linked
 
-	_draw(card.draw)
+	_draw(card.draw + (card.link_draw if linked else 0))
 	_check_end()
 	return true
 
@@ -124,6 +138,8 @@ func _start_turn() -> void:
 	mic = maxi(0, Balance.MIC_PER_TURN - _mic_penalty)
 	_mic_penalty = 0
 	cards_played_this_turn = 0
+	last_card = null
+	last_play_linked = false
 	_laughs_this_turn = 0
 	next_intent_revealed = false
 	_draw(Balance.HAND_SIZE)

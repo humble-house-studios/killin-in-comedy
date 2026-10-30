@@ -3,6 +3,8 @@ extends RefCounted
 ## Picks what the comedian says for each card, from res://data/jokes.gd, so
 ## lines don't repeat until a pool runs out. A Setup starts a two-part joke
 ## that the next Punchline finishes; Callback brings back an earlier topic.
+## Jokes link up: a Setup prefers the same theme as the last joke, and other
+## cards riff on the joke that's live ("thread") so a turn hangs together.
 ## Lives for a whole run so later sets get fresh material.
 
 const FALLBACK_CALLBACK := "Remember the guy at the bar?"
@@ -14,6 +16,9 @@ var _bags := {}
 var _pending: Array = []
 ## Topics joked about this set, for callbacks.
 var _topics: Array[String] = []
+## What the last joke was about, so other cards can riff on it. "" = nothing yet.
+var _thread := ""
+var _theme := ""
 
 
 func _init(rng_seed := 0) -> void:
@@ -23,6 +28,8 @@ func _init(rng_seed := 0) -> void:
 func start_set() -> void:
 	_pending.clear()
 	_topics.clear()
+	_thread = ""
+	_theme = ""
 
 
 func opener() -> String:
@@ -31,8 +38,9 @@ func opener() -> String:
 
 func line_for(card: CardData, audience_id := "") -> String:
 	if card.setups > 0:
-		var joke: Dictionary = _draw("jokes", Jokes.JOKES)
+		var joke: Dictionary = _draw("jokes", Jokes.JOKES, _theme)
 		_pending.append(joke)
+		_set_thread(joke.topic)
 		return joke.setup
 	if card.is_punchline:
 		return _punchline(card)
@@ -41,9 +49,29 @@ func line_for(card: CardData, audience_id := "") -> String:
 	if card.reveals_intent and card.id != "read_the_room":
 		var pool: Array = Jokes.CROWD_WORK.get(audience_id, []) + Jokes.CROWD_WORK["any"]
 		return _draw("crowd_" + audience_id, pool)
+	var threaded := _threaded(card.id)
+	if threaded != "":
+		return threaded
 	if Jokes.CARD_LINES.has(card.id):
 		return _draw(card.id, Jokes.CARD_LINES[card.id])
 	return card.line
+
+
+## A line about the live joke, or "" if there isn't one or this card has none.
+func _threaded(card_id: String) -> String:
+	if _thread == "" or not Jokes.TOPIC_LINES.has(card_id):
+		return ""
+	return _fill(_draw("thread_" + card_id, Jokes.TOPIC_LINES[card_id]), _thread)
+
+
+func _set_thread(topic: String) -> void:
+	_thread = topic
+	_theme = Jokes.theme_of(topic)
+
+
+func _fill(template: String, topic: String) -> String:
+	return template.replace("{Topic}", topic[0].to_upper() + topic.substr(1)) \
+		.replace("{topic}", topic)
 
 
 func _punchline(card: CardData) -> String:
@@ -51,12 +79,16 @@ func _punchline(card: CardData) -> String:
 		var joke: Dictionary = _pending.pop_front()
 		_topics.append(joke.topic)
 		return joke.punch
+	var threaded := _threaded(card.id)
+	if threaded != "":
+		return threaded
 	if card.id == "tag":
 		return _draw("tags", Jokes.TAGS)
 	if card.id == "big_finish" or card.id == "mic_drop":
 		return _draw("closers", Jokes.CLOSERS)
-	var one: Dictionary = _draw("one_liners", Jokes.ONE_LINERS)
+	var one: Dictionary = _draw("one_liners", Jokes.ONE_LINERS, _theme)
 	_topics.append(one.topic)
+	_set_thread(one.topic)
 	return one.line
 
 
@@ -65,12 +97,13 @@ func _callback() -> String:
 		return FALLBACK_CALLBACK
 	var topic := _topics[_rng.randi_range(0, _topics.size() - 1)]
 	var template: String = _draw("callbacks", Jokes.CALLBACKS)
-	return template.replace("{Topic}", topic[0].to_upper() + topic.substr(1)) \
-		.replace("{topic}", topic)
+	_set_thread(topic)
+	return _fill(template, topic)
 
 
 ## Next unused item from a pool; reshuffles once every item has been used.
-func _draw(pool_name: String, pool: Array) -> Variant:
+## With a theme, takes an unused item of that theme if there is one.
+func _draw(pool_name: String, pool: Array, theme := "") -> Variant:
 	var bag: Array = _bags.get(pool_name, [])
 	if bag.is_empty():
 		bag = range(pool.size())
@@ -80,4 +113,10 @@ func _draw(pool_name: String, pool: Array) -> Variant:
 			bag[i] = bag[j]
 			bag[j] = tmp
 		_bags[pool_name] = bag
+	if theme != "":
+		for i in range(bag.size() - 1, -1, -1):
+			if Jokes.theme_of(pool[bag[i]].topic) == theme:
+				var picked: int = bag[i]
+				bag.remove_at(i)
+				return pool[picked]
 	return pool[bag.pop_back()]

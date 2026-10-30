@@ -52,6 +52,34 @@ const JOKES := [
 	{topic = "the gender reveal", setup = "I went to a gender reveal party.", punch = "The cake was blue. The fire department was also blue."},
 ]
 
+## Which theme each joke topic belongs to. A Setup prefers a joke from the
+## same theme as the last one told, so a set sounds like one act, not a pile.
+const THEMES := {
+	"home": ["my landlord", "my roommate", "flat-pack furniture", "my houseplant", "the microwave", "astronauts",
+		"my alarm", "laundry", "lost socks", "my keys", "ghosts", "scented candles", "the shower spider"],
+	"tech": ["my phone", "my GPS", "the weather app", "my smart speaker", "passwords", "the Wi-Fi", "my smartwatch",
+		"the warranty call", "flip phones", "my printer", "'K'"],
+	"family": ["my grandma", "my dad", "my mom", "the family group chat", "babies", "my high school reunion",
+		"the gender reveal", "toddlers", "board games"],
+	"dating": ["dating apps", "sushi", "the magician", "karaoke", "the moon"],
+	"work": ["my boss", "Mondays", "elevator small talk"],
+	"food": ["coffee", "brunch", "salt", "vegetables", "my cooking", "bagels", "my fridge"],
+	"animals": ["my cat", "pigeons", "my neighbor's dog", "geese", "penguins", "squirrels", "the ocean"],
+	"body": ["the gym", "the dentist", "my therapist", "yoga", "my memory", "my sleep schedule", "naps",
+		"my hairline", "socks and sandals", "my horoscope", "self-help books", "sneezing", "hiccups"],
+	"money": ["self checkout", "online reviews", "the bank", "late fees", "my bank account", "taxes", "online shopping"],
+	"travel": ["airport security", "camping", "my old car", "flying", "the bus driver", "parallel parking"],
+}
+
+
+## Theme of a topic, or "" if it has none.
+static func theme_of(topic: String) -> String:
+	for theme in THEMES:
+		if topic in THEMES[theme]:
+			return theme
+	return ""
+
+
 ## Stand-alone jokes for a Punchline played with no Setup waiting.
 const ONE_LINERS := [
 	{topic = "my alarm", line = "I hit snooze so often my alarm filed a complaint."},
@@ -256,5 +284,63 @@ const CARD_LINES := {
 		"Three things: one, two... potato.",
 		"Three rules: stay kind, stay hydrated, stay away from geese.",
 		"I like long walks, sunsets, and leaving parties early.",
+	],
+}
+
+## Lines for cards played while a joke is "live" (after a Setup or a Punchline).
+## {topic} / {Topic} is what that joke was about, so the whole turn hangs together.
+const TOPIC_LINES := {
+	"yes_and": [
+		"Yes! And {topic} was involved the whole time.",
+		"Yes, and that's exactly what {topic} would say.",
+		"Yes! And {topic} somehow made it worse.",
+		"Yes, and I blame {topic}.",
+	],
+	"heighten": [
+		"And then {topic} got involved.",
+		"Now picture {topic}, but on fire.",
+		"And {topic} got BIGGER.",
+	],
+	"riff": [
+		"Wait, this is just like {topic}...",
+		"Hang on, {topic} is a bit now.",
+		"Let me riff on {topic} real quick...",
+	],
+	"act_out": [
+		"*does an impression of {topic}*",
+		"*plays {topic} and everyone who hates it*",
+	],
+	"spit_take": [
+		"*chokes on water thinking about {topic}*",
+		"Sorry, front row! {Topic} got me.",
+	],
+	"rule_of_three": [
+		"Three things: {topic}, more {topic}, and potato.",
+		"I like {topic}, long walks, and leaving parties early.",
+	],
+	"crowd_favorite": [
+		"You know {topic}! Everybody does!",
+		"Admit it, you've all been burned by {topic}!",
+	],
+	"hype_man": [
+		"Who else has been burned by {topic}? Make some noise!",
+		"Give it up for {topic}! Terrible, but memorable!",
+	],
+	"pause_for_effect": [
+		"*stares, thinking about {topic}*",
+		"*long pause* ...{Topic}.",
+	],
+	"tag": [
+		"...and that's what {topic} gets you.",
+		"...and {topic} never even apologized.",
+		"...and that's why I'm banned from {topic}.",
+	],
+	"big_finish": [
+		"That's my time! Never trust {topic}!",
+		"Thank you! And remember: {topic} started it!",
+	],
+	"mic_drop": [
+		"*drops mic* That's what {topic} gets you.",
+		"*drops mic* Case closed on {topic}.",
 	],
 }
