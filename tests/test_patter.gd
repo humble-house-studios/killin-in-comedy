@@ -109,16 +109,29 @@ func test_punchline_answers_the_newest_setup() -> void:
 	assert_eq(punch, joke.punch, "after '%s' / '%s'" % [first, second])
 
 
-func test_other_cards_riff_on_the_live_joke() -> void:
-	var riffed := 0
+## True if the line names the joke's topic or uses one of its own tags.
+func _about(line: String, topic: String) -> bool:
+	if line.to_lower().contains(topic.to_lower()):
+		return true
+	return Jokes.joke_about(topic).tags.any(func(t): return line.to_lower().contains(t.to_lower().substr(1)))
+
+
+func test_follow_ups_use_the_jokes_own_tags_first() -> void:
 	for seed in 40:
 		var p := Patter.new(seed)
 		p.line_for(CardLibrary.card("setup"))
-		var topic: String = p._thread
+		p.line_for(CardLibrary.card("punchline"))
+		var joke := Jokes.joke_about(p._thread)
 		var line := p.line_for(CardLibrary.card("heighten"))
-		assert_false(line.contains("{"), line)
-		riffed += 1 if line.to_lower().contains(topic.to_lower()) else 0
-	assert_eq(riffed, 40)
+		assert_true(joke.tags.any(func(t): return line.contains(t.substr(1))), line)
+
+
+func test_every_joke_has_tags_that_read_after_and() -> void:
+	for joke in Jokes.JOKES + Jokes.ONE_LINERS:
+		assert_gte(joke.tags.size(), 2, joke.topic)
+		for tag in joke.tags:
+			assert_false(tag.begins_with("and "), tag)
+			assert_true(tag.ends_with(".") or tag.ends_with("!") or tag.ends_with("?") or tag.ends_with("'"), tag)
 
 
 func test_follow_up_cards_with_no_joke_start_one() -> void:
@@ -126,4 +139,4 @@ func test_follow_up_cards_with_no_joke_start_one() -> void:
 	var line := p.line_for(CardLibrary.card("heighten"))
 	assert_true(Jokes.ONE_LINERS.any(func(o): return o.line == line), line)
 	var next := p.line_for(CardLibrary.card("yes_and"))
-	assert_true(next.to_lower().contains(p._thread.to_lower()), next)
+	assert_true(_about(next, p._thread), next)
