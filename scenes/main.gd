@@ -313,10 +313,10 @@ func _apply_safe_area() -> void:
 
 func _show_title() -> void:
 	_open_overlay()
-	var sign := _neon("YES AND", 72, COLOR_NEON)
+	var sign := _neon("KILLIN' IN", 56, COLOR_NEON)
 	_overlay_box.add_child(sign)
 	_flicker(sign)
-	_overlay_box.add_child(_neon("COMEDY CLUB", 32, COLOR_NEON_BLUE))
+	_overlay_box.add_child(_neon("COMEDY", 64, COLOR_NEON_BLUE))
 	var how := _label("Tap cards to tell jokes and fill the Laugh meter.\n" +
 		"Keep the Crowd Energy up: if it hits zero, you lose the room.\n" +
 		"Beat 3 crowds, then headline against The Critic.", 24)

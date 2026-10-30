@@ -1,4 +1,4 @@
-# Yes And — read before every change
+# Killin' in Comedy — read before every change
 
 A roguelike deckbuilder about being a stand-up/improv comedian: Slay the Spire
 structure, improv comedy as the core system. Godot 4.3, GDScript only.
@@ -6,7 +6,7 @@ structure, improv comedy as the core system. Godot 4.3, GDScript only.
 Samuel builds from his phone: Claude writes and pushes the code, GitHub builds a
 web version, and he playtests it in Safari. Keep replies short and in plain words,
 and handle git, builds and fixes yourself.
-**End every reply with the play link:** https://humble-house-studios.github.io/yes-and/
+**End every reply with the play link:** https://humble-house-studios.github.io/killin-in-comedy/
 
 ## The scaling rule
 The web build in Safari is the test for every platform. If it looks and plays
@@ -38,7 +38,7 @@ right there, it's right on iPhone, Android and Steam. To keep that true:
   `export_presets.cfg` from https://github.com/humble-house-studios/phone-pong
   — they build the web version on every push to `main` and publish it.
 - After each change: push to `main`, wait for the build to pass (fix it if it
-  doesn't), then send Samuel https://humble-house-studios.github.io/yes-and/
+  doesn't), then send Samuel https://humble-house-studios.github.io/killin-in-comedy/
   with one line on what changed and what to playtest.
 - If GitHub Pages isn't on yet, tell him: repo → **Settings → Pages → Source:
   GitHub Actions.**

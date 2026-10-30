@@ -1,4 +1,4 @@
-"""Synthesizes every sound in Yes And (no samples, no downloads).
+"""Synthesizes every sound in Killin' in Comedy (no samples, no downloads).
 
 Run from the project root:  python3 tools/make_audio.py
 Writes short sound effects as WAV and the lounge music loop as OGG (via
