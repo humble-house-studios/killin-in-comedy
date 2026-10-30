@@ -4,11 +4,11 @@
 
 [resource]
 script = ExtResource("1_0ou2i")
-id = "set_list"
-title = "Check the Set List"
+id = "scene_partner"
+title = "Scene Partner"
 cost = 0
 rules = "Draw 2 cards."
-line = "*glances at set list*"
+line = "Give me a suggestion!"
 laughs = 0
 combo_after = 1
 combo_bonus = 0

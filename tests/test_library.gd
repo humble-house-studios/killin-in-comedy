@@ -9,7 +9,7 @@ func test_starter_deck_matches_the_plan() -> void:
 	for c in deck:
 		assert_not_null(c)
 		counts[c.id] = counts.get(c.id, 0) + 1
-	assert_eq(counts, {"punchline": 4, "segue": 3, "setup": 2, "crowd_work": 1})
+	assert_eq(counts, {"punchline": 4, "yes_and": 3, "setup": 2, "crowd_work": 1})
 
 
 func test_every_card_is_complete() -> void:

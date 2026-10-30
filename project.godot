@@ -1,4 +1,4 @@
-; Killin' in Comedy - stand-up comedy roguelike deckbuilder.
+; Yes And - roguelike deckbuilder about being a comedian.
 ; Scaling rule: 720x1280 base, canvas_items + expand. Phones lock to portrait,
 ; desktop (Steam) opens a 1280x720 window, and the UI switches layout by screen shape.
 
@@ -6,7 +6,7 @@ config_version=5
 
 [application]
 
-config/name="Killin' in Comedy"
+config/name="Yes And"
 run/main_scene="res://scenes/main.tscn"
 config/features=PackedStringArray("4.3", "GL Compatibility")
 

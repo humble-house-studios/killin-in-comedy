@@ -1,10 +1,7 @@
-# Killin' in Comedy — read before every change
+# Yes And — read before every change
 
-A stand-up comedy roguelike deckbuilder: Slay the Spire structure, a stand-up
-set as the core system. You work your way up from open mics to headlining by
-building a tighter set. Pure stand-up — no improv mechanics or language.
-(Formerly "Yes And"; the repo and play link keep the old name for now.)
-Godot 4.3, GDScript only.
+A roguelike deckbuilder about being a stand-up/improv comedian: Slay the Spire
+structure, improv comedy as the core system. Godot 4.3, GDScript only.
 
 Samuel builds from his phone: Claude writes and pushes the code, GitHub builds a
 web version, and he playtests it in Safari. Keep replies short and in plain words,
@@ -77,18 +74,18 @@ Prove the core loop is fun in under 10 minutes on a phone:
 ### Starter cards
 | Card | Cost | Effect |
 |---|---|---|
-| Segue | 1 | +4 laughs; if you played a card already this turn, +3 more |
+| Yes, And | 1 | +4 laughs; if you played a card already this turn, +3 more |
 | Setup | 1 | Next Punchline deals double |
 | Punchline | 1 | +6 laughs |
 | Crowd Work | 1 | +3 Crowd Energy, reveal next audience intent |
 | Callback | 2 | +2 laughs for each card played earlier this set |
 | Pause for Effect | 0 | Skip; +2 Crowd Energy |
 
-Starter deck: 4× Punchline, 3× Segue, 2× Setup, 1× Crowd Work.
+Starter deck: 4× Punchline, 3× Yes And, 2× Setup, 1× Crowd Work.
 Reward pool: ~15 more cards in the same style (propose them, one line of rules each).
 
 ## Scope
-**In:** 1 class ("The Open Micer"), 1 branching map of ~8 nodes (Open Mic,
+**In:** 1 class ("The Improviser"), 1 branching map of ~8 nodes (Open Mic,
 Showcase, Green Room, Headline Show), 3 audiences + 1 boss, pick-1-of-3 card
 rewards, win/lose/restart, text speech bubbles for card plays.
 

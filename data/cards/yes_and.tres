@@ -4,11 +4,11 @@
 
 [resource]
 script = ExtResource("1_qti4e")
-id = "segue"
-title = "Segue"
+id = "yes_and"
+title = "Yes, And"
 cost = 1
 rules = "+4 laughs. +3 more if it isn't your first card this turn."
-line = "Which reminds me..."
+line = "Yes! And..."
 laughs = 4
 combo_after = 1
 combo_bonus = 3
