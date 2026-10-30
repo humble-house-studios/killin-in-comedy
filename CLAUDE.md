@@ -6,6 +6,7 @@ structure, improv comedy as the core system. Godot 4.3, GDScript only.
 Samuel builds from his phone: Claude writes and pushes the code, GitHub builds a
 web version, and he playtests it in Safari. Keep replies short and in plain words,
 and handle git, builds and fixes yourself.
+**End every reply with the play link:** https://humble-house-studios.github.io/yes-and/
 
 ## The scaling rule
 The web build in Safari is the test for every platform. If it looks and plays
