@@ -14,7 +14,7 @@ extends RefCounted
 ## Lives for a whole run so later sets get fresh material; no repeats until a
 ## pool runs out.
 
-const NEEDS_A_JOKE := ["yes_and", "heighten", "riff", "act_out", "spit_take", "rule_of_three",
+const NEEDS_A_JOKE := ["segue", "heighten", "riff", "act_out", "spit_take", "rule_of_three",
 	"crowd_favorite", "tag"]
 ## Chance a new Setup/one-liner stays on the current theme. 1: stay on theme
 ## whenever an unused joke of that theme is left.

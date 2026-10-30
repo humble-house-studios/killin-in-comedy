@@ -16,8 +16,8 @@ var _reps: Array = []
 func before_all() -> void:
 	_ids = CardLibrary.cards().keys()
 	# One card per kind of behaviour, for deeper exhaustive runs.
-	_reps = ["setup", "punchline", "tag", "big_finish", "callback", "yes_and", "heighten",
-		"crowd_work", "read_the_room", "hype_man", "pause_for_effect", "scene_partner", "spit_take"]
+	_reps = ["setup", "punchline", "tag", "big_finish", "callback", "segue", "heighten",
+		"crowd_work", "read_the_room", "hype_man", "pause_for_effect", "set_list", "spit_take"]
 
 
 func _joke_ending(line: String, key: String) -> Dictionary:
@@ -195,7 +195,7 @@ func test_every_four_card_order_of_each_kind() -> void:
 
 func test_every_five_card_order_of_each_kind_that_matters() -> void:
 	# Setups, punchlines and the cards that care about them, in every order.
-	var kinds := ["setup", "punchline", "callback", "yes_and", "tag", "crowd_work"]
+	var kinds := ["setup", "punchline", "callback", "segue", "tag", "crowd_work"]
 	var bad: Array = []
 	for a in kinds:
 		for b in kinds:

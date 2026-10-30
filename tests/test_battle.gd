@@ -64,8 +64,8 @@ func test_setup_doubles_only_the_next_punchline() -> void:
 	assert_eq(b.laughs, 18)
 
 
-func test_yes_and_bonus_needs_an_earlier_card() -> void:
-	var b := _battle_with_hand(["yes_and", "yes_and"])
+func test_segue_bonus_needs_an_earlier_card() -> void:
+	var b := _battle_with_hand(["segue", "segue"])
 	b.play_card(0)
 	assert_eq(b.laughs, 4)
 	b.play_card(0)
@@ -189,7 +189,7 @@ func test_draw_pile_reshuffles_discard_when_empty() -> void:
 
 
 func test_draw_cards_and_second_wind() -> void:
-	var b := _battle_with_hand(["scene_partner", "second_wind"])
+	var b := _battle_with_hand(["set_list", "second_wind"])
 	var pile_before := b.draw_pile.size()
 	b.play_card(0)
 	assert_eq(b.hand.size(), 3)
@@ -217,7 +217,7 @@ func test_tag_after_a_punchline_is_linked() -> void:
 
 
 func test_tag_without_a_punchline_before_it_is_not_linked() -> void:
-	var b := _battle_with_hand(["yes_and", "tag"])
+	var b := _battle_with_hand(["segue", "tag"])
 	b.play_card(0)
 	assert_false(b.is_linked(b.hand[0]))
 	b.play_card(0)
@@ -225,7 +225,7 @@ func test_tag_without_a_punchline_before_it_is_not_linked() -> void:
 
 
 func test_link_only_counts_the_card_just_before() -> void:
-	var b := _battle_with_hand(["punchline", "yes_and", "tag"])
+	var b := _battle_with_hand(["punchline", "segue", "tag"])
 	b.play_card(0)
 	b.play_card(0)
 	assert_false(b.is_linked(b.hand[0]))

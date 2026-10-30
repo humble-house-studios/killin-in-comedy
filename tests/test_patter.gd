@@ -125,5 +125,5 @@ func test_follow_up_cards_with_no_joke_start_one() -> void:
 	var p := Patter.new(8)
 	var line := p.line_for(CardLibrary.card("heighten"))
 	assert_true(Jokes.ONE_LINERS.any(func(o): return o.line == line), line)
-	var next := p.line_for(CardLibrary.card("yes_and"))
+	var next := p.line_for(CardLibrary.card("segue"))
 	assert_true(next.to_lower().contains(p._thread.to_lower()), next)

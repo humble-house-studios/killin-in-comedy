@@ -27,7 +27,7 @@ const REWARD_CHOICES := 3
 ## Card id -> copies in the starting deck.
 const STARTER_DECK := {
 	"punchline": 4,
-	"yes_and": 3,
+	"segue": 3,
 	"setup": 2,
 	"crowd_work": 1,
 }

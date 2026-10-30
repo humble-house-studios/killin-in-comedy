@@ -1,6 +1,6 @@
-# Yes And
+# Killin' in Comedy
 
-A roguelike deckbuilder about being a comedian. Built in Godot 4.3.
+A stand-up comedy roguelike deckbuilder. Built in Godot 4.3.
 
 **Play the latest build:** https://humble-house-studios.github.io/yes-and/
 
