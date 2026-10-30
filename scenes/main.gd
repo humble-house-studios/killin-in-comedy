@@ -16,10 +16,22 @@ const COLOR_LAUGHS := Color(0.22, 0.36, 0.68)
 const COLOR_HOT := Color(1.0, 0.45, 0.2)
 const COLOR_COLD := Color(0.45, 0.65, 1.0)
 const COLOR_GOLD := Color(1.0, 0.85, 0.3)
+const COLOR_NEON := Color(1.0, 0.35, 0.7)
+const COLOR_NEON_BLUE := Color(0.35, 0.85, 1.0)
+const COLOR_PAPER := Color(0.97, 0.94, 0.85)
+const COLOR_INK := Color(0.16, 0.12, 0.10)
+const CROWD_SIZES := {"open_mic": 6, "the_critic": 7}
 
 var _run: Run
 var _patter: Patter
 var _battle: Battle
+var _sound: Sound
+var _heading_font: FontVariation
+var _stage_view: StageView
+## Top layer of the stage for floating numbers.
+var _fx_layer: Control
+var _stage_mat: ShaderMaterial
+var _mute_button: Button
 
 var _safe_margin: MarginContainer
 var _body: BoxContainer
@@ -48,6 +60,11 @@ var _overlay_box: VBoxContainer
 
 func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
+	_sound = Sound.new()
+	add_child(_sound)
+	_heading_font = FontVariation.new()
+	_heading_font.base_font = ThemeDB.fallback_font
+	_heading_font.variation_embolden = 0.9
 	_build_ui()
 	get_viewport().size_changed.connect(_on_resized)
 	_on_resized()
@@ -57,6 +74,8 @@ func _ready() -> void:
 # ---------------------------------------------------------------- layout
 
 func _build_ui() -> void:
+	add_child(_shader_rect(preload("res://scenes/club.gdshader")))
+
 	_safe_margin = MarginContainer.new()
 	_safe_margin.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(_safe_margin)
@@ -72,6 +91,12 @@ func _build_ui() -> void:
 	top.add_child(_set_label)
 	_deck_label = _label("", 20, Color(1, 1, 1, 0.6))
 	top.add_child(_deck_label)
+	_mute_button = _button("", Color(0.2, 0.15, 0.25))
+	_mute_button.custom_minimum_size = Vector2(150, MIN_TOUCH_HEIGHT * 0.75)
+	_mute_button.add_theme_font_size_override("font_size", 22)
+	_mute_button.pressed.connect(_on_mute)
+	top.add_child(_mute_button)
+	_update_mute_label()
 
 	_body = BoxContainer.new()
 	_body.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -86,7 +111,7 @@ func _build_ui() -> void:
 	_overlay.visible = false
 	add_child(_overlay)
 	var dim := ColorRect.new()
-	dim.color = Color(0, 0, 0, 0.75)
+	dim.color = Color(0.02, 0.0, 0.04, 0.7)
 	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_overlay.add_child(dim)
 	var center := CenterContainer.new()
@@ -99,52 +124,94 @@ func _build_ui() -> void:
 
 
 func _build_stage() -> Control:
-	var stage := _panel(Color(0.20, 0.10, 0.26))
-	stage.size_flags_stretch_ratio = 1.2
-	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 8)
-	stage.add_child(box)
+	var column := VBoxContainer.new()
+	column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	column.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	column.size_flags_stretch_ratio = 1.2
+	column.add_theme_constant_override("separation", 10)
 
-	_audience_label = _label("", 34)
-	_audience_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	# The club stage: shader backdrop, mic + crowd drawing, then text on top.
+	var stage := PanelContainer.new()
+	stage.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	stage.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+	column.add_child(stage)
+	var backdrop := _shader_rect(preload("res://scenes/stage.gdshader"))
+	_stage_mat = backdrop.material
+	stage.add_child(backdrop)
+	_stage_view = StageView.new()
+	stage.add_child(_stage_view)
+
+	var margin := MarginContainer.new()
+	for side in ["left", "right"]:
+		margin.add_theme_constant_override("margin_" + side, 60)
+	margin.add_theme_constant_override("margin_top", 26)
+	stage.add_child(margin)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 4)
+	margin.add_child(box)
+
+	_audience_label = _neon("", 38, COLOR_NEON)
 	box.add_child(_audience_label)
-	_intent_label = _label("", 22, Color(1, 0.6, 0.6))
+	_intent_label = _label("", 21, Color(1, 0.75, 0.75))
 	_intent_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_intent_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_shadow(_intent_label)
 	box.add_child(_intent_label)
-	_peek_label = _label("", 18, Color(1, 0.8, 0.8, 0.7))
+	_peek_label = _label("", 18, Color(1, 0.85, 0.85, 0.8))
 	_peek_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_peek_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_shadow(_peek_label)
 	box.add_child(_peek_label)
 
-	# Speech bubble and floating numbers.
+	# Speech bubble and floating numbers, above the mic.
 	_bubble_area = Control.new()
 	_bubble_area.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_bubble_area.custom_minimum_size = Vector2(0, 120)
+	_bubble_area.size_flags_stretch_ratio = 1.0
+	_bubble_area.custom_minimum_size = Vector2(0, 110)
 	box.add_child(_bubble_area)
 	var bubble_center := CenterContainer.new()
 	bubble_center.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_bubble_area.add_child(bubble_center)
 	_bubble = PanelContainer.new()
-	_bubble.add_theme_stylebox_override("panel", _box_style(Color(0.96, 0.95, 0.9), 24, 16))
+	var bubble_style := _box_style(COLOR_PAPER, 24, 16)
+	bubble_style.shadow_color = Color(0, 0, 0, 0.5)
+	bubble_style.shadow_size = 8
+	bubble_style.shadow_offset = Vector2(0, 4)
+	_bubble.add_theme_stylebox_override("panel", bubble_style)
 	bubble_center.add_child(_bubble)
-	_bubble_label = _label("", 26, Color(0.1, 0.08, 0.12))
+	_bubble_label = _label("", 25, COLOR_INK)
 	_bubble_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_bubble_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_bubble_label.custom_minimum_size = Vector2(420, 0)
+	_bubble_label.custom_minimum_size = Vector2(400, 0)
 	_bubble.add_child(_bubble_label)
 	_bubble.modulate.a = 0.0
+	# Room for the mic and the crowd below the bubble.
+	var floor_space := Control.new()
+	floor_space.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	floor_space.size_flags_stretch_ratio = 0.9
+	box.add_child(floor_space)
 
-	_laugh_label = _label("", 24, COLOR_GOLD)
-	box.add_child(_laugh_label)
+	_fx_layer = Control.new()
+	_fx_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	stage.add_child(_fx_layer)
+
+	# Meters under the stage.
+	var meters := PanelContainer.new()
+	meters.add_theme_stylebox_override("panel", _box_style(Color(0.07, 0.05, 0.09, 0.92), 14, 12))
+	column.add_child(meters)
+	var mbox := VBoxContainer.new()
+	mbox.add_theme_constant_override("separation", 4)
+	meters.add_child(mbox)
+	_laugh_label = _label("", 22, COLOR_GOLD)
+	mbox.add_child(_laugh_label)
 	_laugh_bar = _bar(COLOR_GOLD)
-	box.add_child(_laugh_bar)
-	_energy_label = _label("", 24)
-	box.add_child(_energy_label)
+	mbox.add_child(_laugh_bar)
+	_energy_label = _label("", 22)
+	mbox.add_child(_energy_label)
 	_energy_bar = _bar(COLOR_HOT)
 	_energy_bar.max_value = Balance.MAX_CROWD_ENERGY
-	box.add_child(_energy_bar)
-	return stage
+	mbox.add_child(_energy_bar)
+	return column
 
 
 func _build_hand_area() -> Control:
@@ -171,7 +238,8 @@ func _build_hand_area() -> Control:
 	_mic_label = _label("", 28)
 	_mic_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	controls.add_child(_mic_label)
-	_end_turn_button = _button("End Turn", Color(0.55, 0.15, 0.2))
+	_end_turn_button = _button("End Turn", Color(0.62, 0.08, 0.18))
+	_end_turn_button.add_theme_font_override("font", _heading_font)
 	_end_turn_button.custom_minimum_size = Vector2(260, MIN_TOUCH_HEIGHT)
 	_end_turn_button.pressed.connect(_on_end_turn)
 	controls.add_child(_end_turn_button)
@@ -221,7 +289,10 @@ func _apply_safe_area() -> void:
 
 func _show_title() -> void:
 	_open_overlay()
-	_overlay_box.add_child(_centered(_label("YES AND", 72, COLOR_GOLD)))
+	var sign := _neon("YES AND", 96, COLOR_NEON)
+	_overlay_box.add_child(sign)
+	_flicker(sign)
+	_overlay_box.add_child(_neon("COMEDY CLUB", 34, COLOR_NEON_BLUE))
 	var how := _label("Tap cards to tell jokes and fill the Laugh meter.\n" +
 		"Keep the Crowd Energy up: if it hits zero, you lose the room.\n" +
 		"Beat 3 crowds, then headline against The Critic.", 24)
@@ -230,6 +301,7 @@ func _show_title() -> void:
 	_overlay_box.add_child(how)
 	var start := _button("Start your set", COLOR_PUNCHLINE)
 	start.pressed.connect(_new_run)
+	start.pressed.connect(_sound.start_music)
 	_overlay_box.add_child(start)
 
 
@@ -244,7 +316,10 @@ func _start_set() -> void:
 	_battle = _run.start_set()
 	_slots_turn = -1
 	_patter.start_set()
-	_say(_patter.opener(), Color(0.96, 0.95, 0.9))
+	var crowd: int = CROWD_SIZES.get(_battle.audience.id, 9)
+	_stage_view.set_crowd(crowd, _battle.audience.is_boss)
+	_sound.play("thump")
+	_say(_patter.opener(), COLOR_PAPER)
 	_laugh_bar.value = 0
 	_refresh()
 
@@ -262,11 +337,12 @@ func _on_card_pressed(slot: int) -> void:
 	var energy := _battle.crowd_energy - before_energy
 	var line := _patter.line_for(card, _battle.audience.id)
 	# Stage directions (*sips water*) aren't speech, so no quote marks.
-	_say(line if line.begins_with("*") else "\"%s\"" % line, Color(0.96, 0.95, 0.9))
+	_say(line if line.begins_with("*") else "\"%s\"" % line, COLOR_PAPER)
+	_play_reaction(card, gained, energy)
 	if gained > 0:
 		_float_text("+%d" % gained, COLOR_GOLD, gained >= 12)
 	if energy != 0:
-		_float_text("%+d energy" % energy, COLOR_ENERGY.lightened(0.4) if energy > 0 else COLOR_HOT, false, 50)
+		_float_text("%+d energy" % energy, COLOR_ENERGY.lightened(0.4) if energy > 0 else COLOR_HOT, false, true)
 	_refresh()
 	_check_result()
 
@@ -276,7 +352,13 @@ func _on_end_turn() -> void:
 		return
 	var seen := _battle.history.size()
 	var before_energy := _battle.crowd_energy
+	var intent := _battle.current_intent()
 	_battle.end_turn()
+	_sound.play("thump", -4.0)
+	if _battle.history.slice(seen).any(func(l): return l.begins_with("You bombed")):
+		_sound.play("crickets")
+	elif intent and intent.kind != IntentData.Kind.CALM:
+		_sound.play_later("groan", 0.15, -3.0)
 	var lines := _battle.history.slice(seen)
 	var crowd_lines: Array[String] = []
 	for line in lines:
@@ -285,7 +367,7 @@ func _on_end_turn() -> void:
 	_say("\n".join(crowd_lines), Color(1, 0.82, 0.82))
 	var lost := _battle.crowd_energy - before_energy
 	if lost < 0:
-		_float_text("%d energy" % lost, COLOR_HOT, false, 50)
+		_float_text("%d energy" % lost, COLOR_HOT, false, true)
 		_flash(_energy_bar)
 	_refresh()
 	_check_result()
@@ -295,20 +377,24 @@ func _check_result() -> void:
 	match _battle.result:
 		Battle.Result.WON:
 			_end_turn_button.disabled = true
-			await get_tree().create_timer(0.9).timeout
+			_stage_view.react(1.2)
+			_sound.play_later("applause", 0.5)
+			await get_tree().create_timer(1.3).timeout
 			if _run.is_final_set():
+				_sound.play("fanfare")
 				_show_run_won()
 			else:
 				_show_reward()
 		Battle.Result.LOST:
 			_end_turn_button.disabled = true
-			await get_tree().create_timer(0.9).timeout
+			_sound.play_later("sad_trombone", 0.4)
+			await get_tree().create_timer(1.2).timeout
 			_show_lost()
 
 
 func _show_reward() -> void:
 	_open_overlay()
-	_overlay_box.add_child(_centered(_label("YOU KILLED!", 60, COLOR_GOLD)))
+	_overlay_box.add_child(_neon("YOU KILLED!", 64, COLOR_GOLD))
 	_overlay_box.add_child(_centered(_label("Add a new bit to your act:", 26)))
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 12)
@@ -325,6 +411,7 @@ func _show_reward() -> void:
 
 
 func _take_reward(card: CardData) -> void:
+	_sound.play("chime" if card else "click")
 	_run.finish_set(card)
 	_show_next_up()
 
@@ -333,17 +420,18 @@ func _show_next_up() -> void:
 	_open_overlay()
 	var next := _run.current_audience()
 	var heading := "HEADLINE SHOW" if next.is_boss else "NEXT SET"
-	_overlay_box.add_child(_centered(_label(heading, 48, COLOR_GOLD)))
+	_overlay_box.add_child(_neon(heading, 52, COLOR_NEON_BLUE))
 	_overlay_box.add_child(_centered(_label(next.title, 36)))
 	_overlay_box.add_child(_centered(_label("Laughs needed: %d    Deck: %d cards" % [next.laughs_needed, _run.deck.size()], 24)))
 	var go := _button("Take the stage", COLOR_PUNCHLINE)
 	go.pressed.connect(_start_set)
+	go.pressed.connect(_sound.play.bind("click"))
 	_overlay_box.add_child(go)
 
 
 func _show_lost() -> void:
 	_open_overlay()
-	_overlay_box.add_child(_centered(_label("YOU LOST THE ROOM", 52, COLOR_HOT)))
+	_overlay_box.add_child(_neon("YOU LOST THE ROOM", 52, COLOR_HOT))
 	_overlay_box.add_child(_centered(_label("%s.  Set %d of %d.  Laughs %d / %d" % [
 		_battle.audience.title, _run.set_index + 1, _run.lineup.size(), _battle.laughs, _battle.laughs_needed], 24)))
 	var again := _button("Try again", COLOR_PUNCHLINE)
@@ -353,7 +441,7 @@ func _show_lost() -> void:
 
 func _show_run_won() -> void:
 	_open_overlay()
-	_overlay_box.add_child(_centered(_label("STANDING OVATION!", 56, COLOR_GOLD)))
+	_overlay_box.add_child(_neon("STANDING OVATION!", 56, COLOR_GOLD))
 	_overlay_box.add_child(_centered(_label("Even The Critic laughed. You're a headliner.", 26)))
 	var again := _button("Play again", COLOR_PUNCHLINE)
 	again.pressed.connect(_new_run)
@@ -367,6 +455,9 @@ func _refresh() -> void:
 	_set_label.text = "Set %d of %d" % [_run.set_index + 1, _run.lineup.size()]
 	_deck_label.text = "Draw %d   Discard %d" % [b.draw_pile.size(), b.discard_pile.size()]
 	_audience_label.text = b.audience.title
+	var heat := clampf(float(b.crowd_energy) / Balance.HOT_ENERGY, 0.0, 1.0)
+	_stage_view.heat = heat
+	_stage_mat.set_shader_parameter("heat", heat)
 	var intent := b.current_intent()
 	_intent_label.text = "Crowd's next move: %s" % (intent.text if intent else "nothing")
 	var peek := b.next_intent()
@@ -418,17 +509,33 @@ func _hand_index(slot: int) -> int:
 
 
 func _card_widget(card: CardData, preview: int, playable: bool) -> Button:
+	# Styled like a comic's index card: paper, ink, and a colored band by type.
 	var color := _card_color(card)
-	var button := _button("", color)
+	var button := Button.new()
+	button.focus_mode = Control.FOCUS_NONE
 	button.custom_minimum_size = Vector2(0, CARD_HEIGHT)
 	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	button.disabled = not playable
+	for state in ["normal", "hover", "pressed", "disabled"]:
+		var paper := COLOR_PAPER.darkened(0.12 if state == "pressed" else 0.0)
+		var style := _box_style(paper.lightened(0.04) if state == "hover" else paper, 8)
+		style.border_width_top = 14
+		style.border_color = color
+		style.shadow_color = Color(0, 0, 0, 0.45)
+		style.shadow_size = 2 if state == "pressed" else 6
+		style.shadow_offset = Vector2(0, 1 if state == "pressed" else 4)
+		button.add_theme_stylebox_override(state, style)
+	button.pressed.connect(_sound.play.bind("card"))
+	# A slight hand-placed tilt, the same for each card every time.
+	button.rotation_degrees = (hash(card.id) % 5 - 2) * 0.6
+	button.resized.connect(func(): button.pivot_offset = button.size / 2)
 
 	var margin := MarginContainer.new()
 	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
 	margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	for side in ["left", "right", "top", "bottom"]:
+	for side in ["left", "right", "bottom"]:
 		margin.add_theme_constant_override("margin_" + side, 10)
+	margin.add_theme_constant_override("margin_top", 20)
 	button.add_child(margin)
 	var box := VBoxContainer.new()
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -437,25 +544,36 @@ func _card_widget(card: CardData, preview: int, playable: bool) -> Button:
 
 	var head := HBoxContainer.new()
 	head.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	head.add_theme_constant_override("separation", 6)
 	box.add_child(head)
-	var cost := _label(str(card.cost), 26, COLOR_GOLD)
-	head.add_child(cost)
-	var title := _label(card.title, 24)
+	var badge := PanelContainer.new()
+	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	badge.add_theme_stylebox_override("panel", _box_style(color, 16, 0))
+	badge.custom_minimum_size = Vector2(32, 32)
+	head.add_child(badge)
+	var cost := _label(str(card.cost), 22, Color.WHITE)
+	cost.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	cost.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	badge.add_child(cost)
+	var title := _label(card.title, 23, color.darkened(0.45))
+	title.add_theme_font_override("font", _heading_font)
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	title.custom_minimum_size.x = 40
 	head.add_child(title)
 
-	var rules := _label(card.rules, 19, Color(1, 1, 1, 0.85))
+	var rules := _label(card.rules, 19, COLOR_INK)
 	rules.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	rules.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	rules.custom_minimum_size.x = 40
 	box.add_child(rules)
 
 	if preview > 0:
-		box.add_child(_label("+%d laughs" % preview, 22, COLOR_GOLD))
+		var gain := _label("+%d laughs" % preview, 22, Color(0.62, 0.36, 0.0))
+		gain.add_theme_font_override("font", _heading_font)
+		box.add_child(gain)
 	if not playable:
-		button.modulate = Color(1, 1, 1, 0.45)
+		button.modulate = Color(0.75, 0.72, 0.75, 0.5)
 	return button
 
 
@@ -484,13 +602,41 @@ func _say(text: String, color: Color) -> void:
 	t.tween_property(_bubble, "scale", Vector2.ONE, 0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 
-func _float_text(text: String, color: Color, big: bool, offset_y := 0.0) -> void:
+func _play_reaction(card: CardData, gained: int, energy: int) -> void:
+	if gained >= 12:
+		_sound.play_later("laugh_huge", 0.25 if card.is_punchline else 0.0)
+	elif gained >= 7:
+		_sound.play_later("laugh_big", 0.25 if card.is_punchline else 0.0)
+	elif gained > 0:
+		_sound.play("laugh_small")
+	elif energy > 0:
+		_sound.play("cheer")
+	if card.is_punchline and gained > 0:
+		_sound.play("rimshot", -3.0)
+	if gained > 0:
+		_stage_view.react(gained / 14.0)
+
+
+func _on_mute() -> void:
+	_sound.toggle_mute()
+	_update_mute_label()
+	_sound.play("click")
+
+
+func _update_mute_label() -> void:
+	_mute_button.text = "Sound: Off" if _sound.muted else "Sound: On"
+
+
+## Floats a number up over the stage: laughs near the top right, energy
+## (low = true) just above the crowd so it never covers the speech bubble.
+func _float_text(text: String, color: Color, big: bool, low := false) -> void:
 	var label := _label(text, 64 if big else 44, color)
 	label.add_theme_constant_override("outline_size", 10)
 	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
-	_bubble_area.add_child(label)
+	_fx_layer.add_child(label)
 	await get_tree().process_frame
-	label.position = Vector2(_bubble_area.size.x - label.size.x - 10, offset_y)
+	var y := _fx_layer.size.y * (0.66 if low else 0.12)
+	label.position = Vector2(_fx_layer.size.x - label.size.x - 50, y)
 	var t := create_tween().set_parallel()
 	t.tween_property(label, "position:y", label.position.y - 60, 0.9).set_ease(Tween.EASE_OUT)
 	t.tween_property(label, "modulate:a", 0.0, 0.9).set_delay(0.3)
@@ -523,6 +669,48 @@ func _label(text: String, size: int, color := Color.WHITE) -> Label:
 	return label
 
 
+## Neon-sign text: bold, colored glow around a pale core.
+func _neon(text: String, size: int, color: Color) -> Label:
+	var label := _label(text, size, color.lerp(Color.WHITE, 0.55))
+	label.add_theme_font_override("font", _heading_font)
+	label.add_theme_color_override("font_outline_color", color)
+	label.add_theme_constant_override("outline_size", maxi(4, size / 9))
+	label.add_theme_color_override("font_shadow_color", Color(color, 0.55))
+	label.add_theme_constant_override("shadow_outline_size", maxi(10, size / 3))
+	label.add_theme_constant_override("shadow_offset_x", 0)
+	label.add_theme_constant_override("shadow_offset_y", 0)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	return label
+
+
+## Every few seconds the sign buzzes off and on, like an old neon tube.
+func _flicker(node: CanvasItem) -> void:
+	var t := create_tween().set_loops()
+	t.tween_interval(2.6)
+	t.tween_property(node, "modulate:a", 0.35, 0.05)
+	t.tween_property(node, "modulate:a", 1.0, 0.05)
+	t.tween_property(node, "modulate:a", 0.5, 0.04)
+	t.tween_property(node, "modulate:a", 1.0, 0.08)
+
+
+func _shadow(label: Label) -> void:
+	label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.85))
+	label.add_theme_constant_override("shadow_offset_x", 2)
+	label.add_theme_constant_override("shadow_offset_y", 2)
+
+
+func _shader_rect(shader: Shader) -> ColorRect:
+	var rect := ColorRect.new()
+	rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var mat := ShaderMaterial.new()
+	mat.shader = shader
+	rect.material = mat
+	rect.resized.connect(func(): mat.set_shader_parameter("rect_size", rect.size))
+	return rect
+
+
 func _centered(label: Label) -> Label:
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -535,26 +723,29 @@ func _button(text: String, color: Color) -> Button:
 	button.custom_minimum_size = Vector2(0, MIN_TOUCH_HEIGHT)
 	button.add_theme_font_size_override("font_size", 30)
 	button.focus_mode = Control.FOCUS_NONE
-	button.add_theme_stylebox_override("normal", _box_style(color, 14))
-	button.add_theme_stylebox_override("hover", _box_style(color.lightened(0.15), 14))
-	button.add_theme_stylebox_override("pressed", _box_style(color.darkened(0.2), 14))
-	button.add_theme_stylebox_override("disabled", _box_style(color.darkened(0.3), 14))
+	for state in ["normal", "hover", "pressed", "disabled"]:
+		var c := color
+		match state:
+			"hover": c = color.lightened(0.15)
+			"pressed": c = color.darkened(0.2)
+			"disabled": c = color.darkened(0.45)
+		var style := _box_style(c, 14)
+		style.border_width_bottom = 2 if state == "pressed" else 6
+		style.border_color = c.darkened(0.4)
+		style.shadow_color = Color(0, 0, 0, 0.4)
+		style.shadow_size = 4
+		button.add_theme_stylebox_override(state, style)
 	return button
-
-
-func _panel(color: Color) -> PanelContainer:
-	var panel := PanelContainer.new()
-	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	panel.add_theme_stylebox_override("panel", _box_style(color, 18, 18))
-	return panel
 
 
 func _bar(color: Color) -> ProgressBar:
 	var bar := ProgressBar.new()
 	bar.show_percentage = false
-	bar.custom_minimum_size = Vector2(0, 30)
-	bar.add_theme_stylebox_override("background", _box_style(Color(0, 0, 0, 0.4), 10))
+	bar.custom_minimum_size = Vector2(0, 26)
+	var back := _box_style(Color(0, 0, 0, 0.55), 10)
+	back.border_color = Color(1, 1, 1, 0.12)
+	back.set_border_width_all(2)
+	bar.add_theme_stylebox_override("background", back)
 	bar.add_theme_stylebox_override("fill", _box_style(color, 10))
 	return bar
 
