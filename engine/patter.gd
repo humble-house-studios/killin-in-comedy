@@ -8,6 +8,17 @@ extends RefCounted
 ## Lives for a whole run so later sets get fresh material.
 
 const FALLBACK_CALLBACK := "Remember the guy at the bar?"
+## Callback with nothing to call back to yet.
+const FALLBACK_CALLBACKS := [
+	FALLBACK_CALLBACK,
+	"Remember that thing from earlier? Yeah. That.",
+	"This is a callback to a joke I haven't told yet. Spoilers!",
+	"Callback! To... the vibe. We all felt it.",
+]
+## Chance a Setup/one-liner stays on the current theme, and that a card
+## riffs on the live joke instead of using a stock line. Under 1 so sets vary.
+const THEME_CHANCE := 0.7
+const RIFF_CHANCE := 0.7
 
 var _rng := RandomNumberGenerator.new()
 ## Pool name -> indices not yet used this cycle.
@@ -61,6 +72,9 @@ func line_for(card: CardData, audience_id := "") -> String:
 func _threaded(card_id: String) -> String:
 	if _thread == "" or not Jokes.TOPIC_LINES.has(card_id):
 		return ""
+	# A Tag only makes sense tacked onto something, so it always does.
+	if card_id != "tag" and _rng.randf() >= RIFF_CHANCE:
+		return ""
 	return _fill(_draw("thread_" + card_id, Jokes.TOPIC_LINES[card_id]), _thread)
 
 
@@ -78,6 +92,7 @@ func _punchline(card: CardData) -> String:
 	if not _pending.is_empty():
 		var joke: Dictionary = _pending.pop_front()
 		_topics.append(joke.topic)
+		_set_thread(joke.topic)
 		return joke.punch
 	var threaded := _threaded(card.id)
 	if threaded != "":
@@ -93,9 +108,12 @@ func _punchline(card: CardData) -> String:
 
 
 func _callback() -> String:
-	if _topics.is_empty():
-		return FALLBACK_CALLBACK
-	var topic := _topics[_rng.randi_range(0, _topics.size() - 1)]
+	var options := _topics.duplicate()
+	if _thread != "" and not options.has(_thread):
+		options.append(_thread)
+	if options.is_empty():
+		return _draw("fallback_callbacks", FALLBACK_CALLBACKS)
+	var topic: String = options[_rng.randi_range(0, options.size() - 1)]
 	var template: String = _draw("callbacks", Jokes.CALLBACKS)
 	_set_thread(topic)
 	return _fill(template, topic)
@@ -113,7 +131,7 @@ func _draw(pool_name: String, pool: Array, theme := "") -> Variant:
 			bag[i] = bag[j]
 			bag[j] = tmp
 		_bags[pool_name] = bag
-	if theme != "":
+	if theme != "" and _rng.randf() < THEME_CHANCE:
 		for i in range(bag.size() - 1, -1, -1):
 			if Jokes.theme_of(pool[bag[i]].topic) == theme:
 				var picked: int = bag[i]
