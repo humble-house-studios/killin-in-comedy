@@ -30,7 +30,7 @@ text = "Walks out to take a call. -3 Crowd Energy"
 [resource]
 script = ExtResource("2_e750h")
 id = "the_critic"
-title = "The Critic (Headline Show)"
+title = "The Critic"
 laughs_needed = 100
 is_boss = true
 intents = Array[ExtResource("1_ll3vc")]([SubResource("Resource_0v0pr"), SubResource("Resource_lxv8d"), SubResource("Resource_7v5j2"), SubResource("Resource_p2h17")])

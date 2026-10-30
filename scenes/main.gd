@@ -35,6 +35,10 @@ var _laugh_bar: ProgressBar
 var _energy_label: Label
 var _energy_bar: ProgressBar
 var _hand_grid: GridContainer
+## Cards on screen this turn, by position; null where a card was played, so
+## the rest of the hand stays put and taps don't land on the wrong card.
+var _slots: Array = []
+var _slots_turn := -1
 var _mic_label: Label
 var _end_turn_button: Button
 var _overlay: Control
@@ -236,14 +240,17 @@ func _new_run() -> void:
 func _start_set() -> void:
 	_close_overlay()
 	_battle = _run.start_set()
+	_slots_turn = -1
 	_say("Is this thing on?", Color(0.96, 0.95, 0.9))
 	_laugh_bar.value = 0
 	_refresh()
 
 
-func _on_card_pressed(index: int) -> void:
+func _on_card_pressed(slot: int) -> void:
+	var index := _hand_index(slot)
 	if not _battle.can_play(index):
 		return
+	_slots[slot] = null
 	var card := _battle.hand[index]
 	var before_laughs := _battle.laughs
 	var before_energy := _battle.crowd_energy
@@ -377,13 +384,32 @@ func _refresh() -> void:
 	_mic_label.text = "MIC TIME  %d / %d" % [b.mic, Balance.MIC_PER_TURN]
 	_end_turn_button.disabled = b.result != Battle.Result.ONGOING
 
+	if _slots_turn != b.turn:
+		_slots_turn = b.turn
+		_slots.assign(b.hand)
+	# Cards drawn mid-turn join at the end, keeping slot order == hand order.
+	var shown := _slots.size() - _slots.count(null)
+	for i in range(shown, b.hand.size()):
+		_slots.append(b.hand[i])
+
 	for child in _hand_grid.get_children():
 		child.queue_free()
-	for i in b.hand.size():
+	for slot in _slots.size():
+		if _slots[slot] == null:
+			var gap := Control.new()
+			gap.custom_minimum_size = Vector2(0, CARD_HEIGHT)
+			gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			_hand_grid.add_child(gap)
+			continue
+		var i := _hand_index(slot)
 		var card := b.hand[i]
 		var widget := _card_widget(card, b.laughs_for(card), b.can_play(i))
-		widget.pressed.connect(_on_card_pressed.bind(i))
+		widget.pressed.connect(_on_card_pressed.bind(slot))
 		_hand_grid.add_child(widget)
+
+
+func _hand_index(slot: int) -> int:
+	return slot - _slots.slice(0, slot).count(null)
 
 
 func _card_widget(card: CardData, preview: int, playable: bool) -> Button:

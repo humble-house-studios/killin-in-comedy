@@ -110,6 +110,7 @@ func end_turn() -> void:
 		_change_energy(-Balance.BOMB_PENALTY)
 		history.append("You bombed. (-%d Crowd Energy)" % Balance.BOMB_PENALTY)
 	_change_energy(-Balance.ENERGY_DRIFT)
+	history.append("The crowd cools off. (-%d Crowd Energy)" % Balance.ENERGY_DRIFT)
 	_apply_intent(current_intent())
 	_check_end()
 	if result != Result.ONGOING:
