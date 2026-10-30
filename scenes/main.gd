@@ -83,8 +83,6 @@ func _make_panel(text: String, color: Color, stretch: float) -> PanelContainer:
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.add_theme_font_size_override("font_size", 28)
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	label.clip_text = true
-	label.custom_minimum_size = Vector2(1, 1)
 	panel.add_child(label)
 	return panel
 
