@@ -18,6 +18,7 @@ const COLOR_COLD := Color(0.45, 0.65, 1.0)
 const COLOR_GOLD := Color(1.0, 0.85, 0.3)
 
 var _run: Run
+var _patter: Patter
 var _battle: Battle
 
 var _safe_margin: MarginContainer
@@ -234,6 +235,7 @@ func _show_title() -> void:
 
 func _new_run() -> void:
 	_run = Run.new(randi())
+	_patter = Patter.new(randi())
 	_start_set()
 
 
@@ -241,7 +243,8 @@ func _start_set() -> void:
 	_close_overlay()
 	_battle = _run.start_set()
 	_slots_turn = -1
-	_say("Is this thing on?", Color(0.96, 0.95, 0.9))
+	_patter.start_set()
+	_say(_patter.opener(), Color(0.96, 0.95, 0.9))
 	_laugh_bar.value = 0
 	_refresh()
 
@@ -257,7 +260,9 @@ func _on_card_pressed(slot: int) -> void:
 	_battle.play_card(index)
 	var gained := _battle.laughs - before_laughs
 	var energy := _battle.crowd_energy - before_energy
-	_say("\"%s\"" % card.line, Color(0.96, 0.95, 0.9))
+	var line := _patter.line_for(card, _battle.audience.id)
+	# Stage directions (*sips water*) aren't speech, so no quote marks.
+	_say(line if line.begins_with("*") else "\"%s\"" % line, Color(0.96, 0.95, 0.9))
 	if gained > 0:
 		_float_text("+%d" % gained, COLOR_GOLD, gained >= 12)
 	if energy != 0:
