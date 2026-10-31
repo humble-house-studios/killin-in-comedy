@@ -2,7 +2,7 @@
 // textures, light worked out per vertex, chunky procedural texels, fog, and a
 // 15-bit dithered palette. Unshaded, so it looks the same on every renderer.
 // The room's lights are fixed below (they match office.gd's layout,
-// including the glow from each monitor).
+// including the window's daylight and the glow from each CRT).
 shader_type spatial;
 render_mode unshaded, cull_back;
 
@@ -21,11 +21,15 @@ varying vec3 light;
 varying vec3 wnormal;
 varying float fog;
 
-const int LIGHTS = 6;
-const vec3 L_POS[6] = vec3[](vec3(0.0, 2.45, -1.6), vec3(0.0, 2.45, 2.2), vec3(0.0, 1.17, -2.2), vec3(-3.2, 1.5, -0.5), vec3(-2.75, 1.2, 2.0), vec3(2.75, 1.2, -0.9));
-const vec3 L_COL[6] = vec3[](vec3(1.1, 1.1, 0.95), vec3(1.0, 1.0, 0.9), vec3(0.35, 0.55, 0.9), vec3(0.45, 0.55, 0.7), vec3(0.6, 0.3, 0.6), vec3(0.3, 0.6, 0.35));
-const float L_RANGE[6] = float[](5.5, 5.5, 2.2, 4.5, 2.0, 2.0);
-const vec3 FOG_COL = vec3(0.06, 0.07, 0.09);
+// Sunny late-morning office: warm ceiling panels, daylight pouring in the
+// window (two lights: the glass and the patch it throws on the carpet), and
+// a soft glow off each CRT. Shadows are lifted and warm, never black.
+const int LIGHTS = 7;
+const vec3 L_POS[7] = vec3[](vec3(0.0, 2.45, -1.6), vec3(0.0, 2.45, 2.2), vec3(-3.1, 1.6, -0.5), vec3(-2.2, 0.3, -0.4), vec3(0.0, 1.17, -2.15), vec3(-2.75, 1.15, 2.0), vec3(2.75, 1.15, -0.9));
+const vec3 L_COL[7] = vec3[](vec3(0.85, 0.82, 0.7), vec3(0.8, 0.78, 0.68), vec3(1.0, 0.9, 0.66), vec3(0.6, 0.5, 0.3), vec3(0.25, 0.35, 0.45), vec3(0.25, 0.4, 0.4), vec3(0.3, 0.4, 0.3));
+const float L_RANGE[7] = float[](6.0, 6.0, 6.5, 3.2, 1.8, 1.6, 1.6);
+const vec3 AMBIENT = vec3(0.5, 0.46, 0.4);
+const vec3 FOG_COL = vec3(0.9, 0.85, 0.74);
 const float BAYER[16] = float[](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
 
 float hash(vec2 p) {
@@ -35,7 +39,8 @@ float hash(vec2 p) {
 void vertex() {
 	vec3 wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	vec3 n = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
-	vec3 lit = vec3(0.3, 0.3, 0.34);
+	// Sky bounce from above, warm floor bounce from below.
+	vec3 lit = AMBIENT * (0.85 + 0.15 * n.y);
 	for (int i = 0; i < LIGHTS; i++) {
 		vec3 d = L_POS[i] - wp;
 		float dist = max(length(d), 0.001);
@@ -45,7 +50,8 @@ void vertex() {
 	light = lit;
 	wnormal = n;
 	vec4 view = VIEW_MATRIX * vec4(wp, 1.0);
-	fog = smoothstep(3.5, 10.0, length(view.xyz));
+	// A light, sunny haze at the far end of the room (not dark fog).
+	fog = 0.35 * smoothstep(4.0, 12.0, length(view.xyz));
 	vec4 clip = PROJECTION_MATRIX * view;
 	// Snap to a coarse screen grid: the classic PS1 jitter.
 	vec2 grid = VIEWPORT_SIZE * 0.5;
@@ -85,6 +91,8 @@ void fragment() {
 	}
 	col = col * light + emission;
 	col = mix(col, FOG_COL, fog);
+	// Gentle warm grade: lift the shadows a touch toward peach.
+	col += vec3(0.03, 0.02, 0.0) * (1.0 - clamp(dot(col, vec3(0.333)), 0.0, 1.0));
 	// 15-bit colour with a 4x4 ordered dither.
 	ivec2 fc = ivec2(FRAGCOORD.xy) % 4;
 	float d = BAYER[fc.y * 4 + fc.x] / 16.0 - 0.5;

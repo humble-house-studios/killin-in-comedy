@@ -1,13 +1,16 @@
 extends Node
 ## The meta office: walk up to a desk in a PS1-style office and play real
 ## games on the computers, first person.
-## - The 3D world renders at a third of the screen size (chunky PS1 pixels).
-## - Each computer runs a game in its own viewport; a second full-res pass
-##   draws only the screens, so they stay readable up close.
+## - The 3D world renders at a third of the screen size (chunky PS1 pixels),
+##   lit like a sunny morning: cream walls, daylight through the blinds.
+## - Each computer is a chunky beige 90s CRT (4:3); the game runs in a window
+##   on its desktop (teal wallpaper, title bar, taskbar). Each game runs in
+##   its own viewport; a second full-res pass draws only the game screens, so
+##   they stay readable up close.
 ##   - Main desk: this game (res://scenes/main.tscn) in a SubViewport.
-##   - Side desk: Phone Pong (res://games/pong, pulled in by tools/fetch_games.sh)
-##     on a pivot monitor: tall when the phone is upright, sideways when it is
-##     (so Pong's paddle sits under the right thumb).
+##   - Side desk: Phone Pong (res://games/pong, pulled in by tools/fetch_games.sh):
+##     its window is tall when the phone is upright and goes wide when it is
+##     sideways (so Pong's paddle sits under the right thumb).
 ##   - Right-wall desk: Proof Hand (res://games/proof), same embedding; it also
 ##     needs its Game/Save autoloads, added by tools/fetch_games.sh --autoloads.
 ##     in an embedded Window (inside a hidden holder viewport), so its own
@@ -54,7 +57,17 @@ const GAME_SIZE := Vector2i(1280, 720)
 ## Pong monitor: a tall screen on the side desk by the left wall.
 const PONG_SCENE := "res://games/pong/main.tscn"
 const PONG_SIZE := Vector2i(720, 1280)
-const PONG_SCREEN := Vector2(0.36, 0.64)
+## Tall games run in a 90s desktop window on a 4:3 CRT: the game's own
+## screen (9:16), and the CRT glass around it.
+const PONG_SCREEN := Vector2(0.225, 0.4)
+const CRT_GLASS := Vector2(0.68, 0.51)
+## Sideways phone: Pong's window goes wide and fills more of the glass.
+const PONG_SCREEN_WIDE := Vector2(0.6, 0.3375)
+## Main desk CRT glass, around the 16:9 comedy screen.
+const MAIN_GLASS := Vector2(0.72, 0.54)
+## Side desks: CRT glass centre height, and how far forward of the desk's middle.
+const SIDE_CY := 1.16
+const SIDE_Z := 0.1
 ## Sideways phone = sideways Pong monitor (it pivots), so Pong plays its own
 ## landscape mode: paddle on the right, under your right thumb.
 const PONG_SIZE_WIDE := Vector2i(1280, 720)
@@ -68,13 +81,13 @@ const PROOF_DESK := Vector3(3.05, 0.0, -0.9)
 const LOOT_SCENE := "res://games/loot/scenes/main.tscn"
 const LOOT_LINK := "res://games/loot/ecosystem/office_link.gd"
 const LOOT_SIZE := Vector2i(720, 1280)
-const LOOT_SCREEN := Vector2(0.34, 0.6044)
+const LOOT_SCREEN := Vector2(0.225, 0.4)
 const LOOT_SPOT := Vector3(3.12, 0.0, 0.45)
 ## Cube Desk (humble-house-studios/rubix): a desk by the door with an upright
 ## monitor, a Rubik's cube beside the keyboard.
 const CUBE_SCENE := "res://games/cube/scenes/main.tscn"
 const CUBE_SIZE := Vector2i(720, 1280)
-const CUBE_SCREEN := Vector2(0.36, 0.64)
+const CUBE_SCREEN := Vector2(0.225, 0.4)
 const CUBE_DESK := Vector3(-1.6, 0.0, 3.62)
 ## Game audio is full volume within NEAR metres of its screen, silent past FAR.
 const AUDIO_NEAR := 1.6
@@ -187,8 +200,8 @@ var _pong_view: Window
 var _pong_screen: SubViewport
 var _pong_pc: Computer
 var _proof_view: Window
-## The Pong monitor's case, which turns 90° when the phone goes sideways.
-var _pong_pivot: Node3D
+## Pong's desktop window, tall and wide; one shows at a time (phone upright / sideways).
+var _pong_frames: Array[Node3D] = []
 var _computers: Array[Computer] = []
 ## Game viewport -> audio bus index, so each game's sounds can fade by distance.
 var _view_bus := {}
@@ -419,6 +432,9 @@ func _add_computer(screen: Node3D, size: Vector2, view: Viewport, pixels: Vector
 	screen.add_child(lo_mi)
 	pc.hi_mat = lo.duplicate()
 	pc.hi_mat.set_shader_parameter("game", texture)
+	# The world copy looks like a tube; the crisp up-close copy stays clean.
+	lo.set_shader_parameter("crt", 1.0)
+	pc.hi_mat.set_shader_parameter("crt", 0.0)
 	var hi_mi := MeshInstance3D.new()
 	hi_mi.mesh = quad
 	hi_mi.material_override = pc.hi_mat
@@ -468,7 +484,7 @@ func _mat(albedo: Color, pattern := 0, albedo2 := Color.BLACK, texel := 24.0, em
 
 
 ## A box mesh at pos (its centre), optionally solid to walk into.
-func _box(size: Vector3, pos: Vector3, mat: Material, solid := false, rot := Vector3.ZERO, parent: Node3D = null) -> MeshInstance3D:
+func _box(size: Vector3, pos: Vector3, mat: Material, solid := false, rot := Vector3.ZERO, parent: Node = null) -> MeshInstance3D:
 	var mesh := BoxMesh.new()
 	mesh.size = size
 	# Subdivide big faces so the per-vertex light has something to work with.
@@ -493,7 +509,7 @@ func _box(size: Vector3, pos: Vector3, mat: Material, solid := false, rot := Vec
 	return mi
 
 
-func _cyl(radius: float, height: float, pos: Vector3, mat: Material, rot := Vector3.ZERO, sides := 8, top := -1.0, parent: Node3D = null) -> MeshInstance3D:
+func _cyl(radius: float, height: float, pos: Vector3, mat: Material, rot := Vector3.ZERO, sides := 8, top := -1.0, parent: Node = null) -> MeshInstance3D:
 	var mesh := CylinderMesh.new()
 	mesh.top_radius = radius if top < 0 else top
 	mesh.bottom_radius = radius
@@ -510,7 +526,7 @@ func _cyl(radius: float, height: float, pos: Vector3, mat: Material, rot := Vect
 	return mi
 
 
-func _label(text: String, pos: Vector3, size: int, color: Color, rot := Vector3.ZERO, width := 0.0, parent: Node3D = null) -> Label3D:
+func _label(text: String, pos: Vector3, size: int, color: Color, rot := Vector3.ZERO, width := 0.0, parent: Node = null) -> Label3D:
 	var l := Label3D.new()
 	l.text = text
 	l.font = preload("res://fonts/press_start_2p.ttf")
@@ -531,12 +547,97 @@ func _label(text: String, pos: Vector3, size: int, color: Color, rot := Vector3.
 	return l
 
 
+# ---------------------------------------------------------------- 90s CRTs
+
+## A chunky beige 90s CRT, its 4:3 glass centred on pos and facing +z in
+## parent space: bezel with a fat chin, dark rim, tapered tube with vents on
+## top, a badge, a power LED and a swivel foot down to desk_y.
+func _crt(parent: Node, pos: Vector3, glass: Vector2, shell: Material, badge: String, led: Color, desk_y := 0.76) -> void:
+	var rim := _mat(Color(0.14, 0.13, 0.12))
+	var vent := _mat(Color(0.45, 0.42, 0.36))
+	var bw := glass.x + 0.13
+	var bh := glass.y + 0.16
+	var by := pos.y - 0.015
+	_box(Vector3(bw, bh, 0.09), Vector3(pos.x, by, pos.z - 0.05), shell, true, Vector3.ZERO, parent)
+	_box(Vector3(glass.x + 0.035, glass.y + 0.035, 0.004), Vector3(pos.x, pos.y, pos.z - 0.0045), rim, false, Vector3.ZERO, parent)
+	_box(Vector3(bw * 0.86, bh * 0.84, 0.2), Vector3(pos.x, by + 0.005, pos.z - 0.19), shell, false, Vector3.ZERO, parent)
+	_box(Vector3(bw * 0.58, bh * 0.58, 0.12), Vector3(pos.x, by + 0.01, pos.z - 0.34), shell, false, Vector3.ZERO, parent)
+	var top := by + 0.005 + bh * 0.42
+	for i in 5:
+		_box(Vector3(bw * 0.5, 0.004, 0.012), Vector3(pos.x, top + 0.002, pos.z - 0.13 - i * 0.03), vent, false, Vector3.ZERO, parent)
+	# Chin: badge on the left, two knobs and the power LED on the right.
+	var chin := pos.y - glass.y * 0.5 - 0.048
+	_label(badge, Vector3(pos.x - bw * 0.5 + 0.03 + badge.length() * 0.0075, chin, pos.z - 0.004), 7, Color(0.38, 0.35, 0.3), Vector3.ZERO, 0.0, parent)
+	for k in 2:
+		_box(Vector3(0.022, 0.022, 0.01), Vector3(pos.x + bw * 0.5 - 0.15 + k * 0.035, chin, pos.z - 0.004), vent, false, Vector3.ZERO, parent)
+	_box(Vector3(0.026, 0.012, 0.01), Vector3(pos.x + bw * 0.5 - 0.05, chin, pos.z - 0.004), _mat(Color.BLACK, 0, Color.BLACK, 24.0, led), false, Vector3.ZERO, parent)
+	# Swivel foot.
+	var bottom := by - bh * 0.5
+	if bottom - desk_y > 0.01:
+		_box(Vector3(bw * 0.42, bottom - desk_y, 0.2), Vector3(pos.x, (bottom + desk_y) * 0.5, pos.z - 0.14), shell, false, Vector3.ZERO, parent)
+	_box(Vector3(bw * 0.55, 0.02, 0.3), Vector3(pos.x, desk_y + 0.01, pos.z - 0.14), shell, false, Vector3.ZERO, parent)
+
+
+## The 90s desktop lit up on a CRT's glass: wallpaper, a column of icons and
+## a taskbar with a Start button and a clock. Sits just behind the game.
+func _desktop(parent: Node, pos: Vector3, glass: Vector2, wallpaper: Color) -> void:
+	var glow := func(c: Color) -> ShaderMaterial: return _mat(Color.BLACK, 0, Color.BLACK, 24.0, c)
+	_box(Vector3(glass.x, glass.y, 0.002), Vector3(pos.x, pos.y, pos.z - 0.0025), glow.call(wallpaper), false, Vector3.ZERO, parent)
+	var icon_cols := [Color(0.98, 0.9, 0.4), Color(0.92, 0.92, 0.92), Color(0.55, 0.8, 1.0)]
+	for i in 3:
+		_box(Vector3(0.03, 0.03, 0.002), Vector3(pos.x - glass.x * 0.5 + 0.03, pos.y + glass.y * 0.5 - 0.035 - i * 0.055, pos.z - 0.0015), glow.call(icon_cols[i]), false, Vector3.ZERO, parent)
+	var bar_h := 0.03
+	var bar_y := pos.y - glass.y * 0.5 + bar_h * 0.5
+	_box(Vector3(glass.x, bar_h, 0.002), Vector3(pos.x, bar_y, pos.z - 0.0015), glow.call(Color(0.74, 0.74, 0.72)), false, Vector3.ZERO, parent)
+	_box(Vector3(0.07, bar_h - 0.008, 0.002), Vector3(pos.x - glass.x * 0.5 + 0.042, bar_y, pos.z - 0.001), glow.call(Color(0.84, 0.84, 0.82)), false, Vector3.ZERO, parent)
+	_label("Start", Vector3(pos.x - glass.x * 0.5 + 0.042, bar_y, pos.z - 0.0005), 6, Color(0.1, 0.1, 0.1), Vector3.ZERO, 0.0, parent)
+	_box(Vector3(0.07, bar_h - 0.008, 0.002), Vector3(pos.x + glass.x * 0.5 - 0.042, bar_y, pos.z - 0.001), glow.call(Color(0.66, 0.66, 0.64)), false, Vector3.ZERO, parent)
+	_label("9:41", Vector3(pos.x + glass.x * 0.5 - 0.042, bar_y, pos.z - 0.0005), 6, Color(0.1, 0.1, 0.1), Vector3.ZERO, 0.0, parent)
+
+
+## A grey 90s window frame and blue title bar around a game screen of `game`
+## size centred on pos. Returned so it can swap (Pong's tall/wide windows).
+func _window_frame(parent: Node, pos: Vector3, game: Vector2, title: String) -> Node3D:
+	var w := Node3D.new()
+	w.position = pos
+	parent.add_child(w)
+	var glow := func(c: Color) -> ShaderMaterial: return _mat(Color.BLACK, 0, Color.BLACK, 24.0, c)
+	var title_h := 0.03
+	_box(Vector3(game.x + 0.016, game.y + 0.016 + title_h, 0.002), Vector3(0, title_h * 0.5, -0.001), glow.call(Color(0.76, 0.76, 0.74)), false, Vector3.ZERO, w)
+	var ty := game.y * 0.5 + title_h * 0.5 + 0.003
+	_box(Vector3(game.x + 0.008, title_h - 0.004, 0.002), Vector3(0, ty, -0.0005), glow.call(Color(0.06, 0.14, 0.6)), false, Vector3.ZERO, w)
+	_label(title, Vector3(-game.x * 0.5 + 0.012 + title.length() * 0.0055, ty, 0.0), 6, Color(1, 1, 1), Vector3.ZERO, 0.0, w)
+	_box(Vector3(0.018, 0.016, 0.002), Vector3(game.x * 0.5 - 0.012, ty, 0.0), glow.call(Color(0.76, 0.76, 0.74)), false, Vector3.ZERO, w)
+	return w
+
+
+## A beige tower PC on the floor, front facing +z: floppy slot, CD tray, LED.
+func _tower(parent: Node, pos: Vector3, shell: Material) -> void:
+	var dark := _mat(Color(0.2, 0.19, 0.17))
+	_box(Vector3(0.2, 0.44, 0.44), pos + Vector3(0, 0.22, 0), shell, false, Vector3.ZERO, parent)
+	_box(Vector3(0.15, 0.03, 0.005), pos + Vector3(0, 0.37, 0.221), dark, false, Vector3.ZERO, parent)
+	_box(Vector3(0.12, 0.008, 0.005), pos + Vector3(0, 0.31, 0.221), dark, false, Vector3.ZERO, parent)
+	_box(Vector3(0.02, 0.01, 0.005), pos + Vector3(0.05, 0.25, 0.221), _mat(Color.BLACK, 0, Color.BLACK, 24.0, Color(0.3, 1.0, 0.4)), false, Vector3.ZERO, parent)
+	for i in 4:
+		_box(Vector3(0.12, 0.004, 0.005), pos + Vector3(0, 0.06 + i * 0.02, 0.221), dark, false, Vector3.ZERO, parent)
+
+
+## Shared shell colours: classic beige, and a slightly greyer putty.
+func _beige() -> ShaderMaterial:
+	return _mat(Color(0.86, 0.82, 0.7), 6, Color.BLACK, 40.0)
+
+
+func _putty() -> ShaderMaterial:
+	return _mat(Color(0.8, 0.8, 0.76), 6, Color.BLACK, 40.0)
+
+
 func _build_room() -> void:
 	# Room: x -3.5..3.5, z -3..4, 2.6 tall. You start by the door at +z.
-	var wall := _mat(Color(0.62, 0.6, 0.5), 6, Color.BLACK, 20.0)
-	var carpet := _mat(Color(0.25, 0.3, 0.36), 1, Color(0.2, 0.22, 0.3), 28.0)
-	var ceiling := _mat(Color(0.78, 0.77, 0.72), 2, Color(0.45, 0.44, 0.42), 30.0)
-	var trim := _mat(Color(0.22, 0.2, 0.18))
+	# Sunny and friendly: cream walls, soft sage carpet, warm wood trim.
+	var wall := _mat(Color(0.88, 0.82, 0.68), 6, Color.BLACK, 20.0)
+	var carpet := _mat(Color(0.5, 0.6, 0.56), 1, Color(0.43, 0.52, 0.49), 28.0)
+	var ceiling := _mat(Color(0.93, 0.92, 0.87), 2, Color(0.64, 0.62, 0.58), 30.0)
+	var trim := _mat(Color(0.58, 0.4, 0.25))
 	_box(Vector3(7.4, 0.1, 7.4), Vector3(0, -0.05, 0.5), carpet, true)
 	_box(Vector3(7.4, 0.1, 7.4), Vector3(0, 2.65, 0.5), ceiling, true)
 	_box(Vector3(7.4, 2.6, 0.1), Vector3(0, 1.3, -3.05), wall, true)
@@ -547,20 +648,22 @@ func _build_room() -> void:
 			[Vector3(0.02, 0.1, 7.0), Vector3(-3.49, 0.05, 0.5)], [Vector3(0.02, 0.1, 7.0), Vector3(3.49, 0.05, 0.5)]]:
 		_box(b[0], b[1], trim)
 
-	# Fluorescent panels.
-	var panel := _mat(Color(0.2, 0.2, 0.2), 0, Color.BLACK, 24.0, Color(0.95, 0.97, 0.9))
+	# Ceiling panels, warm white.
+	var panel := _mat(Color(0.2, 0.2, 0.2), 0, Color.BLACK, 24.0, Color(1.0, 0.98, 0.88))
 	_box(Vector3(0.6, 0.03, 1.2), Vector3(0, 2.59, -1.6), panel)
 	_box(Vector3(0.6, 0.03, 1.2), Vector3(0, 2.59, 2.2), panel)
 
-	# Window with blinds on the left wall.
-	_box(Vector3(0.04, 1.1, 1.8), Vector3(-3.49, 1.5, -0.5), _mat(Color(0.1, 0.1, 0.1), 4, Color(0.05, 0.05, 0.06), 24.0, Color(0.55, 0.65, 0.8)))
+	# Window on the left wall: bright sky through half-open blinds, and the
+	# patch of sunshine it throws across the carpet.
+	_box(Vector3(0.04, 1.1, 1.8), Vector3(-3.49, 1.5, -0.5), _mat(Color(0.5, 0.48, 0.42), 4, Color(0.1, 0.1, 0.1), 24.0, Color(0.72, 0.86, 1.0)))
 	_box(Vector3(0.08, 1.2, 0.06), Vector3(-3.47, 1.5, 0.43), trim)
 	_box(Vector3(0.08, 1.2, 0.06), Vector3(-3.47, 1.5, -1.43), trim)
 	_box(Vector3(0.12, 0.05, 1.9), Vector3(-3.45, 0.93, -0.5), trim)
+	_box(Vector3(1.6, 0.004, 1.7), Vector3(-2.55, 0.003, -0.45), _mat(Color(0.58, 0.66, 0.56), 1, Color(0.5, 0.58, 0.5), 28.0, Color(0.16, 0.12, 0.05)), false, Vector3(0, 0.12, 0))
 
 	# Door behind you.
-	_box(Vector3(0.95, 2.1, 0.05), Vector3(1.8, 1.05, 3.98), _mat(Color(0.42, 0.28, 0.17), 3, Color(0.34, 0.22, 0.13), 40.0))
-	_box(Vector3(0.1, 0.04, 0.06), Vector3(1.45, 1.0, 3.93), _mat(Color(0.7, 0.65, 0.4)))
+	_box(Vector3(0.95, 2.1, 0.05), Vector3(1.8, 1.05, 3.98), _mat(Color(0.6, 0.42, 0.26), 3, Color(0.52, 0.36, 0.21), 40.0))
+	_box(Vector3(0.1, 0.04, 0.06), Vector3(1.45, 1.0, 3.93), _mat(Color(0.85, 0.75, 0.4)))
 
 	_build_desk()
 	_build_pong_desk()
@@ -572,10 +675,10 @@ func _build_room() -> void:
 
 
 func _build_desk() -> void:
-	var wood := _mat(Color(0.5, 0.36, 0.22), 3, Color(0.42, 0.29, 0.17), 60.0)
-	var metal := _mat(Color(0.3, 0.31, 0.33))
-	var beige := _mat(Color(0.78, 0.74, 0.62), 6, Color.BLACK, 40.0)
-	var dark := _mat(Color(0.12, 0.12, 0.13))
+	var wood := _mat(Color(0.7, 0.52, 0.34), 3, Color(0.62, 0.45, 0.28), 60.0)
+	var metal := _mat(Color(0.55, 0.56, 0.56))
+	var beige := _beige()
+	var dark := _mat(Color(0.2, 0.2, 0.2))
 	# Desk: top surface at 0.76, against the back wall.
 	_box(Vector3(1.8, 0.05, 0.8), Vector3(0, 0.735, -2.55), wood, true)
 	_box(Vector3(0.05, 0.71, 0.75), Vector3(-0.86, 0.355, -2.55), metal, true)
@@ -584,20 +687,19 @@ func _build_desk() -> void:
 	_box(Vector3(0.45, 0.6, 0.7), Vector3(0.6, 0.41, -2.55), metal, true)
 	for y in [0.55, 0.3]:
 		_box(Vector3(0.3, 0.02, 0.02), Vector3(0.6, y, -2.19), dark)
+	_tower(_world_vp, Vector3(-0.55, 0, -2.6), beige)
 
-	# The monitor: a chunky beige box, screen facing you.
-	_box(Vector3(0.3, 0.02, 0.24), Vector3(0, 0.77, -2.6), beige)
-	_box(Vector3(0.08, 0.14, 0.08), Vector3(0, 0.84, -2.6), beige)
-	_box(Vector3(0.8, 0.52, 0.08), Vector3(0, SCREEN_POS.y, SCREEN_POS.z - 0.045), beige, true)
-	_box(Vector3(0.62, 0.42, 0.34), Vector3(0, SCREEN_POS.y, SCREEN_POS.z - 0.25), beige)
-	_box(Vector3(0.7, 0.4, 0.01), Vector3(0, SCREEN_POS.y, SCREEN_POS.z - 0.003), dark)
-	_box(Vector3(0.03, 0.015, 0.01), Vector3(0.33, SCREEN_POS.y - 0.235, SCREEN_POS.z - 0.003), _mat(Color.BLACK, 0, Color.BLACK, 24.0, Color(0.2, 1.0, 0.3)))
+	# The monitor: a big beige 90s CRT, the game in a window on its desktop.
+	_crt(_world_vp, SCREEN_POS, MAIN_GLASS, beige, "SONIX 17", Color(0.2, 1.0, 0.3))
+	_desktop(_world_vp, SCREEN_POS, MAIN_GLASS, Color(0.0, 0.5, 0.5))
+	_window_frame(_world_vp, SCREEN_POS, Vector2(SCREEN_W, SCREEN_H), "KILLIN.EXE")
 	# Sticky notes on the bezel.
-	var note := _mat(Color(0.95, 0.88, 0.35))
-	_box(Vector3(0.08, 0.08, 0.004), Vector3(-0.42, SCREEN_POS.y + 0.22, SCREEN_POS.z), note, false, Vector3(0, 0, 0.12))
-	_box(Vector3(0.08, 0.08, 0.004), Vector3(0.43, SCREEN_POS.y - 0.17, SCREEN_POS.z), _mat(Color(0.95, 0.5, 0.7)), false, Vector3(0, 0, -0.1))
-	_label("TIGHT\nFIVE!", Vector3(-0.42, SCREEN_POS.y + 0.22, SCREEN_POS.z + 0.004), 10, Color(0.15, 0.1, 0.1), Vector3(0, 0, 0.12))
-	_label("LAND\nAT THE\nPEAK", Vector3(0.43, SCREEN_POS.y - 0.17, SCREEN_POS.z + 0.004), 7, Color(0.15, 0.1, 0.1), Vector3(0, 0, -0.1))
+	var note := _mat(Color(0.98, 0.9, 0.4))
+	var nx := MAIN_GLASS.x * 0.5 + 0.03
+	_box(Vector3(0.08, 0.08, 0.004), Vector3(-nx, SCREEN_POS.y + 0.24, SCREEN_POS.z), note, false, Vector3(0, 0, 0.12))
+	_box(Vector3(0.08, 0.08, 0.004), Vector3(nx, SCREEN_POS.y - 0.2, SCREEN_POS.z), _mat(Color(0.98, 0.6, 0.75)), false, Vector3(0, 0, -0.1))
+	_label("TIGHT\nFIVE!", Vector3(-nx, SCREEN_POS.y + 0.24, SCREEN_POS.z + 0.004), 10, Color(0.15, 0.1, 0.1), Vector3(0, 0, 0.12))
+	_label("LAND\nAT THE\nPEAK", Vector3(nx, SCREEN_POS.y - 0.2, SCREEN_POS.z + 0.004), 7, Color(0.15, 0.1, 0.1), Vector3(0, 0, -0.1))
 
 	var screen := Node3D.new()
 	screen.position = SCREEN_POS
@@ -605,192 +707,160 @@ func _build_desk() -> void:
 	_add_computer(screen, Vector2(SCREEN_W, SCREEN_H), _game_vp, GAME_SIZE)
 
 	# Keyboard, mouse, mug.
-	_box(Vector3(0.46, 0.03, 0.16), Vector3(-0.05, 0.775, -2.3), _mat(Color(0.8, 0.77, 0.66), 7, Color(0.45, 0.43, 0.38)), false, Vector3(0.08, 0, 0))
-	_box(Vector3(0.06, 0.025, 0.1), Vector3(0.32, 0.772, -2.3), beige)
-	var mug := _mat(Color(0.75, 0.18, 0.2))
-	_cyl(0.045, 0.1, Vector3(-0.6, 0.81, -2.4), mug)
-	_cyl(0.038, 0.005, Vector3(-0.6, 0.861, -2.4), _mat(Color(0.2, 0.1, 0.05)))
+	_box(Vector3(0.46, 0.03, 0.16), Vector3(-0.05, 0.775, -2.2), _mat(Color(0.88, 0.85, 0.74), 7, Color(0.5, 0.48, 0.42)), false, Vector3(0.08, 0, 0))
+	_box(Vector3(0.06, 0.025, 0.1), Vector3(0.32, 0.772, -2.2), beige)
+	var mug := _mat(Color(0.95, 0.45, 0.35))
+	_cyl(0.045, 0.1, Vector3(-0.62, 0.81, -2.35), mug)
+	_cyl(0.038, 0.005, Vector3(-0.62, 0.861, -2.35), _mat(Color(0.35, 0.2, 0.1)))
 	# Paper stack.
-	_box(Vector3(0.22, 0.04, 0.3), Vector3(0.68, 0.78, -2.6), _mat(Color(0.92, 0.92, 0.88)), false, Vector3(0, 0.2, 0))
+	_box(Vector3(0.22, 0.04, 0.3), Vector3(0.7, 0.78, -2.5), _mat(Color(0.96, 0.96, 0.92)), false, Vector3(0, 0.2, 0))
 
 
-## Side desk by the left wall, facing into the room: a tall monitor running Pong.
+## Desk where a tall game runs in a window on a 4:3 CRT. Returns the screen
+## node (centre of the game), facing +z in the rig.
+func _side_desk(rig: Node3D, wood: Material, shell: Material, badge: String, led: Color, wallpaper: Color) -> Node3D:
+	var metal := _mat(Color(0.55, 0.56, 0.56))
+	_box(Vector3(1.2, 0.05, 0.7), Vector3(0, 0.735, 0), wood, true, Vector3.ZERO, rig)
+	_box(Vector3(0.05, 0.71, 0.65), Vector3(-0.56, 0.355, 0), metal, true, Vector3.ZERO, rig)
+	_box(Vector3(0.05, 0.71, 0.65), Vector3(0.56, 0.355, 0), metal, true, Vector3.ZERO, rig)
+	var pos := Vector3(0, SIDE_CY, SIDE_Z)
+	_crt(rig, pos, CRT_GLASS, shell, badge, led)
+	_desktop(rig, pos, CRT_GLASS, wallpaper)
+	_tower(rig, Vector3(-0.32, 0, -0.05), shell)
+	# Keyboard and mouse.
+	_box(Vector3(0.4, 0.03, 0.14), Vector3(-0.02, 0.775, 0.24), _mat(Color(0.88, 0.85, 0.74), 7, Color(0.5, 0.48, 0.42)), false, Vector3(0.08, 0, 0), rig)
+	_box(Vector3(0.06, 0.025, 0.1), Vector3(0.28, 0.772, 0.24), shell, false, Vector3.ZERO, rig)
+	var screen := Node3D.new()
+	screen.position = pos
+	rig.add_child(screen)
+	return screen
+
+
+## Side desk by the left wall, facing into the room: Pong on a putty CRT.
 func _build_pong_desk() -> void:
 	var rig := Node3D.new()
 	rig.position = PONG_DESK
 	rig.rotation.y = PI / 2
 	_world_vp.add_child(rig)
-	var wood := _mat(Color(0.36, 0.38, 0.4), 6, Color.BLACK, 40.0)
-	var metal := _mat(Color(0.25, 0.26, 0.28))
-	var shell := _mat(Color(0.2, 0.2, 0.24), 6, Color.BLACK, 40.0)
-	var dark := _mat(Color(0.05, 0.05, 0.06))
-	_box(Vector3(1.2, 0.05, 0.7), Vector3(0, 0.735, 0), wood, true, Vector3.ZERO, rig)
-	_box(Vector3(0.05, 0.71, 0.65), Vector3(-0.56, 0.355, 0), metal, true, Vector3.ZERO, rig)
-	_box(Vector3(0.05, 0.71, 0.65), Vector3(0.56, 0.355, 0), metal, true, Vector3.ZERO, rig)
-	var h := PONG_SCREEN.y
-	var cy := 0.84 + h * 0.5 + 0.06
-	_box(Vector3(0.26, 0.02, 0.22), Vector3(0, 0.77, -0.08), shell, false, Vector3.ZERO, rig)
-	_box(Vector3(0.07, 0.08, 0.07), Vector3(0, 0.81, -0.08), shell, false, Vector3.ZERO, rig)
-	# Pivot arm behind the monitor, so it can turn sideways.
-	_box(Vector3(0.06, cy - 0.77, 0.05), Vector3(0, (0.77 + cy) * 0.5, -0.38), shell, false, Vector3.ZERO, rig)
-	_pong_pivot = Node3D.new()
-	_pong_pivot.position = Vector3(0, cy, 0)
-	rig.add_child(_pong_pivot)
-	var pv := _pong_pivot
-	_box(Vector3(PONG_SCREEN.x + 0.1, h + 0.12, 0.08), Vector3(0, 0, -0.045), shell, true, Vector3.ZERO, pv)
-	_box(Vector3(PONG_SCREEN.x - 0.04, h - 0.08, 0.26), Vector3(0, 0, -0.22), shell, false, Vector3.ZERO, pv)
-	_box(Vector3(PONG_SCREEN.x + 0.04, h + 0.04, 0.01), Vector3(0, 0, -0.003), dark, false, Vector3.ZERO, pv)
-	_box(Vector3(0.025, 0.012, 0.01), Vector3(0.15, -h * 0.5 - 0.035, -0.003), _mat(Color.BLACK, 0, Color.BLACK, 24.0, Color(1.0, 0.3, 0.7)), false, Vector3.ZERO, pv)
-	_label("PONG-O-TRON", Vector3(-0.06, -h * 0.5 - 0.033, 0.002), 8, Color(0.75, 0.75, 0.8), Vector3.ZERO, 0.0, pv)
-	_box(Vector3(0.08, 0.08, 0.004), Vector3(0.26, 0.2, 0.0), _mat(Color(0.5, 0.9, 0.6)), false, Vector3(0, 0, -0.15), pv)
-	_label("BEAT\nMY\nBEST", Vector3(0.26, 0.2, 0.004), 8, Color(0.1, 0.15, 0.1), Vector3(0, 0, -0.15), 0.0, pv)
-	_box(Vector3(0.36, 0.03, 0.13), Vector3(0, 0.775, 0.2), _mat(Color(0.3, 0.3, 0.34), 7, Color(0.15, 0.15, 0.17)), false, Vector3(0.08, 0, 0), rig)
-	_cyl(0.05, 0.12, Vector3(-0.42, 0.82, 0.05), _mat(Color(0.95, 0.85, 0.3)), Vector3.ZERO, 8, -1.0, rig)
-
-	var screen := Node3D.new()
-	screen.position = Vector3(0, cy, 0)
-	rig.add_child(screen)
+	var wood := _mat(Color(0.74, 0.62, 0.46), 3, Color(0.66, 0.55, 0.4), 60.0)
+	var screen := _side_desk(rig, wood, _putty(), "PONG-O-TRON", Color(1.0, 0.4, 0.75), Color(0.42, 0.36, 0.72))
+	_box(Vector3(0.08, 0.08, 0.004), Vector3(CRT_GLASS.x * 0.5 + 0.02, SIDE_CY + 0.2, SIDE_Z), _mat(Color(0.6, 0.95, 0.65)), false, Vector3(0, 0, -0.15), rig)
+	_label("BEAT\nMY\nBEST", Vector3(CRT_GLASS.x * 0.5 + 0.02, SIDE_CY + 0.2, SIDE_Z + 0.004), 8, Color(0.1, 0.15, 0.1), Vector3(0, 0, -0.15), 0.0, rig)
+	_cyl(0.05, 0.12, Vector3(0.45, 0.82, 0.12), _mat(Color(0.98, 0.85, 0.3)), Vector3.ZERO, 8, -1.0, rig)
 	if _pong_view:
+		_pong_frames = [_window_frame(rig, screen.position, PONG_SCREEN, "PONG.EXE"),
+				_window_frame(rig, screen.position, PONG_SCREEN_WIDE, "PONG.EXE")]
+		_pong_frames[1].visible = false
 		_pong_pc = _add_computer(screen, PONG_SCREEN, _pong_view, PONG_SIZE, true, _pong_screen)
 	else:
 		# Run tools/fetch_games.sh to put Pong on this screen.
-		_label("NO SIGNAL", Vector3(0, 0, 0.002), 12, Color(0.4, 0.5, 0.6), Vector3.ZERO, 0.0, screen)
+		_label("NO SIGNAL", Vector3(0, 0, 0.002), 12, Color(0.9, 0.9, 1.0), Vector3.ZERO, 0.0, screen)
 
 
-## Desk by the right wall, facing into the room: a green-screen terminal
-## running Proof Hand, under a chalkboard of half-finished maths.
+## Desk by the right wall, facing into the room: Proof Hand on a beige CRT,
+## under a chalkboard of half-finished maths.
 func _build_proof_desk() -> void:
 	var rig := Node3D.new()
 	rig.position = PROOF_DESK
 	rig.rotation.y = -PI / 2
 	_world_vp.add_child(rig)
-	var wood := _mat(Color(0.45, 0.33, 0.22), 3, Color(0.38, 0.27, 0.17), 60.0)
-	var metal := _mat(Color(0.25, 0.26, 0.28))
-	var shell := _mat(Color(0.7, 0.68, 0.58), 6, Color.BLACK, 40.0)
-	var dark := _mat(Color(0.03, 0.06, 0.04))
-	_box(Vector3(1.2, 0.05, 0.7), Vector3(0, 0.735, 0), wood, true, Vector3.ZERO, rig)
-	_box(Vector3(0.05, 0.71, 0.65), Vector3(-0.56, 0.355, 0), metal, true, Vector3.ZERO, rig)
-	_box(Vector3(0.05, 0.71, 0.65), Vector3(0.56, 0.355, 0), metal, true, Vector3.ZERO, rig)
-	var h := PONG_SCREEN.y
-	var cy := 0.84 + h * 0.5 + 0.06
-	_box(Vector3(0.3, 0.06, 0.26), Vector3(0, 0.79, -0.08), shell, false, Vector3.ZERO, rig)
-	_box(Vector3(PONG_SCREEN.x + 0.12, h + 0.14, 0.08), Vector3(0, cy, -0.045), shell, true, Vector3.ZERO, rig)
-	_box(Vector3(PONG_SCREEN.x - 0.02, h - 0.04, 0.3), Vector3(0, cy, -0.24), shell, false, Vector3.ZERO, rig)
-	_box(Vector3(PONG_SCREEN.x + 0.04, h + 0.04, 0.01), Vector3(0, cy, -0.003), dark, false, Vector3.ZERO, rig)
-	_box(Vector3(0.025, 0.012, 0.01), Vector3(0.16, cy - h * 0.5 - 0.04, -0.003), _mat(Color.BLACK, 0, Color.BLACK, 24.0, Color(0.3, 1.0, 0.4)), false, Vector3.ZERO, rig)
-	_label("THE PROVER", Vector3(-0.05, cy - h * 0.5 - 0.038, 0.002), 8, Color(0.2, 0.25, 0.2), Vector3.ZERO, 0.0, rig)
-	_box(Vector3(0.4, 0.03, 0.14), Vector3(0, 0.775, 0.2), _mat(Color(0.72, 0.7, 0.6), 7, Color(0.4, 0.4, 0.35)), false, Vector3(0.08, 0, 0), rig)
+	var wood := _mat(Color(0.7, 0.52, 0.34), 3, Color(0.62, 0.45, 0.28), 60.0)
+	var screen := _side_desk(rig, wood, _beige(), "THE PROVER", Color(0.3, 1.0, 0.4), Color(0.12, 0.5, 0.32))
 	# Coffee and a stack of scratch paper.
-	_cyl(0.045, 0.1, Vector3(0.45, 0.81, 0.1), _mat(Color(0.9, 0.9, 0.88)), Vector3.ZERO, 8, -1.0, rig)
-	_box(Vector3(0.22, 0.05, 0.3), Vector3(-0.42, 0.785, 0.05), _mat(Color(0.92, 0.92, 0.86)), false, Vector3(0, -0.25, 0), rig)
+	_cyl(0.045, 0.1, Vector3(0.46, 0.81, 0.12), _mat(Color(0.96, 0.96, 0.94)), Vector3.ZERO, 8, -1.0, rig)
+	_box(Vector3(0.22, 0.05, 0.3), Vector3(-0.44, 0.785, 0.12), _mat(Color(0.96, 0.96, 0.9)), false, Vector3(0, -0.25, 0), rig)
 	# Chalkboard on the wall behind.
 	var board_z := -0.33
-	_box(Vector3(1.7, 0.95, 0.04), Vector3(0, 1.95, board_z), _mat(Color(0.12, 0.2, 0.16), 6, Color.BLACK, 30.0), false, Vector3.ZERO, rig)
-	_box(Vector3(1.78, 0.05, 0.07), Vector3(0, 1.45, board_z + 0.02), wood, false, Vector3.ZERO, rig)
-	var chalk := Color(0.88, 0.9, 0.85)
-	_label("a^2 + b^2 = c^2", Vector3(-0.42, 2.25, board_z + 0.025), 14, chalk, Vector3(0, 0, 0.04), 0.0, rig)
-	_label("1 + 1 = 2 ?", Vector3(0.45, 2.12, board_z + 0.025), 16, chalk, Vector3(0, 0, -0.05), 0.0, rig)
-	_label("f(x) -> INF", Vector3(-0.35, 1.9, board_z + 0.025), 14, chalk, Vector3(0, 0, -0.03), 0.0, rig)
-	_label("PROOF LEFT AS\nAN EXERCISE", Vector3(0.4, 1.72, board_z + 0.025), 11, Color(0.95, 0.75, 0.7), Vector3(0, 0, 0.03), 0.0, rig)
-	_label("QED", Vector3(-0.55, 1.62, board_z + 0.025), 18, Color(0.95, 0.88, 0.5), Vector3(0, 0, 0.08), 0.0, rig)
-
-	var screen := Node3D.new()
-	screen.position = Vector3(0, cy, 0)
-	rig.add_child(screen)
+	_box(Vector3(1.7, 0.95, 0.04), Vector3(0, 1.98, board_z), _mat(Color(0.16, 0.3, 0.24), 6, Color.BLACK, 30.0), false, Vector3.ZERO, rig)
+	_box(Vector3(1.78, 0.05, 0.07), Vector3(0, 1.48, board_z + 0.02), wood, false, Vector3.ZERO, rig)
+	var chalk := Color(0.92, 0.94, 0.88)
+	_label("a^2 + b^2 = c^2", Vector3(-0.42, 2.28, board_z + 0.025), 14, chalk, Vector3(0, 0, 0.04), 0.0, rig)
+	_label("1 + 1 = 2 ?", Vector3(0.45, 2.15, board_z + 0.025), 16, chalk, Vector3(0, 0, -0.05), 0.0, rig)
+	_label("f(x) -> INF", Vector3(-0.35, 1.93, board_z + 0.025), 14, chalk, Vector3(0, 0, -0.03), 0.0, rig)
+	_label("PROOF LEFT AS\nAN EXERCISE", Vector3(0.4, 1.75, board_z + 0.025), 11, Color(1.0, 0.8, 0.75), Vector3(0, 0, 0.03), 0.0, rig)
+	_label("QED", Vector3(-0.55, 1.65, board_z + 0.025), 18, Color(1.0, 0.9, 0.5), Vector3(0, 0, 0.08), 0.0, rig)
 	if _proof_view:
+		_window_frame(rig, screen.position, PONG_SCREEN, "PROOF.EXE")
 		# Taps go in Proof Hand's own canvas units (its 1080×1920 base), not
 		# the window's pixels.
 		_add_computer(screen, PONG_SCREEN, _proof_view, PROOF_BASE, false, _proof_view.get_parent())
 	else:
 		# Run tools/fetch_games.sh --autoloads to put Proof Hand on this screen.
-		_label("NO SIGNAL", Vector3(0, 0, 0.002), 12, Color(0.3, 0.6, 0.35), Vector3.ZERO, 0.0, screen)
+		_label("NO SIGNAL", Vector3(0, 0, 0.002), 12, Color(0.85, 1.0, 0.85), Vector3.ZERO, 0.0, screen)
 
 
-## The Loot Machine: a grubby red slot cabinet against the right wall, its
-## upright screen running the game, a lever on the side.
+## Desk by the door: Cube Desk on a putty CRT, a Rubik's cube beside the
+## keyboard and the world record on the wall.
 func _build_cube_desk() -> void:
 	var rig := Node3D.new()
 	rig.position = CUBE_DESK
 	rig.rotation.y = PI
 	_world_vp.add_child(rig)
-	var wood := _mat(Color(0.3, 0.32, 0.42), 6, Color.BLACK, 40.0)
-	var metal := _mat(Color(0.25, 0.26, 0.28))
-	var shell := _mat(Color(0.12, 0.13, 0.18), 6, Color.BLACK, 40.0)
-	var dark := _mat(Color(0.03, 0.04, 0.08))
-	_box(Vector3(1.2, 0.05, 0.7), Vector3(0, 0.735, 0), wood, true, Vector3.ZERO, rig)
-	_box(Vector3(0.05, 0.71, 0.65), Vector3(-0.56, 0.355, 0), metal, true, Vector3.ZERO, rig)
-	_box(Vector3(0.05, 0.71, 0.65), Vector3(0.56, 0.355, 0), metal, true, Vector3.ZERO, rig)
-	var h := CUBE_SCREEN.y
-	var cy := 0.84 + h * 0.5 + 0.06
-	_box(Vector3(0.24, 0.02, 0.2), Vector3(0, 0.77, -0.1), shell, false, Vector3.ZERO, rig)
-	_box(Vector3(0.06, 0.1, 0.06), Vector3(0, 0.82, -0.1), shell, false, Vector3.ZERO, rig)
-	_box(Vector3(CUBE_SCREEN.x + 0.08, h + 0.1, 0.06), Vector3(0, cy, -0.04), shell, true, Vector3.ZERO, rig)
-	_box(Vector3(CUBE_SCREEN.x + 0.03, h + 0.03, 0.01), Vector3(0, cy, -0.006), dark, false, Vector3.ZERO, rig)
-	_label("CUBETRON", Vector3(0, cy - h * 0.5 - 0.03, 0.0), 8, Color(0.6, 0.65, 0.8), Vector3.ZERO, 0.0, rig)
-	_box(Vector3(0.36, 0.03, 0.13), Vector3(0, 0.775, 0.2), _mat(Color(0.2, 0.2, 0.25), 7, Color(0.1, 0.1, 0.12)), false, Vector3(0.08, 0, 0), rig)
+	var wood := _mat(Color(0.62, 0.7, 0.78), 6, Color.BLACK, 40.0)
+	var screen := _side_desk(rig, wood, _putty(), "CUBETRON", Color(0.4, 0.7, 1.0), Color(0.3, 0.5, 0.82))
 	# A real cube on the desk: black body, six coloured faces.
 	var cube := Node3D.new()
-	cube.position = Vector3(0.38, 0.81, 0.12)
+	cube.position = Vector3(0.42, 0.81, 0.16)
 	cube.rotation.y = 0.5
 	rig.add_child(cube)
-	_box(Vector3(0.07, 0.07, 0.07), Vector3.ZERO, _mat(Color(0.05, 0.05, 0.06)), false, Vector3.ZERO, cube)
-	for f in [[Vector3(0, 0.036, 0), Vector3(0.06, 0.002, 0.06), Color(0.95, 0.95, 0.95)],
-			[Vector3(0, 0, 0.036), Vector3(0.06, 0.06, 0.002), Color(0.0, 0.65, 0.3)],
-			[Vector3(0.036, 0, 0), Vector3(0.002, 0.06, 0.06), Color(0.88, 0.16, 0.24)],
-			[Vector3(-0.036, 0, 0), Vector3(0.002, 0.06, 0.06), Color(1.0, 0.48, 0.1)],
-			[Vector3(0, 0, -0.036), Vector3(0.06, 0.06, 0.002), Color(0.14, 0.4, 0.85)]]:
+	_box(Vector3(0.07, 0.07, 0.07), Vector3.ZERO, _mat(Color(0.08, 0.08, 0.09)), false, Vector3.ZERO, cube)
+	for f in [[Vector3(0, 0.036, 0), Vector3(0.06, 0.002, 0.06), Color(0.98, 0.98, 0.98)],
+			[Vector3(0, 0, 0.036), Vector3(0.06, 0.06, 0.002), Color(0.0, 0.7, 0.35)],
+			[Vector3(0.036, 0, 0), Vector3(0.002, 0.06, 0.06), Color(0.92, 0.2, 0.26)],
+			[Vector3(-0.036, 0, 0), Vector3(0.002, 0.06, 0.06), Color(1.0, 0.55, 0.12)],
+			[Vector3(0, 0, -0.036), Vector3(0.06, 0.06, 0.002), Color(0.16, 0.45, 0.9)]]:
 		_box(f[1], f[0], _mat(f[2]), false, Vector3.ZERO, cube)
 	# The record, on a poster above the desk.
-	_box(Vector3(0.6, 0.42, 0.01), Vector3(0, 1.95, -0.33), _mat(Color(0.09, 0.13, 0.24)), false, Vector3.ZERO, rig)
-	_label("WORLD RECORD", Vector3(0, 2.08, -0.32), 10, Color(0.24, 0.9, 0.76), Vector3.ZERO, 0.0, rig)
-	_label("2.51", Vector3(0, 1.95, -0.32), 34, Color(1.0, 0.82, 0.25), Vector3.ZERO, 0.0, rig)
-	_label("CAN YOU GO SUB-60?", Vector3(0, 1.82, -0.32), 7, Color(0.8, 0.85, 1.0), Vector3.ZERO, 0.0, rig)
-
-	var screen := Node3D.new()
-	screen.position = Vector3(0, cy, 0)
-	rig.add_child(screen)
+	_box(Vector3(0.6, 0.42, 0.01), Vector3(0, 1.95, -0.33), _mat(Color(0.14, 0.2, 0.36)), false, Vector3.ZERO, rig)
+	_label("WORLD RECORD", Vector3(0, 2.08, -0.32), 10, Color(0.35, 0.95, 0.8), Vector3.ZERO, 0.0, rig)
+	_label("2.51", Vector3(0, 1.95, -0.32), 34, Color(1.0, 0.85, 0.3), Vector3.ZERO, 0.0, rig)
+	_label("CAN YOU GO SUB-60?", Vector3(0, 1.82, -0.32), 7, Color(0.85, 0.9, 1.0), Vector3.ZERO, 0.0, rig)
 	if _cube_vp:
+		_window_frame(rig, screen.position, CUBE_SCREEN, "CUBE.EXE")
 		_add_computer(screen, CUBE_SCREEN, _cube_vp, CUBE_SIZE)
 	else:
-		_label("NO SIGNAL", Vector3(0, 0, 0.002), 12, Color(0.4, 0.5, 0.7), Vector3.ZERO, 0.0, screen)
+		_label("NO SIGNAL", Vector3(0, 0, 0.002), 12, Color(0.9, 0.95, 1.0), Vector3.ZERO, 0.0, screen)
 
 
+## The Loot Machine: a cheery red slot cabinet against the right wall, a
+## 4:3 arcade tube with the game in the middle, a lever on the side.
 func _build_loot_cabinet() -> void:
 	var rig := Node3D.new()
 	rig.position = LOOT_SPOT
 	rig.rotation.y = -PI / 2
 	_world_vp.add_child(rig)
-	var red := _mat(Color(0.45, 0.1, 0.09), 6, Color.BLACK, 30.0)
-	var dark_red := _mat(Color(0.22, 0.05, 0.05))
-	var brass := _mat(Color(0.75, 0.6, 0.28))
-	var dark := _mat(Color(0.05, 0.04, 0.04))
-	var h := LOOT_SCREEN.y
+	var red := _mat(Color(0.78, 0.2, 0.18), 6, Color.BLACK, 30.0)
+	var dark_red := _mat(Color(0.45, 0.1, 0.1))
+	var brass := _mat(Color(0.9, 0.74, 0.36))
+	var dark := _mat(Color(0.06, 0.05, 0.05))
 	var cy := 1.24
+	var glass := CRT_GLASS
 	# Body, plinth and a sloped top.
-	_box(Vector3(0.62, 1.78, 0.56), Vector3(0, 0.89, -0.12), red, true, Vector3.ZERO, rig)
-	_box(Vector3(0.66, 0.12, 0.6), Vector3(0, 0.06, -0.12), dark_red, false, Vector3.ZERO, rig)
-	# Screen bezel: brass frame, black glass.
-	_box(Vector3(LOOT_SCREEN.x + 0.08, h + 0.08, 0.02), Vector3(0, cy, 0.16), brass, false, Vector3.ZERO, rig)
-	_box(Vector3(LOOT_SCREEN.x + 0.04, h + 0.04, 0.02), Vector3(0, cy, 0.165), dark, false, Vector3.ZERO, rig)
+	_box(Vector3(0.9, 1.78, 0.56), Vector3(0, 0.89, -0.12), red, true, Vector3.ZERO, rig)
+	_box(Vector3(0.94, 0.12, 0.6), Vector3(0, 0.06, -0.12), dark_red, false, Vector3.ZERO, rig)
+	# Tube bezel: brass frame, black glass that glows a little purple.
+	_box(Vector3(glass.x + 0.06, glass.y + 0.06, 0.02), Vector3(0, cy, 0.16), brass, false, Vector3.ZERO, rig)
+	_box(Vector3(glass.x, glass.y, 0.02), Vector3(0, cy, 0.165), _mat(Color.BLACK, 0, Color.BLACK, 24.0, Color(0.16, 0.06, 0.2)), false, Vector3.ZERO, rig)
+	_label("777  JACKPOT  777", Vector3(0, cy + LOOT_SCREEN.y * 0.5 + 0.03, 0.177), 8, Color(1.0, 0.85, 0.35), Vector3.ZERO, 0.0, rig)
 	# Coin tray and slot under the screen.
 	_box(Vector3(0.5, 0.06, 0.18), Vector3(0, 0.82, 0.22), dark_red, false, Vector3.ZERO, rig)
 	_box(Vector3(0.44, 0.03, 0.14), Vector3(0, 0.85, 0.23), dark, false, Vector3.ZERO, rig)
 	_box(Vector3(0.1, 0.03, 0.01), Vector3(0.18, 0.66, 0.165), brass, false, Vector3.ZERO, rig)
-	_label("INSERT\nCOIN", Vector3(-0.12, 0.66, 0.17), 7, Color(1.0, 0.8, 0.3), Vector3.ZERO, 0.0, rig)
+	_label("INSERT\nCOIN", Vector3(-0.12, 0.66, 0.17), 7, Color(1.0, 0.85, 0.35), Vector3.ZERO, 0.0, rig)
 	# Marquee: a glowing sign on top.
-	_box(Vector3(0.66, 0.24, 0.42), Vector3(0, 1.9, -0.06), _mat(Color(0.2, 0.04, 0.04), 0, Color.BLACK, 24.0, Color(0.5, 0.12, 0.05)), false, Vector3.ZERO, rig)
-	_label("LOOT\nMACHINE", Vector3(0, 1.9, 0.152), 14, Color(1.0, 0.82, 0.25), Vector3.ZERO, 0.0, rig)
-	for i in 6:
-		var bulb := _mat(Color.BLACK, 0, Color.BLACK, 24.0, Color(1.0, 0.85, 0.4))
-		_box(Vector3(0.025, 0.025, 0.01), Vector3(-0.28 + i * 0.112, 2.0, 0.152), bulb, false, Vector3.ZERO, rig)
-		_box(Vector3(0.025, 0.025, 0.01), Vector3(-0.28 + i * 0.112, 1.8, 0.152), bulb, false, Vector3.ZERO, rig)
+	_box(Vector3(0.94, 0.24, 0.42), Vector3(0, 1.9, -0.06), _mat(Color(0.3, 0.06, 0.06), 0, Color.BLACK, 24.0, Color(0.85, 0.3, 0.12)), false, Vector3.ZERO, rig)
+	_label("LOOT\nMACHINE", Vector3(0, 1.9, 0.152), 14, Color(1.0, 0.95, 0.5), Vector3.ZERO, 0.0, rig)
+	for i in 8:
+		var bulb := _mat(Color.BLACK, 0, Color.BLACK, 24.0, Color(1.0, 0.88, 0.45))
+		_box(Vector3(0.025, 0.025, 0.01), Vector3(-0.39 + i * 0.111, 2.0, 0.152), bulb, false, Vector3.ZERO, rig)
+		_box(Vector3(0.025, 0.025, 0.01), Vector3(-0.39 + i * 0.111, 1.8, 0.152), bulb, false, Vector3.ZERO, rig)
 	# Lever on the right side (your right as you face the machine).
-	_box(Vector3(0.06, 0.16, 0.1), Vector3(0.34, 1.05, 0.0), brass, false, Vector3.ZERO, rig)
-	_cyl(0.012, 0.42, Vector3(0.38, 1.25, 0.0), _mat(Color(0.8, 0.8, 0.8)), Vector3.ZERO, 6, -1.0, rig)
-	_cyl(0.04, 0.07, Vector3(0.38, 1.48, 0.0), _mat(Color(0.85, 0.1, 0.1), 0, Color.BLACK, 24.0, Color(0.3, 0.0, 0.0)), Vector3.ZERO, 8, -1.0, rig)
+	_box(Vector3(0.06, 0.16, 0.1), Vector3(0.48, 1.05, 0.0), brass, false, Vector3.ZERO, rig)
+	_cyl(0.012, 0.42, Vector3(0.52, 1.25, 0.0), _mat(Color(0.85, 0.85, 0.85)), Vector3.ZERO, 6, -1.0, rig)
+	_cyl(0.04, 0.07, Vector3(0.52, 1.48, 0.0), _mat(Color(0.95, 0.15, 0.15), 0, Color.BLACK, 24.0, Color(0.35, 0.0, 0.0)), Vector3.ZERO, 8, -1.0, rig)
 	# A sticky note, because it's still an office.
-	_box(Vector3(0.08, 0.08, 0.004), Vector3(-0.25, cy + h * 0.5 + 0.02, 0.172), _mat(Color(0.95, 0.88, 0.35)), false, Vector3(0, 0, 0.15), rig)
-	_label("RELICS\nFOR\nALL", Vector3(-0.25, cy + h * 0.5 + 0.02, 0.176), 7, Color(0.15, 0.1, 0.1), Vector3(0, 0, 0.15), 0.0, rig)
+	_box(Vector3(0.08, 0.08, 0.004), Vector3(-0.38, cy + glass.y * 0.5 + 0.0, 0.172), _mat(Color(0.98, 0.9, 0.4)), false, Vector3(0, 0, 0.15), rig)
+	_label("RELICS\nFOR\nALL", Vector3(-0.38, cy + glass.y * 0.5, 0.176), 7, Color(0.15, 0.1, 0.1), Vector3(0, 0, 0.15), 0.0, rig)
 
 	var screen := Node3D.new()
 	screen.position = Vector3(0, cy, 0.18)
@@ -799,18 +869,18 @@ func _build_loot_cabinet() -> void:
 		_add_computer(screen, LOOT_SCREEN, _loot_vp, LOOT_SIZE)
 	else:
 		# Run tools/fetch_games.sh to put the Loot Machine on this screen.
-		_label("OUT OF\nORDER", Vector3(0, 0, 0.002), 12, Color(1.0, 0.4, 0.3), Vector3.ZERO, 0.0, screen)
+		_label("OUT OF\nORDER", Vector3(0, 0, 0.002), 12, Color(1.0, 0.5, 0.4), Vector3.ZERO, 0.0, screen)
 
 
 func _build_props() -> void:
-	var metal := _mat(Color(0.42, 0.44, 0.42))
+	var metal := _mat(Color(0.62, 0.64, 0.62))
 	var dark := _mat(Color(0.1, 0.1, 0.11))
 	# Office chair, pushed aside so you can walk up.
 	var chair := Node3D.new()
 	chair.position = Vector3(1.25, 0, -1.7)
 	chair.rotation.y = -0.7
 	_world_vp.add_child(chair)
-	var fabric := _mat(Color(0.18, 0.22, 0.36), 1, Color(0.14, 0.17, 0.3), 50.0)
+	var fabric := _mat(Color(0.3, 0.45, 0.66), 1, Color(0.25, 0.38, 0.58), 50.0)
 	_box(Vector3(0.48, 0.08, 0.46), Vector3(0, 0.48, 0), fabric, true, Vector3.ZERO, chair)
 	_box(Vector3(0.46, 0.5, 0.07), Vector3(0, 0.82, 0.22), fabric, false, Vector3(-0.1, 0, 0), chair)
 	_cyl(0.03, 0.4, Vector3(0, 0.25, 0), dark, Vector3.ZERO, 6, -1.0, chair)
@@ -826,7 +896,7 @@ func _build_props() -> void:
 
 	# Plant in the corner.
 	_cyl(0.18, 0.36, Vector3(3.1, 0.18, -2.6), _mat(Color(0.55, 0.3, 0.2)), Vector3.ZERO, 7, 0.22)
-	var leaf := _mat(Color(0.2, 0.45, 0.2), 6, Color.BLACK, 30.0)
+	var leaf := _mat(Color(0.32, 0.64, 0.32), 6, Color.BLACK, 30.0)
 	for i in 7:
 		var a := TAU * i / 7.0
 		_box(Vector3(0.1, 0.55, 0.03), Vector3(3.1 + sin(a) * 0.1, 0.62, -2.6 + cos(a) * 0.1), leaf, false, Vector3(cos(a) * 0.45, a, -sin(a) * 0.45))
@@ -874,8 +944,8 @@ func _build_dale() -> void:
 	_dale.rotation.y = PI / 2
 	_world_vp.add_child(_dale)
 	var r := _dale
-	var wood := _mat(Color(0.48, 0.34, 0.2), 3, Color(0.4, 0.28, 0.16), 60.0)
-	var metal := _mat(Color(0.28, 0.29, 0.31))
+	var wood := _mat(Color(0.7, 0.52, 0.34), 3, Color(0.62, 0.45, 0.28), 60.0)
+	var metal := _mat(Color(0.55, 0.56, 0.56))
 	var dark := _mat(Color(0.1, 0.1, 0.11))
 	var skin := _mat(Color(0.93, 0.72, 0.58))
 	var shirt := _mat(Color(0.86, 0.84, 0.66), 6, Color.BLACK, 40.0)
@@ -884,7 +954,7 @@ func _build_dale() -> void:
 	var pants := _mat(Color(0.22, 0.24, 0.3))
 
 	# Chair behind him.
-	var fabric := _mat(Color(0.32, 0.18, 0.14), 1, Color(0.26, 0.14, 0.11), 50.0)
+	var fabric := _mat(Color(0.6, 0.36, 0.28), 1, Color(0.52, 0.3, 0.24), 50.0)
 	_box(Vector3(0.56, 0.08, 0.5), Vector3(0, 0.46, 0), fabric, false, Vector3.ZERO, r)
 	_box(Vector3(0.54, 0.62, 0.08), Vector3(0, 0.86, -0.3), fabric, false, Vector3(0.12, 0, 0), r)
 	_cyl(0.03, 0.4, Vector3(0, 0.22, 0), dark, Vector3.ZERO, 6, -1.0, r)
@@ -901,7 +971,7 @@ func _build_dale() -> void:
 	_box(Vector3(0.34, 0.07, 0.03), Vector3(0.0, 0.795, dz + 0.24), _mat(Color(0.75, 0.6, 0.28)), false, Vector3(-0.3, 0, 0), r)
 	_label("DALE P.\nACCTS RECEIVABLE", Vector3(0.0, 0.797, dz + 0.258), 7, Color(0.15, 0.1, 0.05), Vector3(-0.3, 0, 0), 0.0, r)
 	# His old monitor, turned away to the side so you can see him.
-	var beige := _mat(Color(0.74, 0.7, 0.58), 6, Color.BLACK, 40.0)
+	var beige := _beige()
 	_box(Vector3(0.36, 0.3, 0.3), Vector3(-0.5, 0.95, dz - 0.12), beige, false, Vector3(0, -0.9, 0), r)
 	_box(Vector3(0.2, 0.03, 0.18), Vector3(-0.5, 0.78, dz - 0.12), beige, false, Vector3(0, -0.9, 0), r)
 	# A purple sticky note on its side. Hmm.
@@ -1554,7 +1624,7 @@ func _apply_insets(force := false) -> void:
 	_toast.offset_top = 24 + _inset.y
 
 
-## Turn the Pong monitor (and Pong's window) to match the phone.
+## Swap Pong's window (on its CRT) between tall and wide to match the phone.
 func _turn_pong(wide: bool) -> void:
 	if _pong_pc == null:
 		return
@@ -1567,9 +1637,11 @@ func _turn_pong(wide: bool) -> void:
 	_pong_view.size = px
 	_pong_view.content_scale_size = px
 	_pong_pc.pixels = Vector2(px)
-	_pong_pc.size = Vector2(PONG_SCREEN.y, PONG_SCREEN.x) if wide else PONG_SCREEN
+	_pong_pc.size = PONG_SCREEN_WIDE if wide else PONG_SCREEN
 	_pong_pc.quad.size = _pong_pc.size
-	_pong_pivot.rotation.z = PI / 2 if wide else 0.0
+	# The CRT stays put; its desktop window goes tall or wide.
+	_pong_frames[0].visible = not wide
+	_pong_frames[1].visible = wide
 	# Pong re-lays itself out when the main window resizes, which may run
 	# before its own window has changed; nudge it once more.
 	var pong := _pong_view.get_child(0)
