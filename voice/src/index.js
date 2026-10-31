@@ -13,7 +13,6 @@ const HEAR = [
 const THINK = [
   "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
   "@cf/meta/llama-3.1-8b-instruct-fast",
-  "@cf/meta/llama-3.1-8b-instruct",
 ];
 const SPEAK = [
   ["@cf/deepgram/aura-2-en", (text) => ({ text, speaker: "zeus" })],
@@ -67,7 +66,7 @@ export default {
     } catch (e) {
       const msg = String(e && e.message ? e.message : e);
       // Free plan: 10,000 "neurons" a day, reset at midnight UTC.
-      if (msg.includes("4006")) return json({ error: TAPPED_OUT, models });
+      if (msg.includes("4006") || JSON.stringify(models).includes("4006")) return json({ error: TAPPED_OUT, models });
       return json({ error: msg.slice(0, 300), models }, 500);
     }
   },
