@@ -115,6 +115,8 @@ func _ready() -> void:
 	theme = Theme.new()
 	theme.default_font = body
 	_build_ui()
+	# Controller / arrow keys: a frame that moves between buttons, A presses.
+	add_child(preload("res://scenes/pad_cursor.gd").new())
 	get_viewport().size_changed.connect(_on_resized)
 	_on_resized()
 	_show_title()
@@ -150,6 +152,7 @@ func _build_ui() -> void:
 	_pause_button = _button("II", Color(0.2, 0.15, 0.25))
 	_pause_button.custom_minimum_size = Vector2(96, MIN_TOUCH_HEIGHT * 0.75)
 	_pause_button.pressed.connect(_on_pause)
+	_pause_button.set_meta("pad_button", JOY_BUTTON_START)
 	top.add_child(_pause_button)
 
 	_body = BoxContainer.new()
@@ -362,6 +365,7 @@ func _build_hand_area() -> Control:
 	_end_turn_button = _button("Land It", Color(0.62, 0.08, 0.18))
 	_end_turn_button.custom_minimum_size = Vector2(330, MIN_TOUCH_HEIGHT)
 	_end_turn_button.pressed.connect(_on_end_turn)
+	_end_turn_button.set_meta("pad_button", JOY_BUTTON_X)
 	controls.add_child(_end_turn_button)
 	return side
 
@@ -429,6 +433,7 @@ func _show_title() -> void:
 	var start := _button("Start your set", COLOR_PUNCHLINE)
 	start.pressed.connect(_new_run)
 	start.pressed.connect(_sound.start_music)
+	start.set_meta("pad_button", JOY_BUTTON_START)
 	_overlay_box.add_child(start)
 
 
@@ -720,6 +725,7 @@ func _set_paused(on: bool) -> void:
 		_overlay_box.add_child(_centered(_label("The crowd waits. Barely.", 24)))
 		var resume := _button("Back to the mic", COLOR_PUNCHLINE)
 		resume.pressed.connect(_set_paused.bind(false))
+		resume.set_meta("pad_button", JOY_BUTTON_START)
 		_overlay_box.add_child(resume)
 	else:
 		_close_overlay()
@@ -740,6 +746,7 @@ func _show_reward() -> void:
 		row.add_child(widget)
 	var skip := _button("Skip", Color(0.3, 0.3, 0.35))
 	skip.pressed.connect(_take_reward.bind(null))
+	skip.set_meta("pad_button", JOY_BUTTON_B)
 	_overlay_box.add_child(skip)
 
 
@@ -767,6 +774,7 @@ func _show_crew() -> void:
 		_overlay_box.add_child(b)
 	var skip := _button("Work alone", Color(0.3, 0.3, 0.35))
 	skip.pressed.connect(_hire.bind(""))
+	skip.set_meta("pad_button", JOY_BUTTON_B)
 	_overlay_box.add_child(skip)
 
 
@@ -796,6 +804,7 @@ func _show_next_up() -> void:
 	var go := _button("Take the stage", COLOR_PUNCHLINE)
 	go.pressed.connect(_start_set)
 	go.pressed.connect(_sound.play.bind("click"))
+	go.set_meta("pad_button", JOY_BUTTON_START)
 	_overlay_box.add_child(go)
 
 

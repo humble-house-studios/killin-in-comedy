@@ -23,6 +23,10 @@ extends Node
 ## Touch: tap the computer (or SIT DOWN) and the camera glides to the desk and
 ## frames the screen; then every tap goes into the game. STAND UP to walk again
 ## (left thumb walks, right thumb looks).
+## Controller: left stick walks (click it or hold LB to run), right stick
+## looks, A sits at the computer you're facing. Seated, the pad goes into
+## that game (each game has its own controls); Back / Select stands up.
+## Keys go to the seated or hovered game too (Pong's arrow keys).
 
 const EYE := 1.5
 const SPEED := 2.4
@@ -73,6 +77,11 @@ const SEAT_FOV := 50.0
 const SEAT_FILL := 0.94
 ## How far in front of a screen you stand when you get up from its desk.
 const STAND_BACK := 0.8
+## Controller: look speed (radians per second at full tilt), stick deadzone,
+## and how far away A still sits you down at the nearest computer.
+const PAD_LOOK := 2.4
+const PAD_DEAD := 0.18
+const PAD_SIT_RANGE := 3.0
 
 
 ## One playable computer: a game running in its own viewport, shown on a screen.
@@ -201,6 +210,12 @@ var _glide_from := Transform3D()
 var _glide_from_fov := 70.0
 var _sit_button: Button
 var _stand_button: Button
+## A controller is being used (hints and crosshair follow it).
+var _pad := false
+var _pad_move := Vector2.ZERO
+var _pad_look := Vector2.ZERO
+var _pad_run := false
+var _pad_told := false
 
 
 func _ready() -> void:
@@ -916,6 +931,9 @@ func _set_seat(pc: Computer) -> void:
 	_glide = 0.0
 	_touches.clear()
 	_stick = Vector2.ZERO
+	_pad_move = Vector2.ZERO
+	_pad_look = Vector2.ZERO
+	_pad_run = false
 	_moved = true
 	if _press_pc:
 		_press_pc.release()
@@ -930,6 +948,8 @@ func _set_seat(pc: Computer) -> void:
 		_pitch = -0.3
 	elif old:
 		old.release()
+	if old:
+		_let_go_keys(old)
 
 
 func _on_resized() -> void:
@@ -983,10 +1003,12 @@ func _physics_process(delta: float) -> void:
 		move.x -= 1
 	if Input.is_physical_key_pressed(KEY_D):
 		move.x += 1
+	if _pad_move.length() > PAD_DEAD:
+		move += _pad_move
 	move = Vector2.ZERO if _seat else move.limit_length(1.0)
 	if move.length() > 0.1:
 		_moved = true
-	var speed := RUN_SPEED if Input.is_physical_key_pressed(KEY_SHIFT) else SPEED
+	var speed := RUN_SPEED if Input.is_physical_key_pressed(KEY_SHIFT) or _pad_run else SPEED
 	if _link:
 		speed *= _link.walk_speed()
 	var want := Basis(Vector3.UP, _yaw) * Vector3(move.x, 0, -move.y) * speed
@@ -1003,6 +1025,8 @@ func _physics_process(delta: float) -> void:
 
 
 func _process(delta: float) -> void:
+	if _seat == null and _pad_look.length() > PAD_DEAD:
+		_look(_pad_look * PAD_LOOK * delta)
 	_player.rotation.y = _yaw
 	_head.rotation.x = _pitch
 	# Lean in a bit while looking at the monitor up close.
@@ -1034,6 +1058,7 @@ func _process(delta: float) -> void:
 		var pc: Computer = aim.pc if close else null
 		if _hover_pc and _hover_pc != pc:
 			_hover_pc.send_motion(Vector2(-1, -1))
+			_let_go_keys(_hover_pc)
 		_hover_pc = pc
 		if pc:
 			pc.send_motion(aim.uv)
@@ -1069,7 +1094,14 @@ func _tick_link(delta: float) -> void:
 
 func _update_hint(aim, close: bool) -> void:
 	var text := ""
-	if _touch:
+	if _pad:
+		if _seat:
+			text = ""
+		elif close:
+			text = "A: SIT DOWN"
+		elif not _moved:
+			text = "LEFT STICK WALK - RIGHT STICK LOOK\nA: SIT AT A COMPUTER"
+	elif _touch:
 		if not _moved:
 			text = "TAP A COMPUTER\nTO SIT DOWN"
 	elif Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
@@ -1085,7 +1117,7 @@ func _update_hint(aim, close: bool) -> void:
 
 func _draw_hud() -> void:
 	var size := _hud.size
-	if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+	if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or (_pad and _seat == null):
 		var c := size * 0.5
 		var aim = _aim_at(_aim_point())
 		if aim != null and aim.dist < REACH:
@@ -1105,16 +1137,26 @@ func _draw_hud() -> void:
 # ---------------------------------------------------------------- input
 
 func _input(event: InputEvent) -> void:
+	if event is InputEventJoypadButton or event is InputEventJoypadMotion:
+		_pad_input(event)
+		return
+	if event is InputEventKey and event.physical_keycode != KEY_ESCAPE:
+		# Keys belong to the game you sit at or point at (Pong's arrows).
+		var pc := _seat if _seat else _hover_pc
+		if pc:
+			pc.view.push_input(event)
 	# Touch and mouse each emulate the other; only handle the real one.
 	if event is InputEventScreenTouch or event is InputEventScreenDrag:
 		if event.device == InputEvent.DEVICE_ID_EMULATION:
 			return
 		_touch = true
+		_pad = false
 		_touch_input(event)
 		return
 	if event is InputEventMouse and event.device == InputEvent.DEVICE_ID_EMULATION:
 		return
 	if event is InputEventMouseButton:
+		_pad = false
 		_mouse_button(event)
 	elif event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		_look(event.relative * LOOK_SENS)
@@ -1136,6 +1178,80 @@ func _mouse_button(event: InputEventMouseButton) -> void:
 			_press_pc.send_button(aim.uv, true)
 	elif _press_pc:
 		_release_press(_aim_point())
+
+
+## Controller. Walking: sticks move and look, A sits down. Seated: everything
+## goes to that game, except Back / Select, which stands you up.
+func _pad_input(event: InputEvent) -> void:
+	if event is InputEventJoypadMotion and absf(event.axis_value) < PAD_DEAD and not _pad:
+		return  # stick drift doesn't count as picking up the pad
+	_pad = true
+	if event is InputEventJoypadButton and event.button_index == JOY_BUTTON_BACK:
+		if event.pressed and _seat:
+			_set_seat(null)
+		return
+	if _seat:
+		_seat.view.push_input(event)
+		return
+	if event is InputEventJoypadMotion:
+		match event.axis:
+			JOY_AXIS_LEFT_X:
+				_pad_move.x = event.axis_value
+			JOY_AXIS_LEFT_Y:
+				_pad_move.y = -event.axis_value
+			JOY_AXIS_RIGHT_X:
+				_pad_look.x = event.axis_value
+			JOY_AXIS_RIGHT_Y:
+				_pad_look.y = event.axis_value
+		return
+	match event.button_index:
+		JOY_BUTTON_LEFT_STICK, JOY_BUTTON_LEFT_SHOULDER:
+			_pad_run = event.pressed
+		JOY_BUTTON_A:
+			if event.pressed and _glide >= 1.0:
+				_pad_sit()
+
+
+## A while walking: sit at the computer you're facing, or the nearest one
+## close by.
+func _pad_sit() -> void:
+	var aim = _aim_at(_aim_point())
+	var pc: Computer = aim.pc if aim != null and aim.dist < PAD_SIT_RANGE else null
+	if pc == null:
+		for c in _computers:
+			var d := _player.global_position.distance_to(c.screen.global_position)
+			if d < PAD_SIT_RANGE and (pc == null or d < _player.global_position.distance_to(pc.screen.global_position)):
+				pc = c
+	if pc == null:
+		_toast.text = "WALK UP TO A COMPUTER"
+		_toast_time = 2.0
+		return
+	_set_seat(pc)
+	if not _pad_told:
+		_pad_told = true
+		_toast.text = "PLAYING WITH THE CONTROLLER\nBACK / SELECT: STAND UP"
+		_toast_time = 3.5
+
+
+## Let go of every stick, D-pad and arrow key in a game, so nothing stays
+## held after you leave it.
+func _let_go_keys(pc: Computer) -> void:
+	for axis in [JOY_AXIS_LEFT_X, JOY_AXIS_LEFT_Y, JOY_AXIS_RIGHT_X, JOY_AXIS_RIGHT_Y]:
+		var m := InputEventJoypadMotion.new()
+		m.axis = axis
+		m.axis_value = 0.0
+		pc.view.push_input(m)
+	for b in [JOY_BUTTON_A, JOY_BUTTON_DPAD_LEFT, JOY_BUTTON_DPAD_RIGHT, JOY_BUTTON_DPAD_UP, JOY_BUTTON_DPAD_DOWN]:
+		var e := InputEventJoypadButton.new()
+		e.button_index = b
+		e.pressed = false
+		pc.view.push_input(e)
+	for k in [KEY_LEFT, KEY_RIGHT, KEY_UP, KEY_DOWN]:
+		var key := InputEventKey.new()
+		key.keycode = k
+		key.physical_keycode = k
+		key.pressed = false
+		pc.view.push_input(key)
 
 
 func _stick_rest() -> Vector2:
