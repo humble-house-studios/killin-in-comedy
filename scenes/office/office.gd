@@ -1425,10 +1425,21 @@ func _end_buttons() -> void:
 	if _voice_chat.available():
 		_add_hold_button()
 	_talk_button("SEE YA", _advance)
+	_talk_pick = 0
+	_show_pick()
+
+
+## HOLD TO TALK, with the key or button to hold on a computer or controller.
+func _hold_label() -> String:
+	if _pad:
+		return "HOLD TO TALK (A / Y)"
+	if not _touch:
+		return "HOLD TO TALK (SPACE)"
+	return "HOLD TO TALK"
 
 
 func _add_hold_button() -> void:
-	_talk_button("HOLD TO TALK", func(): pass)
+	_talk_button(_hold_label(), func(): pass)
 	_hold_button = _talk_buttons.get_child(_talk_buttons.get_child_count() - 1)
 	_hold_button.add_theme_color_override("font_color", Color(1.0, 0.85, 0.3))
 	_hold_button.button_down.connect(_hold_talk)
@@ -1479,7 +1490,7 @@ func _on_dale_failed(message: String) -> void:
 func _reset_hold_button() -> void:
 	if is_instance_valid(_hold_button):
 		_hold_button.disabled = false
-		_hold_button.text = "HOLD TO TALK"
+		_hold_button.text = _hold_label()
 
 
 ## NEXT: finish typing the line first, then move on.
@@ -1505,8 +1516,11 @@ func _waiting_for_choice() -> bool:
 func _on_talk_box_input(event: InputEvent) -> void:
 	var pressed: bool = (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT) \
 			or (event is InputEventScreenTouch and event.pressed)
-	# Tapping the line itself works like NEXT (not while a reply is wanted).
+	# Tapping the line itself works like NEXT (not while a reply is wanted,
+	# and never on the last line: that would walk away before HOLD TO TALK).
 	if pressed and not _chatting:
+		if _talk_last and _talk_text.visible_characters < 0:
+			return
 		_advance()
 
 
@@ -2085,6 +2099,14 @@ func _input(event: InputEvent) -> void:
 			and _seat == null and not _talking:
 		_set_look(1 - _look_i)
 		return
+	if event is InputEventKey and _talking and event.physical_keycode == KEY_SPACE and not event.echo \
+			and is_instance_valid(_hold_button):
+		# Keyboard: hold Space to talk to Dale.
+		if event.pressed:
+			_hold_talk()
+		else:
+			_release_talk()
+		return
 	if event is InputEventKey and event.physical_keycode != KEY_ESCAPE:
 		# Keys belong to the game you sit at or point at (Pong's arrows).
 		var pc := _seat if _seat else _hover_pc
@@ -2196,7 +2218,9 @@ func _pad_sit() -> void:
 ## Chatting with a controller: up/down picks a reply, A says it (or NEXT),
 ## B or Back says bye.
 func _pad_talk(event: InputEvent) -> void:
-	if event is InputEventJoypadButton and event.button_index == JOY_BUTTON_Y and is_instance_valid(_hold_button):
+	var on_hold := is_instance_valid(_hold_button) and _talk_buttons.get_children().find(_hold_button) == _talk_pick
+	if event is InputEventJoypadButton and is_instance_valid(_hold_button) \
+			and (event.button_index == JOY_BUTTON_Y or (event.button_index == JOY_BUTTON_A and on_hold and _talk_last)):
 		if event.pressed:
 			_hold_talk()
 		else:
@@ -2215,7 +2239,7 @@ func _pad_talk(event: InputEvent) -> void:
 		JOY_BUTTON_A:
 			if _glide < 1.0:
 				return
-			if _waiting_for_choice() and _talk_pick < buttons.size():
+			if (_waiting_for_choice() or _talk_last) and _talk_pick < buttons.size():
 				buttons[_talk_pick].pressed.emit()
 			else:
 				_advance()
