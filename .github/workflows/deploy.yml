@@ -71,6 +71,11 @@ jobs:
       - name: Export office build
         shell: bash
         run: |
+          # The office's other computers run other games (Phone Pong); fetch
+          # them only for this build so the main game stays small.
+          command -v git >/dev/null || (apt-get update -qq && apt-get install -y -qq git)
+          tools/fetch_games.sh
+          godot --headless --import >/dev/null 2>&1 || true
           sed -i 's#run/main_scene="res://scenes/main.tscn"#run/main_scene="res://scenes/office/office.tscn"#' project.godot
           mkdir -v -p build/web/office
           godot --headless --export-release "Web" build/web/office/index.html 2>&1 | tail -5

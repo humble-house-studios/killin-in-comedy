@@ -2,8 +2,9 @@ extends SceneTree
 ## Renders the 3D office and saves PNGs to $OUT (needs a display):
 ##   OUT=/some/dir LAYOUT=landscape xvfb-run -a -s "-screen 0 1280x720x24" \
 ##     godot --rendering-driver opengl3 --resolution 1280x720 -s res://tools/office_shot.gd
-## Shots: 0 = by the door, 1 = after tapping the monitor (seated) and tapping
-## "Start your set", 2 = after STAND UP, looking around.
+## Shots: 0 = by the door, 1 = after tapping the main monitor (seated) and
+## tapping "Start your set", 2 = standing, facing the Pong desk, 3 = seated at
+## Pong after a tap. Run tools/fetch_games.sh first so Pong is there.
 
 var office
 
@@ -16,17 +17,28 @@ func _init() -> void:
 	await _frames(90)
 	_shot(0)
 	# Tap the far-away monitor: should glide over and sit down.
-	_tap(_screen_point(Vector2(0.5, 0.5)))
+	var main_pc = office._computers[0]
+	_tap(_screen_point(main_pc, Vector2(0.5, 0.5)))
 	await _frames(120)
 	# Tap "Start your set" on the game, through the same touch path.
-	_tap(_screen_point(Vector2(0.5, 0.81)))
+	_tap(_screen_point(main_pc, Vector2(0.5, 0.81)))
 	await _frames(240)
 	_shot(1)
-	office._set_seated(false)
+	office._set_seat(null)
 	await _frames(60)
-	office._yaw = -2.3
-	await _frames(30)
+	office._player.position = Vector3(0.5, 0, 2.0)
+	office._yaw = PI / 2
+	office._pitch = -0.15
+	await _frames(60)
 	_shot(2)
+	if office._computers.size() > 1:
+		var pong = office._computers[1]
+		_tap(_screen_point(pong, Vector2(0.5, 0.5)))
+		await _frames(120)
+		# Tap PLAY on Pong's title screen.
+		_tap(_screen_point(pong, Vector2(0.5, 0.58)))
+		await _frames(150)
+		_shot(3)
 	quit()
 
 
@@ -35,9 +47,9 @@ func _frames(n: int) -> void:
 
 
 ## Where a point on the game screen (uv) appears on the HUD.
-func _screen_point(uv: Vector2) -> Vector2:
-	var local := Vector3((uv.x - 0.5) * office.SCREEN_W, (0.5 - uv.y) * office.SCREEN_H, 0)
-	var px: Vector2 = office._camera.unproject_position(office._screen.global_transform * local)
+func _screen_point(pc, uv: Vector2) -> Vector2:
+	var local := Vector3((uv.x - 0.5) * pc.size.x, (0.5 - uv.y) * pc.size.y, 0)
+	var px: Vector2 = office._camera.unproject_position(pc.screen.global_transform * local)
 	return px / Vector2(office._world_vp.size) * office._hud.size
 
 

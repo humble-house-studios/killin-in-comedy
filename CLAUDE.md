@@ -63,7 +63,11 @@ right there, it's right on iPhone, Android and Steam. To keep that true:
   play the real game on the desk monitor, first person. The game runs unchanged
   in a SubViewport; clicks/taps are ray-cast onto the screen. On touch, tapping
   the computer (or SIT DOWN) glides the camera to a seated view that frames the
-  screen; STAND UP returns to walking. Published at
+  screen; STAND UP returns to walking. A side desk runs Phone Pong
+  (`humble-house-studios/phone-pong`), pulled into `res://games/pong/` by
+  `tools/fetch_games.sh` at build time (not committed; run it before testing the
+  office locally). Pong runs in an embedded Window so its window logic works
+  untouched. Each game's sound fades with distance. Published at
   https://humble-house-studios.github.io/killin-in-comedy/office/ (second export
   in `deploy.yml`). Screenshots: `tools/office_shot.gd`. `main.gd` must not touch
   the window when it isn't the root (`_owns_window()`).

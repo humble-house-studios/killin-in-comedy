@@ -1,11 +1,15 @@
 extends Node
-## The meta office: walk up to a desk in a PS1-style office and play the real
-## game on the computer monitor, first person.
+## The meta office: walk up to a desk in a PS1-style office and play real
+## games on the computers, first person.
 ## - The 3D world renders at a third of the screen size (chunky PS1 pixels).
-## - The monitor runs res://scenes/main.tscn in its own SubViewport; a second
-##   full-res pass draws only the screen, so cards stay readable up close.
-## - Clicks/taps are ray-cast onto the screen and pushed into the game as mouse
-##   events at that spot.
+## - Each computer runs a game in its own viewport; a second full-res pass
+##   draws only the screens, so they stay readable up close.
+##   - Main desk: this game (res://scenes/main.tscn) in a SubViewport.
+##   - Side desk: Phone Pong (res://games/pong, pulled in by tools/fetch_games.sh)
+##     in an embedded Window (inside a hidden holder viewport), so its own
+##     window-size logic still works.
+## - Clicks/taps are ray-cast onto a screen and pushed into that game at that spot.
+## - Each game has its own audio bus that fades with distance to its screen.
 ## Mouse: click to look around, WASD walk, click the monitor to play, Esc lets go.
 ## Touch: tap the computer (or SIT DOWN) and the camera glides to the desk and
 ## frames the screen; then every tap goes into the game. STAND UP to walk again
@@ -16,13 +20,21 @@ const SPEED := 2.4
 const RUN_SPEED := 3.8
 const LOOK_SENS := 0.0025
 const TOUCH_LOOK_SENS := 0.006
-## How far away you can still click the monitor (metres).
+## How far away you can still click a monitor (metres).
 const REACH := 2.6
-## Screen size in metres (16:9, matches the game viewport).
+## Main monitor: screen size in metres (16:9, matches the game viewport).
 const SCREEN_W := 0.66
 const SCREEN_H := 0.37125
 const SCREEN_POS := Vector3(0.0, 1.17, -2.38)
 const GAME_SIZE := Vector2i(1280, 720)
+## Pong monitor: a tall screen on the side desk by the left wall.
+const PONG_SCENE := "res://games/pong/main.tscn"
+const PONG_SIZE := Vector2i(720, 1280)
+const PONG_SCREEN := Vector2(0.36, 0.64)
+const PONG_DESK := Vector3(-3.05, 0.0, 2.0)
+## Game audio is full volume within NEAR metres of its screen, silent past FAR.
+const AUDIO_NEAR := 1.6
+const AUDIO_FAR := 5.0
 const PIXEL_SHRINK := 3
 const LAYER_WORLD := 1
 const LAYER_SCREEN := 2
@@ -30,8 +42,78 @@ const STICK_RADIUS := 90.0
 ## Seated view: fov, and how much of the view the screen fills.
 const SEAT_FOV := 50.0
 const SEAT_FILL := 0.94
-## Where you stand when you get up from the desk.
-const DESK_SPOT := Vector3(0.0, 0.0, -1.6)
+## How far in front of a screen you stand when you get up from its desk.
+const STAND_BACK := 0.8
+
+
+## One playable computer: a game running in its own viewport, shown on a screen.
+class Computer:
+	## Centre of the screen; the screen faces local +z.
+	var screen: Node3D
+	## Screen size in metres.
+	var size: Vector2
+	var view: Viewport
+	var pixels: Vector2
+	var hi_mat: ShaderMaterial
+	var bus := 0
+	## The game reads screen touches (Pong) instead of mouse buttons (Controls).
+	var touch_events := false
+	## Where the pointer sits on the game (game pixels), or null.
+	var pointer = null
+	var held := false
+
+	func last_uv() -> Vector2:
+		return pointer / pixels if pointer != null else Vector2(-1, -1)
+
+	func send_motion(uv: Vector2) -> void:
+		var pos := uv * pixels
+		if pointer != null and pos.is_equal_approx(pointer):
+			return
+		var rel: Vector2 = pos - (pointer if pointer != null else pos)
+		pointer = pos
+		var ev := InputEventMouseMotion.new()
+		ev.position = pos
+		ev.global_position = pos
+		ev.relative = rel
+		ev.button_mask = MOUSE_BUTTON_MASK_LEFT if held else 0
+		view.push_input(ev, true)
+		if touch_events and held:
+			var drag := InputEventScreenDrag.new()
+			drag.position = pos
+			drag.relative = rel
+			view.push_input(drag, true)
+
+	func send_button(uv: Vector2, pressed: bool) -> void:
+		send_motion(uv)
+		held = pressed
+		var pos := uv * pixels
+		if touch_events:
+			var touch := InputEventScreenTouch.new()
+			touch.position = pos
+			touch.pressed = pressed
+			view.push_input(touch, true)
+			return
+		var ev := InputEventMouseButton.new()
+		ev.button_index = MOUSE_BUTTON_LEFT
+		ev.pressed = pressed
+		ev.position = pos
+		ev.global_position = pos
+		ev.button_mask = MOUSE_BUTTON_MASK_LEFT if pressed else 0
+		view.push_input(ev, true)
+
+	func release() -> void:
+		if held:
+			send_button(last_uv(), false)
+
+	## Camera transform that frames the whole screen, centred.
+	func seat_transform(camera: Camera3D, view_size: Vector2, fov: float, fill: float) -> Transform3D:
+		var aspect := view_size.x / maxf(view_size.y, 1.0)
+		var half := tan(deg_to_rad(fov) * 0.5)
+		var tan_w := half if camera.keep_aspect == Camera3D.KEEP_WIDTH else half * aspect
+		var tan_h := half if camera.keep_aspect == Camera3D.KEEP_HEIGHT else half / aspect
+		var d := maxf(size.x * 0.5 / fill / tan_w, size.y * 0.5 / fill / tan_h)
+		var xf := screen.global_transform
+		return Transform3D(xf.basis.orthonormalized(), xf.origin + xf.basis.z.normalized() * d)
 
 var _ps1 := preload("res://scenes/office/ps1.gdshader")
 var _monitor_shader := preload("res://scenes/office/monitor.gdshader")
@@ -40,12 +122,16 @@ var _world_box: SubViewportContainer
 var _world_vp: SubViewport
 var _screen_vp: SubViewport
 var _game_vp: SubViewport
+var _pong_view: Window
+## What Pong's screen shows (the holder its window is embedded in).
+var _pong_screen: SubViewport
+var _computers: Array[Computer] = []
+## Game viewport -> audio bus index, so each game's sounds can fade by distance.
+var _view_bus := {}
 var _player: CharacterBody3D
 var _head: Node3D
 var _camera: Camera3D
 var _screen_camera: Camera3D
-var _screen: Node3D
-var _screen_hi_mat: ShaderMaterial
 var _clock_hands: Array[Node3D] = []
 var _hud: Control
 var _hint: Label
@@ -58,14 +144,16 @@ var _zoom := 0.0
 var _touch := false
 ## Touch index -> "move" / "look" / "screen".
 var _touches := {}
+## The computer a held click/tap is pressing on.
+var _press_pc: Computer
+## The computer the crosshair last hovered.
+var _hover_pc: Computer
 var _stick_origin := Vector2.ZERO
 var _stick_pos := Vector2.ZERO
 var _stick := Vector2.ZERO
-## Where the pointer sits on the game screen (game pixels), or null.
-var _game_pointer = null
-var _game_held := false
 var _moved := false
-var _seated := false
+## The computer you're sitting at, or null while walking.
+var _seat: Computer
 ## Camera glide between walking and seated views.
 var _glide := 1.0
 var _glide_time := 0.6
@@ -77,6 +165,7 @@ var _stand_button: Button
 
 func _ready() -> void:
 	_touch = DisplayServer.is_touchscreen_available()
+	get_tree().node_added.connect(_on_node_added)
 	_build_game()
 	_build_views()
 	_build_room()
@@ -94,7 +183,81 @@ func _build_game() -> void:
 	_game_vp.disable_3d = true
 	_game_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	add_child(_game_vp)
+	_view_bus[_game_vp] = _make_bus("Comedy")
 	_game_vp.add_child(preload("res://scenes/main.tscn").instantiate())
+	if not ResourceLoader.exists(PONG_SCENE):
+		return
+	# Pong sizes itself from get_window(), so it gets a window of its own,
+	# embedded in a holder viewport that's never drawn (only its texture is
+	# shown), so the window can't pop up over the office.
+	var holder := SubViewport.new()
+	holder.size = PONG_SIZE
+	holder.disable_3d = true
+	holder.gui_embed_subwindows = true
+	holder.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	add_child(holder)
+	_pong_screen = holder
+	_pong_view = Window.new()
+	_pong_view.size = PONG_SIZE
+	_pong_view.borderless = true
+	_pong_view.unfocusable = true
+	_pong_view.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
+	_pong_view.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_EXPAND
+	_pong_view.content_scale_size = PONG_SIZE
+	holder.add_child(_pong_view)
+	_view_bus[_pong_view] = _make_bus("Pong")
+	_pong_view.add_child(load(PONG_SCENE).instantiate())
+
+
+func _make_bus(bus_name: String) -> int:
+	var i := AudioServer.bus_count
+	AudioServer.add_bus(i)
+	AudioServer.set_bus_name(i, bus_name)
+	AudioServer.set_bus_send(i, "Master")
+	return i
+
+
+## Route each game's sound players to that game's bus.
+func _on_node_added(node: Node) -> void:
+	if not (node is AudioStreamPlayer or node is AudioStreamPlayer2D):
+		return
+	for view in _view_bus:
+		if view.is_ancestor_of(node):
+			node.bus = AudioServer.get_bus_name(_view_bus[view])
+			return
+
+
+## A screen showing a game's viewport, plus its crisp copy for the screen pass.
+## view gets the input; shown (default: view) is what the screen displays.
+func _add_computer(screen: Node3D, size: Vector2, view: Viewport, pixels: Vector2i, touch_events := false, shown: Viewport = null) -> Computer:
+	var pc := Computer.new()
+	pc.screen = screen
+	pc.size = size
+	pc.view = view
+	pc.pixels = Vector2(pixels)
+	pc.touch_events = touch_events
+	pc.bus = _view_bus[view]
+	var quad := QuadMesh.new()
+	quad.size = size
+	var lo := ShaderMaterial.new()
+	lo.shader = _monitor_shader
+	var texture := (shown if shown else view).get_texture()
+	lo.set_shader_parameter("game", texture)
+	var lo_mi := MeshInstance3D.new()
+	lo_mi.mesh = quad
+	lo_mi.material_override = lo
+	lo_mi.layers = LAYER_WORLD
+	screen.add_child(lo_mi)
+	pc.hi_mat = lo.duplicate()
+	pc.hi_mat.set_shader_parameter("game", texture)
+	var hi_mi := MeshInstance3D.new()
+	hi_mi.mesh = quad
+	hi_mi.material_override = pc.hi_mat
+	hi_mi.layers = LAYER_SCREEN
+	hi_mi.position.z = 0.001
+	screen.add_child(hi_mi)
+	_computers.append(pc)
+	return pc
 
 
 func _build_views() -> void:
@@ -178,7 +341,7 @@ func _cyl(radius: float, height: float, pos: Vector3, mat: Material, rot := Vect
 	return mi
 
 
-func _label(text: String, pos: Vector3, size: int, color: Color, rot := Vector3.ZERO, width := 0.0) -> Label3D:
+func _label(text: String, pos: Vector3, size: int, color: Color, rot := Vector3.ZERO, width := 0.0, parent: Node3D = null) -> Label3D:
 	var l := Label3D.new()
 	l.text = text
 	l.font = preload("res://fonts/press_start_2p.ttf")
@@ -195,7 +358,7 @@ func _label(text: String, pos: Vector3, size: int, color: Color, rot := Vector3.
 	if width > 0:
 		l.autowrap_mode = TextServer.AUTOWRAP_WORD
 		l.width = width
-	_world_vp.add_child(l)
+	(parent if parent else _world_vp).add_child(l)
 	return l
 
 
@@ -231,6 +394,7 @@ func _build_room() -> void:
 	_box(Vector3(0.1, 0.04, 0.06), Vector3(1.45, 1.0, 3.93), _mat(Color(0.7, 0.65, 0.4)))
 
 	_build_desk()
+	_build_pong_desk()
 	_build_props()
 
 
@@ -262,27 +426,10 @@ func _build_desk() -> void:
 	_label("TIGHT\nFIVE!", Vector3(-0.42, SCREEN_POS.y + 0.22, SCREEN_POS.z + 0.004), 10, Color(0.15, 0.1, 0.1), Vector3(0, 0, 0.12))
 	_label("LAND\nAT THE\nPEAK", Vector3(0.43, SCREEN_POS.y - 0.17, SCREEN_POS.z + 0.004), 7, Color(0.15, 0.1, 0.1), Vector3(0, 0, -0.1))
 
-	_screen = Node3D.new()
-	_screen.position = SCREEN_POS
-	_world_vp.add_child(_screen)
-	var quad := QuadMesh.new()
-	quad.size = Vector2(SCREEN_W, SCREEN_H)
-	var lo := ShaderMaterial.new()
-	lo.shader = _monitor_shader
-	lo.set_shader_parameter("game", _game_vp.get_texture())
-	var lo_mi := MeshInstance3D.new()
-	lo_mi.mesh = quad
-	lo_mi.material_override = lo
-	lo_mi.layers = LAYER_WORLD
-	_screen.add_child(lo_mi)
-	_screen_hi_mat = lo.duplicate()
-	_screen_hi_mat.set_shader_parameter("game", _game_vp.get_texture())
-	var hi_mi := MeshInstance3D.new()
-	hi_mi.mesh = quad
-	hi_mi.material_override = _screen_hi_mat
-	hi_mi.layers = LAYER_SCREEN
-	hi_mi.position.z = 0.001
-	_screen.add_child(hi_mi)
+	var screen := Node3D.new()
+	screen.position = SCREEN_POS
+	_world_vp.add_child(screen)
+	_add_computer(screen, Vector2(SCREEN_W, SCREEN_H), _game_vp, GAME_SIZE)
 
 	# Keyboard, mouse, mug.
 	_box(Vector3(0.46, 0.03, 0.16), Vector3(-0.05, 0.775, -2.3), _mat(Color(0.8, 0.77, 0.66), 7, Color(0.45, 0.43, 0.38)), false, Vector3(0.08, 0, 0))
@@ -292,6 +439,43 @@ func _build_desk() -> void:
 	_cyl(0.038, 0.005, Vector3(-0.6, 0.861, -2.4), _mat(Color(0.2, 0.1, 0.05)))
 	# Paper stack.
 	_box(Vector3(0.22, 0.04, 0.3), Vector3(0.68, 0.78, -2.6), _mat(Color(0.92, 0.92, 0.88)), false, Vector3(0, 0.2, 0))
+
+
+## Side desk by the left wall, facing into the room: a tall monitor running Pong.
+func _build_pong_desk() -> void:
+	var rig := Node3D.new()
+	rig.position = PONG_DESK
+	rig.rotation.y = PI / 2
+	_world_vp.add_child(rig)
+	var wood := _mat(Color(0.36, 0.38, 0.4), 6, Color.BLACK, 40.0)
+	var metal := _mat(Color(0.25, 0.26, 0.28))
+	var shell := _mat(Color(0.2, 0.2, 0.24), 6, Color.BLACK, 40.0)
+	var dark := _mat(Color(0.05, 0.05, 0.06))
+	_box(Vector3(1.2, 0.05, 0.7), Vector3(0, 0.735, 0), wood, true, Vector3.ZERO, rig)
+	_box(Vector3(0.05, 0.71, 0.65), Vector3(-0.56, 0.355, 0), metal, true, Vector3.ZERO, rig)
+	_box(Vector3(0.05, 0.71, 0.65), Vector3(0.56, 0.355, 0), metal, true, Vector3.ZERO, rig)
+	var h := PONG_SCREEN.y
+	var cy := 0.84 + h * 0.5 + 0.06
+	_box(Vector3(0.26, 0.02, 0.22), Vector3(0, 0.77, -0.08), shell, false, Vector3.ZERO, rig)
+	_box(Vector3(0.07, 0.08, 0.07), Vector3(0, 0.81, -0.08), shell, false, Vector3.ZERO, rig)
+	_box(Vector3(PONG_SCREEN.x + 0.1, h + 0.12, 0.08), Vector3(0, cy, -0.045), shell, true, Vector3.ZERO, rig)
+	_box(Vector3(PONG_SCREEN.x - 0.04, h - 0.08, 0.26), Vector3(0, cy, -0.22), shell, false, Vector3.ZERO, rig)
+	_box(Vector3(PONG_SCREEN.x + 0.04, h + 0.04, 0.01), Vector3(0, cy, -0.003), dark, false, Vector3.ZERO, rig)
+	_box(Vector3(0.025, 0.012, 0.01), Vector3(0.15, cy - h * 0.5 - 0.035, -0.003), _mat(Color.BLACK, 0, Color.BLACK, 24.0, Color(1.0, 0.3, 0.7)), false, Vector3.ZERO, rig)
+	_label("PONG-O-TRON", Vector3(-0.06, cy - h * 0.5 - 0.033, 0.002), 8, Color(0.75, 0.75, 0.8), Vector3.ZERO, 0.0, rig)
+	_box(Vector3(0.08, 0.08, 0.004), Vector3(0.26, cy + 0.2, 0.0), _mat(Color(0.5, 0.9, 0.6)), false, Vector3(0, 0, -0.15), rig)
+	_label("BEAT\nMY\nBEST", Vector3(0.26, cy + 0.2, 0.004), 8, Color(0.1, 0.15, 0.1), Vector3(0, 0, -0.15), 0.0, rig)
+	_box(Vector3(0.36, 0.03, 0.13), Vector3(0, 0.775, 0.2), _mat(Color(0.3, 0.3, 0.34), 7, Color(0.15, 0.15, 0.17)), false, Vector3(0.08, 0, 0), rig)
+	_cyl(0.05, 0.12, Vector3(-0.42, 0.82, 0.05), _mat(Color(0.95, 0.85, 0.3)), Vector3.ZERO, 8, -1.0, rig)
+
+	var screen := Node3D.new()
+	screen.position = Vector3(0, cy, 0)
+	rig.add_child(screen)
+	if _pong_view:
+		_add_computer(screen, PONG_SCREEN, _pong_view, PONG_SIZE, true, _pong_screen)
+	else:
+		# Run tools/fetch_games.sh to put Pong on this screen.
+		_label("NO SIGNAL", Vector3(0, 0, 0.002), 12, Color(0.4, 0.5, 0.6), Vector3.ZERO, 0.0, screen)
 
 
 func _build_props() -> void:
@@ -419,9 +603,9 @@ func _build_hud() -> void:
 	_title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_hud.add_child(_title)
 	_sit_button = _hud_button("SIT DOWN", Control.PRESET_BOTTOM_RIGHT)
-	_sit_button.pressed.connect(_set_seated.bind(true))
+	_sit_button.pressed.connect(_sit_nearest)
 	_stand_button = _hud_button("STAND UP", Control.PRESET_TOP_LEFT)
-	_stand_button.pressed.connect(_set_seated.bind(false))
+	_stand_button.pressed.connect(_set_seat.bind(null))
 	var t := create_tween()
 	t.tween_interval(3.5)
 	t.tween_property(_title, "modulate:a", 0.0, 1.5)
@@ -459,36 +643,41 @@ func _hud_button_at(point: Vector2) -> bool:
 	return false
 
 
-func _set_seated(on: bool) -> void:
-	if on == _seated:
+func _sit_nearest() -> void:
+	var best: Computer
+	for pc in _computers:
+		if best == null or _player.global_position.distance_to(pc.screen.global_position) \
+				< _player.global_position.distance_to(best.screen.global_position):
+			best = pc
+	_set_seat(best)
+
+
+## Sit at a computer (the camera glides to frame its screen), or stand (null).
+func _set_seat(pc: Computer) -> void:
+	if pc == _seat:
 		return
-	_seated = on
+	var old := _seat
+	_seat = pc
 	_glide_from = _camera.global_transform
 	_glide_from_fov = _camera.fov
-	_glide_time = 0.5 + 0.12 * _glide_from.origin.distance_to(SCREEN_POS) if on else 0.5
+	_glide_time = 0.5 + 0.12 * _glide_from.origin.distance_to(pc.screen.global_position) if pc else 0.5
 	_glide = 0.0
 	_touches.clear()
 	_stick = Vector2.ZERO
 	_moved = true
-	if on:
+	if _press_pc:
+		_press_pc.release()
+		_press_pc = null
+	if pc:
 		# Leave the body at the desk so standing up puts you right there.
+		var xf := pc.screen.global_transform
+		var fwd := xf.basis.z.normalized()
 		_player.velocity = Vector3.ZERO
-		_player.position = DESK_SPOT
-		_yaw = 0.0
+		_player.global_position = Vector3(xf.origin.x, 0.0, xf.origin.z) + Vector3(fwd.x, 0, fwd.z).normalized() * STAND_BACK
+		_yaw = atan2(fwd.x, fwd.z)
 		_pitch = -0.3
-	elif _game_held:
-		_send_button(_last_uv(), false)
-
-
-## Camera transform that frames the whole screen, centred.
-func _seat_transform() -> Transform3D:
-	var size := Vector2(_world_vp.size)
-	var aspect := size.x / maxf(size.y, 1.0)
-	var half := tan(deg_to_rad(SEAT_FOV) * 0.5)
-	var tan_w := half if _camera.keep_aspect == Camera3D.KEEP_WIDTH else half * aspect
-	var tan_h := half if _camera.keep_aspect == Camera3D.KEEP_HEIGHT else half / aspect
-	var d := maxf(SCREEN_W * 0.5 / SEAT_FILL / tan_w, SCREEN_H * 0.5 / SEAT_FILL / tan_h)
-	return Transform3D(Basis.IDENTITY, SCREEN_POS + Vector3(0, 0, d))
+	elif old:
+		old.release()
 
 
 func _on_resized() -> void:
@@ -506,15 +695,16 @@ func _on_resized() -> void:
 
 func _physics_process(delta: float) -> void:
 	var move := _stick
-	if Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_UP):
+	# WASD only: the arrow keys belong to Pong's paddle.
+	if Input.is_physical_key_pressed(KEY_W):
 		move.y += 1
-	if Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN):
+	if Input.is_physical_key_pressed(KEY_S):
 		move.y -= 1
-	if Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT):
+	if Input.is_physical_key_pressed(KEY_A):
 		move.x -= 1
-	if Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT):
+	if Input.is_physical_key_pressed(KEY_D):
 		move.x += 1
-	move = Vector2.ZERO if _seated else move.limit_length(1.0)
+	move = Vector2.ZERO if _seat else move.limit_length(1.0)
 	if move.length() > 0.1:
 		_moved = true
 	var speed := RUN_SPEED if Input.is_physical_key_pressed(KEY_SHIFT) else SPEED
@@ -536,13 +726,13 @@ func _process(delta: float) -> void:
 	_head.rotation.x = _pitch
 	# Lean in a bit while looking at the monitor up close.
 	var aim = _aim_at(_aim_point())
-	var close: bool = aim != null and aim.dist < REACH and not _seated
+	var close: bool = aim != null and aim.dist < REACH and _seat == null
 	_zoom = move_toward(_zoom, 1.0 if close else 0.0, delta * 2.5)
 	var walk_fov := lerpf(70.0, 52.0, _zoom * _zoom * (3.0 - 2.0 * _zoom))
 	# Glide between the walking view and the seated view.
 	_glide = minf(1.0, _glide + delta / _glide_time)
-	var target := _seat_transform() if _seated else _head.global_transform
-	var target_fov := SEAT_FOV if _seated else walk_fov
+	var target := _seat.seat_transform(_camera, Vector2(_world_vp.size), SEAT_FOV, SEAT_FILL) if _seat else _head.global_transform
+	var target_fov := SEAT_FOV if _seat else walk_fov
 	if _glide < 1.0:
 		var e := _glide * _glide * (3.0 - 2.0 * _glide)
 		_camera.global_transform = _glide_from.interpolate_with(target, e)
@@ -552,24 +742,28 @@ func _process(delta: float) -> void:
 		_camera.fov = target_fov
 	_screen_camera.global_transform = _camera.global_transform
 	_screen_camera.fov = _camera.fov
-	var dist := _camera.global_position.distance_to(SCREEN_POS)
-	_screen_hi_mat.set_shader_parameter("fade", clampf((4.0 - dist) / 1.5, 0.0, 1.0))
+	for pc in _computers:
+		var dist := _camera.global_position.distance_to(pc.screen.global_position)
+		pc.hi_mat.set_shader_parameter("fade", clampf((4.0 - dist) / 1.5, 0.0, 1.0))
+		var vol := clampf((AUDIO_FAR - dist) / (AUDIO_FAR - AUDIO_NEAR), 0.0, 1.0)
+		AudioServer.set_bus_volume_db(pc.bus, linear_to_db(maxf(vol, 0.0001)))
 
 	# Hover the game under the crosshair (mouse) so buttons light up.
-	if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not _touches.has("screen"):
-		if close:
-			_send_motion(aim.uv)
-		elif _game_pointer != null and not _game_held:
-			_send_motion(Vector2(-1, -1))
-			_game_pointer = null
+	if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and _press_pc == null:
+		var pc: Computer = aim.pc if close else null
+		if _hover_pc and _hover_pc != pc:
+			_hover_pc.send_motion(Vector2(-1, -1))
+		_hover_pc = pc
+		if pc:
+			pc.send_motion(aim.uv)
 
 	var time := Time.get_time_dict_from_system()
 	if _clock_hands.size() == 2:
 		_clock_hands[0].rotation.z = -TAU * (fmod(time.hour, 12) + time.minute / 60.0) / 12.0
 		_clock_hands[1].rotation.z = -TAU * time.minute / 60.0
 
-	_sit_button.visible = _touch and not _seated
-	_stand_button.visible = _touch and _seated
+	_sit_button.visible = _touch and _seat == null and not _computers.is_empty()
+	_stand_button.visible = _touch and _seat != null
 	_update_hint(aim, close)
 	_hud.queue_redraw()
 
@@ -578,7 +772,7 @@ func _update_hint(aim, close: bool) -> void:
 	var text := ""
 	if _touch:
 		if not _moved:
-			text = "TAP THE COMPUTER\nTO SIT DOWN"
+			text = "TAP A COMPUTER\nTO SIT DOWN"
 	elif Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		text = "CLICK TO LOOK AROUND\nWASD WALK - MOUSE LOOK - ESC LETS GO"
 	elif close:
@@ -586,7 +780,7 @@ func _update_hint(aim, close: bool) -> void:
 	elif aim != null:
 		text = "GET CLOSER"
 	elif not _moved:
-		text = "WALK UP TO THE COMPUTER"
+		text = "WALK UP TO A COMPUTER"
 	_hint.text = text
 
 
@@ -602,7 +796,7 @@ func _draw_hud() -> void:
 	if _touches.values().has("move"):
 		_hud.draw_arc(_stick_origin, STICK_RADIUS, 0, TAU, 32, Color(1, 1, 1, 0.35), 4)
 		_hud.draw_circle(_stick_origin + _stick * STICK_RADIUS, 34, Color(1, 1, 1, 0.35))
-	elif _touch and not _seated:
+	elif _touch and _seat == null:
 		# Ghost stick so you can see where the walk thumb goes.
 		var rest := _stick_rest()
 		_hud.draw_arc(rest, STICK_RADIUS, 0, TAU, 32, Color(1, 1, 1, 0.18), 4)
@@ -639,10 +833,10 @@ func _mouse_button(event: InputEventMouseButton) -> void:
 	if event.pressed:
 		var aim = _aim_at(_aim_point())
 		if aim != null and aim.dist < REACH:
-			_send_button(aim.uv, true)
-	elif _game_held:
-		var aim = _aim_at(_aim_point())
-		_send_button(aim.uv if aim != null else _last_uv(), false)
+			_press_pc = aim.pc
+			_press_pc.send_button(aim.uv, true)
+	elif _press_pc:
+		_release_press(_aim_point())
 
 
 func _stick_rest() -> Vector2:
@@ -656,14 +850,15 @@ func _touch_input(event: InputEvent) -> void:
 			if _hud_button_at(event.position):
 				return
 			var aim = _aim_at(event.position)
-			if _seated:
+			if _seat:
 				# Seated: every tap goes to the game; nothing else moves.
-				if aim != null and not _touches.values().has("screen"):
+				if aim != null and aim.pc == _seat and _press_pc == null:
 					_touches[i] = "screen"
-					_send_button(aim.uv, true)
+					_press_pc = _seat
+					_seat.send_button(aim.uv, true)
 			elif aim != null and _glide >= 1.0:
-				# Tap the computer from anywhere to sit down at it.
-				_set_seated(true)
+				# Tap a computer from anywhere to sit down at it.
+				_set_seat(aim.pc)
 			elif event.position.x < _hud.size.x * 0.45 and not _touches.values().has("move"):
 				_touches[i] = "move"
 				_stick_origin = event.position
@@ -673,17 +868,16 @@ func _touch_input(event: InputEvent) -> void:
 		else:
 			var kind = _touches.get(i)
 			_touches.erase(i)
-			if kind == "screen":
-				var aim = _aim_at(event.position)
-				_send_button(aim.uv if aim != null else _last_uv(), false)
+			if kind == "screen" and _press_pc:
+				_release_press(event.position)
 			elif kind == "move":
 				_stick = Vector2.ZERO
 		return
 	match _touches.get(i):
 		"screen":
 			var aim = _aim_at(event.position)
-			if aim != null:
-				_send_motion(aim.uv)
+			if aim != null and aim.pc == _press_pc:
+				_press_pc.send_motion(aim.uv)
 		"move":
 			var d: Vector2 = (event.position - _stick_origin) / STICK_RADIUS
 			_stick = Vector2(d.x, -d.y).limit_length(1.0)
@@ -701,51 +895,33 @@ func _aim_point() -> Vector2:
 	return _hud.size * 0.5
 
 
-## Ray from a HUD point onto the monitor. Returns {uv, dist} or null.
+## Ray from a HUD point onto the nearest screen it hits. Returns
+## {uv, dist, pc} or null.
 func _aim_at(point: Vector2):
 	if _hud == null or _hud.size.x <= 0:
 		return null
 	var px := point / _hud.size * Vector2(_world_vp.size)
 	var origin := _camera.project_ray_origin(px)
 	var dir := _camera.project_ray_normal(px)
-	var inv := _screen.global_transform.affine_inverse()
-	var lo := inv * origin
-	var ld := inv.basis * dir
-	if ld.z >= -0.0001 or lo.z <= 0:
-		return null
-	var t := -lo.z / ld.z
-	var hit := lo + ld * t
-	var uv := Vector2(hit.x / SCREEN_W + 0.5, 0.5 - hit.y / SCREEN_H)
-	if uv.x < 0 or uv.x > 1 or uv.y < 0 or uv.y > 1:
-		return null
-	return {"uv": uv, "dist": t}
+	var best = null
+	for pc in _computers:
+		var inv := pc.screen.global_transform.affine_inverse()
+		var lo := inv * origin
+		var ld := inv.basis * dir
+		if ld.z >= -0.0001 or lo.z <= 0:
+			continue
+		var t := -lo.z / ld.z
+		var hit := lo + ld * t
+		var uv := Vector2(hit.x / pc.size.x + 0.5, 0.5 - hit.y / pc.size.y)
+		if uv.x < 0 or uv.x > 1 or uv.y < 0 or uv.y > 1:
+			continue
+		if best == null or t < best.dist:
+			best = {"uv": uv, "dist": t, "pc": pc}
+	return best
 
 
-func _last_uv() -> Vector2:
-	return _game_pointer / Vector2(GAME_SIZE) if _game_pointer != null else Vector2(-1, -1)
-
-
-func _send_motion(uv: Vector2) -> void:
-	var pos := uv * Vector2(GAME_SIZE)
-	if _game_pointer != null and pos.is_equal_approx(_game_pointer):
-		return
-	var ev := InputEventMouseMotion.new()
-	ev.position = pos
-	ev.global_position = pos
-	ev.relative = pos - (_game_pointer if _game_pointer != null else pos)
-	ev.button_mask = MOUSE_BUTTON_MASK_LEFT if _game_held else 0
-	_game_pointer = pos
-	_game_vp.push_input(ev, true)
-
-
-func _send_button(uv: Vector2, pressed: bool) -> void:
-	_send_motion(uv)
-	var pos := uv * Vector2(GAME_SIZE)
-	var ev := InputEventMouseButton.new()
-	ev.button_index = MOUSE_BUTTON_LEFT
-	ev.pressed = pressed
-	ev.position = pos
-	ev.global_position = pos
-	ev.button_mask = MOUSE_BUTTON_MASK_LEFT if pressed else 0
-	_game_held = pressed
-	_game_vp.push_input(ev, true)
+## Let go of whatever's being pressed, at this HUD point if it's still on that screen.
+func _release_press(point: Vector2) -> void:
+	var aim = _aim_at(point)
+	_press_pc.send_button(aim.uv if aim != null and aim.pc == _press_pc else _press_pc.last_uv(), false)
+	_press_pc = null
