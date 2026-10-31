@@ -106,7 +106,9 @@ right there, it's right on iPhone, Android and Steam. To keep that true:
   (`scenes/office/dale_voice.gd`, the muted `Mic` bus) and sends it to Dale's
   voice server (`voice/`, a Cloudflare Worker on free Workers AI: Whisper hears,
   Llama answers as Dale with `DaleStory.persona()` keeping later chapters
-  secret, Aura speaks). `deploy.yml`'s `voice` job deploys it when the repo has
+  secret, Aura speaks; with a `GROQ_API_KEY` secret, free Groq hears and thinks
+  and is the backup voice, saving Cloudflare's 10k-neuron daily allowance).
+  `deploy.yml`'s `voice` job deploys it when the repo has
   `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` secrets and writes its URL
   into `data/voice_server.gd` for the office build (empty = no TALK). Published at
   https://humble-house-studios.github.io/killin-in-comedy/office/ (second export

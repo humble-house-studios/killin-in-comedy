@@ -51,7 +51,8 @@ export default {
     if (new URL(req.url).pathname === "/say") {
       const text = clip(body.text, 400).trim();
       if (!text) return json({ error: "no text" }, 400);
-      return json({ audio: await speak(env, text, models), models });
+      const audio = body.engine === "groq" ? await groqSpeak(env, text, models) : await speak(env, text, models);
+      return json({ audio, models });
     }
     try {
       let heard = clip(body.text, 500).trim();
@@ -72,7 +73,83 @@ export default {
   },
 };
 
+// Groq (free key, very fast) hears and thinks when GROQ_API_KEY is set, so
+// Cloudflare's free daily allowance goes to Dale's voice. Each falls back to
+// the other.
+const GROQ = "https://api.groq.com/openai/v1";
+const GROQ_HEAR = "whisper-large-v3-turbo";
+const GROQ_THINK = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"];
+const GROQ_SPEAK = [
+  ["canopylabs/orpheus-v1-english", "troy"],
+  ["canopylabs/orpheus-v1-english", "daniel"],
+  ["playai-tts", "Fritz-PlayAI"],
+];
+
+async function groqHear(env, b64, models) {
+  const form = new FormData();
+  form.append("file", new Blob([base64ToBytes(b64)], { type: "audio/wav" }), "talk.wav");
+  form.append("model", GROQ_HEAR);
+  form.append("language", "en");
+  form.append("response_format", "json");
+  const r = await fetch(GROQ + "/audio/transcriptions", { method: "POST", headers: { Authorization: "Bearer " + env.GROQ_API_KEY }, body: form });
+  const j = await r.json();
+  if (!r.ok) throw new Error("groq hear " + r.status + " " + JSON.stringify(j).slice(0, 150));
+  models.hear = "groq/" + GROQ_HEAR;
+  return j.text || "";
+}
+
+async function groqThink(env, messages, models) {
+  let last;
+  for (const model of GROQ_THINK) {
+    const r = await fetch(GROQ + "/chat/completions", {
+      method: "POST",
+      headers: { Authorization: "Bearer " + env.GROQ_API_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({ model, messages, max_tokens: 140, temperature: 0.8 }),
+    });
+    const j = await r.json();
+    const text = cleanReply(j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content);
+    if (r.ok && text) {
+      models.think = "groq/" + model;
+      return text;
+    }
+    last = "groq think " + model + " " + r.status + " " + JSON.stringify(j).slice(0, 150);
+    models["think_error_groq_" + model] = last;
+  }
+  throw new Error(last);
+}
+
+async function groqSpeak(env, text, models) {
+  for (const [model, voice] of GROQ_SPEAK) {
+    try {
+      const r = await fetch(GROQ + "/audio/speech", {
+        method: "POST",
+        headers: { Authorization: "Bearer " + env.GROQ_API_KEY, "Content-Type": "application/json" },
+        body: JSON.stringify({ model, voice, input: text, response_format: "wav" }),
+      });
+      if (!r.ok) {
+        models["speak_error_groq_" + model + "_" + voice] = r.status + " " + (await r.text()).slice(0, 150);
+        continue;
+      }
+      const b64 = bytesToBase64(new Uint8Array(await r.arrayBuffer()));
+      if (b64.length > 200) {
+        models.speak = "groq/" + model + "/" + voice;
+        return b64;
+      }
+    } catch (e) {
+      models["speak_error_groq_" + model] = String(e).slice(0, 150);
+    }
+  }
+  return "";
+}
+
 async function hear(env, b64, models) {
+  if (env.GROQ_API_KEY) {
+    try {
+      return await groqHear(env, b64, models);
+    } catch (e) {
+      models.hear_error_groq = String(e).slice(0, 150);
+    }
+  }
   let last;
   for (const [model, input] of HEAR) {
     try {
@@ -95,6 +172,13 @@ async function think(env, body, heard, models) {
     if (m && (m.role === "user" || m.role === "assistant")) messages.push({ role: m.role, content: clip(m.content, 600) });
   }
   messages.push({ role: "user", content: heard });
+  if (env.GROQ_API_KEY) {
+    try {
+      return await groqThink(env, messages, models);
+    } catch (e) {
+      models.think_error_groq = String(e).slice(0, 150);
+    }
+  }
   let last;
   for (const model of THINK) {
     try {
@@ -126,7 +210,7 @@ async function speak(env, text, models) {
       models["speak_error_" + model] = String(e).slice(0, 120);
     }
   }
-  return "";
+  return env.GROQ_API_KEY ? await groqSpeak(env, text, models) : "";
 }
 
 // Workers AI hands back audio in a few shapes, depending on the model.
