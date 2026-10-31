@@ -43,7 +43,10 @@ var _fx_layer: Control
 var _stage_mat: ShaderMaterial
 var _mute_button: Button
 
+const SafeArea := preload("res://scenes/safe_area.gd")
 var _safe_margin: MarginContainer
+var _last_inset := Vector4.ZERO
+var _safe_applied := false
 var _body: BoxContainer
 var _set_label: Label
 var _deck_label: Label
@@ -119,6 +122,13 @@ func _ready() -> void:
 	add_child(preload("res://scenes/pad_cursor.gd").new())
 	get_viewport().size_changed.connect(_on_resized)
 	_on_resized()
+	# The phone reports its safe area a moment after it turns; re-check twice a second.
+	if OS.has_feature("web") and _owns_window():
+		var poll := Timer.new()
+		poll.wait_time = 0.5
+		poll.autostart = true
+		poll.timeout.connect(_apply_safe_area)
+		add_child(poll)
 	_show_title()
 
 
@@ -398,16 +408,16 @@ func _apply_safe_area() -> void:
 	var top := base
 	var right := base
 	var bottom := base
-	if OS.has_feature("mobile") and _owns_window():
-		var window_size := Vector2(DisplayServer.window_get_size())
-		var view_size := get_viewport_rect().size
-		if window_size.x > 0 and window_size.y > 0:
-			var to_view := view_size / window_size
-			var safe := Rect2(DisplayServer.get_display_safe_area())
-			left += safe.position.x * to_view.x
-			top += safe.position.y * to_view.y
-			right += (window_size.x - safe.end.x) * to_view.x
-			bottom += (window_size.y - safe.end.y) * to_view.y
+	if _owns_window():
+		var inset := SafeArea.get_insets(get_viewport_rect().size)
+		if inset == _last_inset and _safe_applied:
+			return
+		_last_inset = inset
+		left += inset.x
+		top += inset.y
+		right += inset.z
+		bottom += inset.w
+	_safe_applied = true
 	_safe_margin.add_theme_constant_override("margin_left", int(left))
 	_safe_margin.add_theme_constant_override("margin_top", int(top))
 	_safe_margin.add_theme_constant_override("margin_right", int(right))

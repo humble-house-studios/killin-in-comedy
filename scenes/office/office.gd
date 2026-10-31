@@ -72,6 +72,7 @@ const PIXEL_SHRINK := 3
 const LAYER_WORLD := 1
 const LAYER_SCREEN := 2
 const STICK_RADIUS := 90.0
+const SafeArea := preload("res://scenes/safe_area.gd")
 ## Seated view: fov, and how much of the view the screen fills.
 const SEAT_FOV := 50.0
 const SEAT_FILL := 0.94
@@ -199,6 +200,9 @@ var _press_pc: Computer
 var _hover_pc: Computer
 var _stick_origin := Vector2.ZERO
 var _stick_pos := Vector2.ZERO
+## Notch / status bar / home bar clearance: left, top, right, bottom (viewport units).
+var _inset := Vector4.ZERO
+var _stand_corner := Control.PRESET_TOP_LEFT
 var _stick := Vector2.ZERO
 var _moved := false
 ## The computer you're sitting at, or null while walking.
@@ -228,6 +232,13 @@ func _ready() -> void:
 	_build_hud()
 	get_viewport().size_changed.connect(_on_resized)
 	_on_resized()
+	# The phone reports its safe area a moment after it turns; re-check twice a second.
+	if OS.has_feature("web"):
+		var poll := Timer.new()
+		poll.wait_time = 0.5
+		poll.autostart = true
+		poll.timeout.connect(_apply_insets)
+		add_child(poll)
 
 
 # ---------------------------------------------------------------- setup
@@ -898,6 +909,12 @@ func _hud_button(text: String, corner: Control.LayoutPreset) -> Button:
 
 func _place_button(b: Button, corner: Control.LayoutPreset) -> void:
 	b.set_anchors_and_offsets_preset(corner, Control.PRESET_MODE_MINSIZE, 24)
+	var dx := _inset.x if b.anchor_left < 0.5 else -_inset.z
+	var dy := _inset.y if b.anchor_top < 0.5 else -_inset.w
+	b.offset_left += dx
+	b.offset_right += dx
+	b.offset_top += dy
+	b.offset_bottom += dy
 	# Grow inward from the corner it's pinned to.
 	b.grow_horizontal = Control.GROW_DIRECTION_BEGIN if b.anchor_left > 0.5 else Control.GROW_DIRECTION_END
 	b.grow_vertical = Control.GROW_DIRECTION_BEGIN if b.anchor_top > 0.5 else Control.GROW_DIRECTION_END
@@ -964,7 +981,25 @@ func _on_resized() -> void:
 	_turn_pong(landscape)
 	# STAND UP: top-left upright; bottom-left sideways, clear of Pong's music
 	# button and the comedy game's cards.
-	_place_button(_stand_button, Control.PRESET_BOTTOM_LEFT if landscape else Control.PRESET_TOP_LEFT)
+	_stand_corner = Control.PRESET_BOTTOM_LEFT if landscape else Control.PRESET_TOP_LEFT
+	_inset = SafeArea.get_insets(get_viewport().get_visible_rect().size)
+	_apply_insets(true)
+
+
+## Keeps the HUD clear of the notch, status bar and home bar.
+func _apply_insets(force := false) -> void:
+	var inset := SafeArea.get_insets(get_viewport().get_visible_rect().size)
+	if inset == _inset and not force:
+		return
+	_inset = inset
+	_place_button(_sit_button, Control.PRESET_BOTTOM_RIGHT)
+	_place_button(_stand_button, _stand_corner)
+	_hint.offset_top = -270 - _inset.w
+	_hint.offset_bottom = -150 - _inset.w
+	_hint.offset_left = 30 + _inset.x
+	_hint.offset_right = -30 - _inset.z
+	_title.offset_top = 90 + _inset.y
+	_toast.offset_top = 24 + _inset.y
 
 
 ## Turn the Pong monitor (and Pong's window) to match the phone.
@@ -1255,7 +1290,7 @@ func _let_go_keys(pc: Computer) -> void:
 
 
 func _stick_rest() -> Vector2:
-	return Vector2(STICK_RADIUS + 50, _hud.size.y - STICK_RADIUS - 60)
+	return Vector2(STICK_RADIUS + 50 + _inset.x, _hud.size.y - STICK_RADIUS - 60 - _inset.w)
 
 
 func _touch_input(event: InputEvent) -> void:
