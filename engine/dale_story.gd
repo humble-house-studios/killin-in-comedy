@@ -1,12 +1,22 @@
 class_name DaleStory
 extends RefCounted
-## Dale, the coworker in the office: which conversation comes next, and what
-## he remembers. Chapters (data/dale_lines.gd) unlock from the stats every
-## office game writes to the shared save (user://office_relics.cfg). Pure
-## rules, no scenes; Dale's own memory lives in user://dale.cfg.
+## Dale, your guide in the office: which conversation comes next, what he
+## remembers, and the to-do on screen. Chapters (data/dale_lines.gd) unlock
+## from the stats every office game writes to the shared save
+## (user://office_relics.cfg). Pure rules, no scenes; Dale's own memory lives
+## in user://dale.cfg. Design: docs/narrative.md.
 
 const SAVE_PATH := "user://dale.cfg"
-const SAVE_VERSION := 1
+## 2 = the studio story (Pong, cube, stand-up, slots, proof, ladder). Older
+## saves hold the old chapters, so Dale starts over with them.
+const SAVE_VERSION := 2
+## Stats Dale mentions in the voice chat, with how he'd say them.
+const DID := {
+	"pong_bosses": "Pong bosses beaten", "cube_records": "cube world records beaten",
+	"comedy_sets": "comedy sets", "comedy_shows": "comedy shows headlined",
+	"loot_runs": "Loot Machine runs", "loot_wins": "Loot Machine jackpots",
+	"proof_wins": "theorems proved",
+}
 const RELICS_PATH := "user://office_relics.cfg"
 
 ## Chapter ids you've finished, in order.
@@ -71,6 +81,23 @@ func file_label() -> String:
 	return "FILE %d/%d" % [mini(done.size() + 1, DaleLines.CHAPTERS.size()), DaleLines.CHAPTERS.size()]
 
 
+## The on-screen to-do: what to do next for Dale, with progress when the
+## goal is a count ("CLEAR 2 COMEDY SETS (1/2)"). "" when there's nothing.
+func objective(stats: Dictionary) -> String:
+	var ch := next_chapter()
+	if ch.is_empty():
+		return "NEXT: THE SECOND FLOOR (COMING SOON)"
+	if unlocked(ch, stats):
+		return "TALK TO DALE (BY THE WINDOW)" if done.is_empty() else "TALK TO DALE"
+	var goal: String = ch.get("goal", "")
+	var need: Dictionary = ch.get("need", {})
+	if need.size() == 1:
+		var key: String = need.keys()[0]
+		if int(need[key]) > 1:
+			goal += " (%d/%d)" % [mini(int(stats.get(key, 0)), int(need[key])), int(need[key])]
+	return goal
+
+
 ## The next conversation: {id, title, steps}. id is "" when it's only small
 ## talk (a locked chapter's hint, or chatter after the finale).
 func next_talk(stats: Dictionary) -> Dictionary:
@@ -107,9 +134,9 @@ func persona(stats: Dictionary) -> String:
 	if not ch.is_empty() and ch.hint != "":
 		lines.append("If it fits, nudge them toward this: " + ch.hint)
 	var did: Array[String] = []
-	for key in ["comedy_sets", "comedy_shows", "pong_stages", "loot_runs", "loot_wins"]:
+	for key in DID:
 		if int(stats.get(key, 0)) > 0:
-			did.append("%s %d" % [key.replace("_", " "), int(stats[key])])
+			did.append("%s %d" % [DID[key], int(stats[key])])
 	if not did.is_empty():
 		lines.append("What they've done in the games so far: " + ", ".join(did) + ".")
 	var mood := "You don't know them well yet." if trust < 2 else ("You like them." if trust < 5 else "They're your friend; you trust them.")
@@ -145,6 +172,8 @@ func _pick(lines: Array) -> String:
 func load_save() -> void:
 	var cfg := ConfigFile.new()
 	if cfg.load(_path) != OK:
+		return
+	if int(cfg.get_value("meta", "save_version", 1)) != SAVE_VERSION:
 		return
 	done.clear()
 	for id in cfg.get_value("story", "done", []):

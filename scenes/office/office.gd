@@ -25,7 +25,8 @@ extends Node
 ## - Dale: the coworker under the window. Tap him (or TALK) and the camera
 ##   glides to his desk for a chat: subtitles, three replies to pick, and the
 ##   phone's own voice reading his lines. His story (engine/dale_story.gd,
-##   data/dale_lines.gd) unlocks chapter by chapter as you play the games.
+##   data/dale_lines.gd) unlocks chapter by chapter as you play the games;
+##   he's your guide from desk to desk, and a to-do (top left) says what's next.
 ## Mouse: click to look around, WASD walk, click the monitor to play, Esc lets go.
 ## Touch: tap the computer (or SIT DOWN) and the camera glides to the desk and
 ## frames the screen; then every tap goes into the game. STAND UP to walk again
@@ -296,6 +297,10 @@ var _dale_story: DaleStory
 var _dale_time := 0.0
 var _blink_in := 2.5
 var _news_check := 0.0
+## Milestones Dale asks for that the Loot link doesn't count (Pong boss, cube
+## record, proof win), and the to-do label that shows his next goal.
+var _goals := OfficeGoals.new()
+var _todo: Label
 var _talking := false
 ## The conversation in progress: {id, title, steps}, and where we are in it.
 var _talk := {}
@@ -1587,7 +1592,11 @@ func _tick_dale(delta: float) -> void:
 	_news_check -= delta
 	if _news_check <= 0.0 and not _talking:
 		_news_check = 2.0
-		_dale_alert.visible = _dale_story.has_news(DaleStory.read_stats())
+		var stats := DaleStory.read_stats()
+		_dale_alert.visible = _dale_story.has_news(stats)
+		if _todo:
+			var goal := _dale_story.objective(stats)
+			_todo.text = "TO-DO: " + goal if goal != "" else ""
 	if _dale_alert.visible:
 		_dale_alert.position.y = 1.72 + sin(_dale_time * 3.0) * 0.04
 
@@ -1707,6 +1716,20 @@ func _build_hud() -> void:
 	_toast.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_toast.modulate.a = 0.0
 	_hud.add_child(_toast)
+	# Dale's next goal, top left while walking.
+	_todo = Label.new()
+	_todo.add_theme_font_override("font", font)
+	_todo.add_theme_font_size_override("font_size", 14)
+	_todo.add_theme_color_override("font_color", Color(1.0, 0.92, 0.55))
+	_todo.add_theme_color_override("font_outline_color", Color.BLACK)
+	_todo.add_theme_constant_override("outline_size", 6)
+	_todo.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_todo.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	_todo.offset_left = 24
+	_todo.offset_top = 24
+	_todo.offset_right = 24 + 260
+	_todo.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hud.add_child(_todo)
 	_sit_button = _hud_button("SIT DOWN", Control.PRESET_BOTTOM_RIGHT)
 	_sit_button.pressed.connect(_sit_nearest)
 	_stand_button = _hud_button("STAND UP", Control.PRESET_TOP_LEFT)
@@ -1847,6 +1870,9 @@ func _apply_insets(force := false) -> void:
 	_hint.offset_right = -30 - _inset.z
 	_title.offset_top = 90 + _inset.y
 	_toast.offset_top = 24 + _inset.y
+	_todo.offset_top = 24 + _inset.y
+	_todo.offset_left = 24 + _inset.x
+	_todo.offset_right = 24 + _inset.x + 260
 
 
 ## Swap Pong's window (on its CRT) between tall and wide to match the phone.
@@ -1973,6 +1999,7 @@ func _process(delta: float) -> void:
 	_sit_button.text = "TALK" if _dale_nearer_than_computers() else "SIT DOWN"
 	_stand_button.visible = not _pad and ((_touch and _seat != null) or _talking)
 	_look_button.visible = not _pad and _seat == null and not _talking
+	_todo.visible = _seat == null and not _talking
 	_update_hint(aim, close)
 	_hud.queue_redraw()
 
@@ -1988,10 +2015,36 @@ func _tick_link(delta: float) -> void:
 		_link.tick("pong", _pong_view.get_child(0))
 	if _cube_vp and _cube_vp.get_child_count() > 0:
 		_link.tick("cube", _cube_vp.get_child(0))
+	_tick_goals()
 	var news: Array = _link.pop_news()
 	if not news.is_empty():
 		_toast.text = "\n".join(news)
 		_toast_time = 3.5
+
+
+## Count the milestones Dale's story needs into the shared stats.
+func _tick_goals() -> void:
+	var relics = _link.get("relics")
+	if relics == null:
+		return
+	if _pong_view and _pong_view.get_child_count() > 0:
+		var pong := _pong_view.get_child(0)
+		if "stage" in pong and "cheated" in pong:
+			var n := _goals.pong(int(pong.get("stage")), bool(pong.get("cheated")))
+			if n > 0:
+				relics.bump("pong_bosses", n)
+	if _cube_vp and _cube_vp.get_child_count() > 0:
+		var cube := _cube_vp.get_child(0)
+		if "solves" in cube and "last_level" in cube:
+			if _goals.cube(int(cube.get("solves")), int(cube.get("last_level"))) > 0:
+				relics.bump("cube_records")
+	if _proof_view and _proof_view.get_child_count() > 0:
+		var proof := _proof_view.get_child(0)
+		if "_blind" in proof:
+			var blind = proof.get("_blind")
+			if blind is Object and blind.has_method("is_won"):
+				if _goals.proof(blind, blind.is_won()) > 0:
+					relics.bump("proof_wins")
 
 
 func _update_hint(aim, close: bool) -> void:

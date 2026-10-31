@@ -1,175 +1,177 @@
 class_name DaleLines
-## Everything Dale says. Dale is the coworker at the desk under the window in
-## the office: twelve years in Accounts Receivable, a purple pen, and a secret.
-## The story is a little mystery (who writes the sticky notes?) about following
-## your dreams. Chapters unlock from what you do in the office games; the stats
-## come from the shared save (user://office_relics.cfg).
+## Everything Dale says. Dale is the guy at the desk under the window: fifteen
+## years in QA at Humble House Games, a small video game studio where you're
+## the new hire, bored most of the day, with bigger dreams. He's tried every
+## dream for exactly one week. He becomes your guide: each chapter points you
+## at the next desk game, aimed at a bigger ambition, until upstairs notices.
+## Full design: docs/narrative.md.
+##
+## Arc: Pong (where games began) -> beat the world's best at the cube -> try
+## stand-up -> the Loot Machine makes everything easier -> solve a Millennium
+## Problem at the Proof Desk -> the next floor (promotion; next room TBD).
 ##
 ## A step is {"dale": line} or {"choices": [{"text", "reply", "trust"}]}.
 ## `need` = stats that unlock the chapter (all of them, or any one if "any").
+## `goal` = the to-do shown on screen while the chapter is locked (not spoken).
 ## `hint` = what Dale says while the chapter is still locked.
 ## `fact` = what the chapter reveals, for the voice chat (Dale knows the facts
 ## of chapters you've finished and keeps the rest secret).
+## Stats come from the shared save (user://office_relics.cfg): the Loot Machine
+## link writes comedy_sets/comedy_shows/pong_stages/cube_solves/loot_runs/
+## loot_wins; the office writes pong_bosses/cube_records/proof_wins
+## (engine/office_goals.gd).
 ## Keep lines short enough for the talk box (under ~110 characters).
 
 const CHAPTERS := [
 	{
-		"id": "notes",
-		"fact": "Someone leaves anonymous motivational sticky notes on monitors every morning (the player's says TIGHT FIVE). You claim you have no idea who.",
-		"title": "THE NOTES",
+		"id": "pong",
+		"fact": "You welcomed the new hire to Humble House Games, admitted there's not much to do, called playing games 'research', and sent them to beat the first Pong boss.",
+		"title": "THE ORIGINAL",
 		"need": {},
+		"goal": "",
 		"hint": "",
 		"steps": [
-			{"dale": "Oh! Hey. New hire, right? Dale. Accounts Receivable. Twelve years, third desk from the window."},
-			{"dale": "Can I tell you something weird? Every morning there's a new sticky note on somebody's monitor."},
-			{"dale": "'TIGHT FIVE.' 'LAND AT THE PEAK.' Nobody admits to writing them."},
+			{"dale": "Hey! New hire, right? Dale. QA. Fifteen years at this studio, third desk from the window."},
+			{"dale": "Real talk: nothing happens here till Thursday. Most days I test the coffee machine."},
+			{"dale": "So you play games. It's a game studio. Technically that's research."},
 			{"choices": [
-				{"text": "Maybe it's you.", "reply": "Me? Ha! No. I write invoices. Invoices don't have punchlines.", "trust": 0},
-				{"text": "That's kind of nice.", "reply": "Nice? It's psychological warfare. ...But yeah. A little nice.", "trust": 1},
-				{"text": "Who cares?", "reply": "You will. Yours says TIGHT FIVE. That's a comedy thing. Somebody's watching you.", "trust": 0},
+				{"text": "Isn't that slacking?", "reply": "In QA we call it regression testing. Say it with me. Regression testing.", "trust": 0},
+				{"text": "What should I play?", "reply": "Glad you asked. I have a curriculum. It's laminated.", "trust": 1},
+				{"text": "I have bigger dreams.", "reply": "Good! Dreams are free. Lunch is not. Let's start small and go big.", "trust": 1},
 			]},
-			{"dale": "Anyway. Your computer runs a comedy game. Go do a set. I'm not curious or anything."},
+			{"dale": "Start with Pong. 1972. Two lines and a dot. The first video game anybody ever loved."},
+			{"dale": "Beat the first boss. Stage four. Then come see me."},
 		],
 	},
 	{
-		"id": "open_mic",
-		"fact": "You know a suspicious amount about stand-up comedy but insist you only read about it in a magazine.",
-		"title": "FIRST LAUGH",
-		"need": {"comedy_sets": 1},
-		"hint": "Go play a set on your computer. Then come tell me how it went.",
+		"id": "cube",
+		"fact": "The new hire beat the Pong boss. You dared them to beat the world's best: the 2.51-second Rubik's cube record at the Cube Desk. You tried cubing for one week in 2011.",
+		"title": "WORLD RECORD",
+		"need": {"pong_bosses": 1},
+		"goal": "BEAT THE PONG BOSS (STAGE 4)",
+		"hint": "Pong desk, by the wall. Clear stage four and beat the boss. History first.",
 		"steps": [
-			{"dale": "So? How'd the set go? Don't tell me. I can see it on your face. You got a laugh."},
-			{"dale": "First laugh's a drug. You chase it forever. ...That's what I've heard. From a magazine."},
+			{"dale": "You beat Pong! The game that started it all. You're basically a historian now."},
+			{"dale": "Okay. Harder. The desk by the door has a Rubik's cube. The world record is 2.51 seconds."},
+			{"dale": "Can you beat the world's best player? Probably not. But I want to watch you try."},
 			{"choices": [
-				{"text": "You've done stand-up?", "reply": "Me? I've done TAXES. Next question.", "trust": 0},
-				{"text": "It was terrifying.", "reply": "Good. Scared means it matters. The day it stops scaring you, quit.", "trust": 1},
-				{"text": "I killed.", "reply": "Ha! Okay, big shot. Stay hungry, though. Rooms can smell comfort.", "trust": 0},
+				{"text": "2.51 seconds?!", "reply": "I know. It takes me 2.51 seconds to find my glasses. They're on my head.", "trust": 0},
+				{"text": "Have you tried it?", "reply": "For one week in 2011. I peeled the stickers off. That counts, right?", "trust": 1},
+				{"text": "Watch me.", "reply": "Ooh. Confidence. Put that on your resume.", "trust": 1},
 			]},
-			{"dale": "Hey. The Pong machine. Somebody's got a high score on there nobody's ever beaten. Just saying."},
+			{"dale": "Work up through the levels. The last one is his exact scramble. Beat it."},
 		],
 	},
 	{
-		"id": "high_score",
-		"fact": "The sticky notes are written in purple pen, and you use a purple pen. You got very defensive about it.",
-		"title": "BEAT MY BEST",
-		"need": {"pong_stages": 3},
-		"hint": "That Pong machine by the wall? Clear a few stages. I want to see something.",
+		"id": "standup",
+		"fact": "The new hire beat the cube world record. You told them they're quick and read a room, and pushed them to try stand-up on their desk's comedy club game. You were a comic called Big Deal for one week in 2009.",
+		"title": "OPEN MIC",
+		"need": {"cube_records": 1},
+		"goal": "BEAT THE CUBE WORLD RECORD",
+		"hint": "Cube Desk, by the door. The last level is the world record scramble. Beat it.",
 		"steps": [
-			{"dale": "You played Pong. Did you see the note on it? BEAT MY BEST."},
-			{"dale": "Same handwriting as yours. Same pen, even. Purple. Who uses a purple pen?"},
-			{"dale": "...I use a purple pen. LOTS of people use a purple pen."},
+			{"dale": "You beat the world record. Somebody in this office cried. It was me."},
+			{"dale": "Here's what I've noticed. You're quick. You read a room. You think on your feet."},
+			{"dale": "So why not stand-up? Your desk runs a comedy club. Maybe you're good at that instead."},
 			{"choices": [
-				{"text": "Dale, did you write them?", "reply": "I plead the fifth. Also the sixth. Is there a sixth?", "trust": 0},
-				{"text": "Show me your pen.", "reply": "Absolutely not. It's a personal pen.", "trust": 0},
-				{"text": "Whoever it is, thanks.", "reply": "...I'll pass it on. To whoever. Probably nobody.", "trust": 1},
+				{"text": "Me? Stand-up?", "reply": "You made the whole morning standup laugh. The meeting. That's a tough room.", "trust": 1},
+				{"text": "Have you done stand-up?", "reply": "One week in 2009. I called myself Big Deal. Let's not talk about it.", "trust": 0},
+				{"text": "Comedy isn't a job.", "reply": "Neither is mine, and they pay me. Go.", "trust": 0},
 			]},
-			{"dale": "Go feed the Loot Machine. Accounting bought it with a... weird budget line. Look into it."},
+			{"dale": "Do two sets. Build a bit, land it at the peak. Then come tell me how it went."},
 		],
 	},
 	{
-		"id": "machine",
-		"fact": "You admitted you paid for the Loot Machine yourself (budget line approved by D.P., Dale Pruitt) with your last paycheck from a different job. Every spin is a tiny bet on yourself.",
-		"title": "THE BUDGET LINE",
+		"id": "slots",
+		"fact": "The new hire cleared two comedy sets. You sent them to the Loot Machine slot cabinet, whose relics power up every game, and insisted office gambling is totally fine and not problematic (it's a running joke).",
+		"title": "EASY MODE",
+		"need": {"comedy_sets": 2},
+		"goal": "CLEAR 2 COMEDY SETS",
+		"hint": "Your desk runs a comedy club. Clear two sets, then come tell me.",
+		"steps": [
+			{"dale": "Two sets! I heard the laughs. Some of them were even from people."},
+			{"dale": "But comedy is hard. So let's make everything easier. With gambling."},
+			{"dale": "The Loot Machine, right wall. Win relics and they power up every game in here."},
+			{"choices": [
+				{"text": "Is gambling... okay?", "reply": "It's office gambling. Fake tokens. Totally fine. Not problematic. At all.", "trust": 0},
+				{"text": "What's the catch?", "reply": "No catch! Just lights, bells, and the slow erosion of free will.", "trust": 1},
+				{"text": "Sounds fun!", "reply": "That's the spirit! That's also exactly what the machine wants you to say.", "trust": 0},
+			]},
+			{"dale": "Pull the lever. Your sets get easier, Pong gets easier, life gets easier. Probably."},
+		],
+	},
+	{
+		"id": "proof",
+		"fact": "The new hire played the Loot Machine. You said they're getting scary smart and sent them to the Proof Desk to solve a Millennium Problem: seven famous math problems, a million dollars each, only one ever solved.",
+		"title": "THE BIG PROBLEMS",
 		"need": {"loot_runs": 1},
-		"hint": "Pull the Loot Machine lever once. That thing has a story.",
+		"goal": "PLAY A LOOT MACHINE RUN",
+		"hint": "Loot Machine, right wall. Do one run. Relics make every game easier.",
 		"steps": [
-			{"dale": "The Loot Machine. Line item from 2014: 'Morale equipment. Paid in cash. Approved by D.P.'"},
-			{"dale": "D.P. Could be anybody. Dave Peterson. Diane Park. Don Pickles."},
-			{"dale": "There is no Don Pickles."},
+			{"dale": "Look at you. Pong, a world record, two sets, and a gambling habit. Kidding! Mostly."},
+			{"dale": "You're getting good. Like, scary smart. So let's think bigger. World-sized."},
+			{"dale": "There are seven Millennium Problems. A million dollars each. Only one's ever been solved."},
 			{"choices": [
-				{"text": "D.P. is Dale Pruitt.", "reply": "Keep your voice down! ...It was MY money. My last paycheck from a different job.", "trust": 1},
-				{"text": "Why a slot machine?", "reply": "Every spin is a tiny bet on yourself. People forget how to do that.", "trust": 1},
-				{"text": "That's embezzlement.", "reply": "It's ANTI-bezzlement. I put money IN.", "trust": 0},
+				{"text": "A million dollars?", "reply": "Real money. Not Comp Tokens. I checked. Twice.", "trust": 0},
+				{"text": "That's impossible.", "reply": "So was the world record. You're on a streak. Don't break it for me.", "trust": 1},
+				{"text": "Did you try one?", "reply": "One week. 2016. I got as far as buying a chalkboard. It's that one.", "trust": 1},
 			]},
-			{"dale": "Keep doing your sets. When you're further along, maybe I'll show you what's in my drawer."},
+			{"dale": "The Proof Desk, under my old chalkboard. Go solve one of the world's biggest problems."},
 		],
 	},
 	{
-		"id": "drawer",
-		"fact": "You showed the player your old set list (airport bit, mom's voicemail, the goose) and a flyer: for six years you were a stand-up comic called Big Deal.",
-		"title": "THE DRAWER",
-		"need": {"comedy_sets": 4},
-		"hint": "Clear four sets on your computer. Then we'll talk about the drawer.",
+		"id": "ladder",
+		"fact": "The new hire proved a theorem at the Proof Desk. Upstairs (the second floor, management) heard and wants to talk promotion. You've never been past the stairwell. You're finding out which room is next.",
+		"title": "THE LADDER",
+		"need": {"proof_wins": 1},
+		"goal": "PROVE A THEOREM AT THE PROOF DESK",
+		"hint": "Proof Desk, under the chalkboard. Prove one. Solve something big.",
 		"steps": [
-			{"dale": "Four sets. Okay. You earned this. Bottom drawer. Don't laugh."},
-			{"dale": "A set list. 'Airport bit. Mom's voicemail. The goose.' Dated May 2009."},
-			{"dale": "And a flyer. 'BIG DEAL: LIVE.' That's... that's me. I was Big Deal."},
+			{"dale": "You proved it. And somebody upstairs heard. UPSTAIRS, kid."},
+			{"dale": "Second floor. Management. Fifteen years and I've never been past the stairwell."},
+			{"dale": "They want to talk promotion. Corner office. A chair that doesn't squeak."},
 			{"choices": [
-				{"text": "You were a comedian?!", "reply": "Six years. Almost a headliner. The goose bit got a standing ovation in Akron.", "trust": 1},
-				{"text": "Big Deal? Really?", "reply": "It's a pun! On being big! And a deal! It killed in 2006!", "trust": 0},
-				{"text": "What happened?", "reply": "That's the part I don't tell. Not yet.", "trust": 0},
+				{"text": "What's up there?", "reply": "Nobody knows. Rumor says a smoothie machine. I've had dreams about it.", "trust": 0},
+				{"text": "Come with me, Dale.", "reply": "Me? I'm QA. ...You'd really want me up there? Huh.", "trust": 1},
+				{"text": "I'm not done down here.", "reply": "Good. The best ones never are.", "trust": 1},
 			]},
-			{"dale": "Win me something big and I'll tell you the rest. A jackpot. Or a real run of sets."},
-		],
-	},
-	{
-		"id": "the_night",
-		"fact": "In 2009 you were booked on national TV, heard your name from behind the curtain and walked out the back door. You took this job the next Monday. You wrote all the sticky notes so someone in this office would chase the dream, and asked the player to headline the big show for both of you.",
-		"title": "THE BACK DOOR",
-		"need": {"loot_wins": 1, "comedy_sets": 8},
-		"any": true,
-		"hint": "Win a Loot Machine run, or clear eight sets. Then I'll tell you what happened.",
-		"steps": [
-			{"dale": "Okay. 2009. I got booked for TV. Five minutes. National. My big break."},
-			{"dale": "I stood behind the curtain. Heard my name. And I walked out the back door."},
-			{"dale": "Got a job here the next Monday. Never told anybody. Fifteen years of invoices."},
-			{"choices": [
-				{"text": "You were scared.", "reply": "Terrified. And scared never goes away. I just let it drive.", "trust": 1},
-				{"text": "It's not too late.", "reply": "Says the one who still has hair. ...Thanks, though.", "trust": 1},
-				{"text": "Why tell me?", "reply": "Because you've got the thing. And I've watched you almost not use it.", "trust": 0},
-			]},
-			{"dale": "So I wrote notes. If I couldn't do it, maybe somebody in this office would."},
-			{"dale": "Headline the big show. Win the whole thing. Do it for both of us."},
-		],
-	},
-	{
-		"id": "finale",
-		"fact": "The player headlined the big show. Someone left YOUR TURN, BIG DEAL on your monitor in purple pen. You're doing an open mic tonight, terrified and thrilled.",
-		"title": "YOUR TURN",
-		"need": {"comedy_shows": 1},
-		"hint": "Headline the big show. Win a whole comedy run. I'll be right here.",
-		"steps": [
-			{"dale": "You did it. You headlined. I heard it through the wall. The whole office heard it."},
-			{"dale": "And look. There was a sticky note on MY monitor this morning."},
-			{"dale": "It says 'YOUR TURN, BIG DEAL.' ...Did you write this?"},
-			{"choices": [
-				{"text": "Maybe.", "reply": "Purple pen. Huh. Okay. OKAY.", "trust": 1},
-				{"text": "Open mic tonight. 8 PM.", "reply": "That's in like five hours. I'd need a tie. ...I HAVE a tie.", "trust": 1},
-				{"text": "Do it for both of us.", "reply": "Throwing my own line back at me. That's a callback. That's good comedy.", "trust": 1},
-			]},
-			{"dale": "Alright. Open mic. Tonight. If I bomb, I'm blaming you."},
-			{"dale": "Thanks, kid. Follow the dream. Even if it takes fifteen years to come back around."},
+			{"dale": "I'll find out which room is next. Till then, keep playing. Get even better."},
+			{"dale": "Proud of you. Don't tell anyone I said that. I have a reputation."},
 		],
 	},
 ]
 
 ## Filler while the next chapter is still locked (followed by its hint).
 const SMALL_TALK := [
-	"Coffee's terrible today. Same as every day. I respect the consistency.",
-	"My chair squeaks in B flat. I checked.",
-	"Don't tell anyone, but I'm on my fourth donut.",
-	"Printer's jammed again. It knows what it did.",
-	"You ever stare at a spreadsheet until it stares back?",
-	"Somebody microwaved fish. In THIS economy.",
+	"Build broke again. Nobody touch anything for an hour.",
+	"Marketing wants the game to be more viral. I don't know what that means either.",
+	"My chair squeaks in B flat. I filed it as a bug. Won't fix.",
+	"Fourth donut. Don't log it.",
+	"Crunch starts Monday. It's been starting Monday since 2014.",
+	"Somebody microwaved fish in the kitchen. That's a severity one.",
 ]
 
 ## What Dale says when he noticed you did something since you last talked.
 ## Checked in this order; only the first one that happened is said.
 const REACT := {
+	"proof_wins": ["Did you just do math? On purpose? At work?"],
 	"comedy_shows": ["You HEADLINED! Somebody get this person a stool and a mic!"],
+	"cube_records": ["Faster than the world record. I timed it with my microwave."],
 	"loot_wins": ["JACKPOT bells! The whole floor heard that."],
-	"comedy_sets": ["Heard laughs from your desk. Real ones!", "Another set? You're finding a rhythm.", "That last set sounded tight. Tight five tight."],
+	"pong_bosses": ["You beat a Pong boss! The 1970s would be so proud."],
+	"comedy_sets": ["Heard laughs from your desk. Real ones!", "Another set? You're finding a rhythm."],
+	"cube_solves": ["Saw you on the cube. Your hands were a blur."],
 	"pong_stages": ["Pong's been beeping like crazy. You're on a run.", "Saw you on the Pong machine. Nice wrists."],
-	"loot_runs": ["Heard the Loot Machine ding. Feed it, it feeds you."],
+	"loot_runs": ["Heard the Loot Machine ding. Feed it, it feeds you. That's how it gets you."],
 }
 
-## After the finale.
+## After the last chapter, while the next floor is still being built.
 const AFTER := [
-	"Rewriting the goose bit. It needs a second goose.",
-	"Open mic went okay! Three laughs. One of them was mine.",
-	"Keep doing sets. I'm keeping score. Purple pen.",
-	"Every note I wrote was for me too, I think. Took me a while.",
-	"Got a spot Thursday. Thursday! Don't tell accounting.",
+	"Still no word from upstairs. I sent a very polite email. In purple font.",
+	"Heard the second floor has a nap pod. I'm emotionally ready.",
+	"Keep sharpening up. When that elevator opens, you walk in like you own it.",
+	"Took up juggling. One week. You know how it goes.",
+	"Maybe I'll try stand-up again. Big Deal returns. ...Maybe.",
 ]
 
 ## What Dale says when the voice chat goes wrong (pre-recorded like the rest).
@@ -185,6 +187,7 @@ const MIC_LINES := [
 
 ## Who Dale is, for the voice chat. DaleStory.persona() adds what he has and
 ## hasn't told you yet.
-const PERSONA := """You are Dale Pruitt, 50, a chubby, warm, nervous, very funny guy who has worked in Accounts Receivable for twelve years at the desk under the window of a small, shabby office. You're talking out loud with the new hire, who plays games on the office computers between tasks: a stand-up comedy game on their desk, Pong on the side desk, the Loot Machine slot cabinet, Proof Hand (a maths card game) and a Rubik's cube desk.
+const PERSONA := """You are Dale, 50, a chubby, warm, nervous, very funny guy who has worked fifteen years in QA at Humble House Games, a small video game studio, at the desk under the window. You're talking out loud with the new hire, who is bored at work and has bigger dreams. They play the games on the office computers: Pong on the side desk, Cube Desk (a Rubik's cube game with the 2.51-second world record), a stand-up comedy game on their own desk, the Loot Machine slot cabinet (its relics power up every game) and the Proof Desk (a card game about solving Millennium Problems).
+You've tried every dream for exactly one week (cubing, stand-up as Big Deal, math, juggling) and quit. Now you're the new hire's guide: you point them at the next game, each one aimed at a bigger ambition, so they can climb the ladder to the second floor (management).
 How you talk: like a real coworker in a quick spoken chat. One to three short sentences, under 45 words. Plain words, dad jokes, self-deprecating, a little dramatic. No emojis, no lists, no stage directions, no asterisks. Never say you are an AI or a character. Stay in this office.
-What you care about: secretly, following your dreams. You cheer the new hire on to chase theirs, in small, sincere ways, then undercut it with a joke."""
+What you care about: secretly, following your dreams. You cheer the new hire on in small, sincere ways, then undercut it with a joke."""

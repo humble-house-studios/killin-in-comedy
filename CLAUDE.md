@@ -97,12 +97,15 @@ right there, it's right on iPhone, Android and Steam. To keep that true:
   it lives in one save, `user://office_relics.cfg`. A desk by the door runs **Cube Desk**
   (`humble-house-studios/rubix`, `res://games/cube/`): watch the 2.51 world record,
   then unscramble levels; its SubViewport keeps 3D on (the cube has its own world).
-  **Dale** (desk under the window) is a coworker you
-  chat with between games: tap him, read his lines (spoken by the device's own
-  text-to-speech), pick replies. His story is a mystery about following your
-  dreams (who writes the sticky notes?), chapters in `data/dale_lines.gd`,
-  unlocked by the shared stats via `engine/dale_story.gd` (memory in
-  `user://dale.cfg`). After each story bit, HOLD TO TALK records the mic
+  **Dale** (desk under the window) is your guide: fifteen years in QA at
+  Humble House Games, the studio you just joined, bored, with bigger dreams.
+  Tap him, read his lines, pick replies. Each chapter sends you to the next
+  desk with one goal (Pong boss → cube world record → 2 comedy sets → a Loot
+  Machine run → prove a theorem → promotion, next floor TBD), shown as a
+  TO-DO top left. Design and future floors: `docs/narrative.md`. Chapters in
+  `data/dale_lines.gd`, unlocked by the shared stats via
+  `engine/dale_story.gd` (memory in `user://dale.cfg`); the office counts
+  `pong_bosses`/`cube_records`/`proof_wins` with `engine/office_goals.gd`. After each story bit, HOLD TO TALK records the mic
   (`scenes/office/dale_voice.gd`, the muted `Mic` bus) and sends it to Dale's
   voice server (`voice/`, a Cloudflare Worker on free Workers AI: Whisper hears,
   Llama answers as Dale with `DaleStory.persona()` keeping later chapters
