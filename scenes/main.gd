@@ -119,7 +119,9 @@ func _ready() -> void:
 	theme.default_font = body
 	_build_ui()
 	# Controller / arrow keys: a frame that moves between buttons, A presses.
-	add_child(preload("res://scenes/pad_cursor.gd").new())
+	var pad := preload("res://scenes/pad_cursor.gd").new()
+	pad.guide = [["DPAD", "Pick a card"], ["A", "Tell the joke"], ["X", "LAND IT: cash in the bit"], ["START", "Pause"]]
+	add_child(pad)
 	get_viewport().size_changed.connect(_on_resized)
 	_on_resized()
 	# The phone reports its safe area a moment after it turns; re-check twice a second.

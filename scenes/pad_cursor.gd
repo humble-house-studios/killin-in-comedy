@@ -13,6 +13,9 @@ extends Node
 ##                 (e.g. X = LAND IT, Start = pause, B = back / skip).
 ##   "pad_default": true to start the frame there when a screen opens.
 ##   "pad_skip": true to leave it out.
+## While the pad is in use, every button with a shortcut wears a little
+## controller badge (A, B, X, Y, START...), and the first time the pad wakes
+## a controls card ("guide": [[badge, text], ...]) shows for a few seconds.
 ## A button counts only if a tap on its centre would reach it, so buttons
 ## under an open overlay are skipped. Greyed-out buttons can hold the frame
 ## (so it doesn't jump around while a card is unaffordable) but don't press.
@@ -43,6 +46,95 @@ var _repeat_time := 0.0
 var _flash := 0.0
 var _layer: CanvasLayer
 var _ring: Control
+## The controls card: [[badge, text], ...]. Shown the first time the pad wakes.
+var guide: Array = []
+var _card: Array = []
+var _card_time := 0.0
+var _guided := false
+## Buttons on screen now (for their badges).
+var _shown: Array[BaseButton] = []
+
+const CARD_SECONDS := 7.0
+## Badge colours, by the label drawn in them.
+const BADGE_COLORS := {
+	"A": Color(0.3, 0.75, 0.35), "B": Color(0.85, 0.3, 0.3),
+	"X": Color(0.3, 0.55, 0.95), "Y": Color(0.95, 0.78, 0.2),
+}
+const BUTTON_LABELS := {
+	JOY_BUTTON_A: "A", JOY_BUTTON_B: "B", JOY_BUTTON_X: "X", JOY_BUTTON_Y: "Y",
+	JOY_BUTTON_START: "START", JOY_BUTTON_BACK: "BACK",
+	JOY_BUTTON_LEFT_SHOULDER: "LB", JOY_BUTTON_RIGHT_SHOULDER: "RB",
+}
+
+
+## Draw a controller button badge centred at `at`: a coloured circle for
+## A/B/X/Y, a cross for "DPAD", a ring for sticks ("L", "R"), a pill for
+## the rest (START, BACK, LB, RB). Returns its width.
+static func draw_badge(ci: CanvasItem, at: Vector2, label: String, r: float, alpha := 1.0) -> float:
+	var font := ThemeDB.fallback_font
+	var ink := Color(1, 1, 1, alpha)
+	var shade := Color(0, 0, 0, 0.55 * alpha)
+	if label == "DPAD":
+		var w := r * 0.62
+		ci.draw_rect(Rect2(at - Vector2(w, r) * 0.5 - Vector2(0, r * 0.5), Vector2(w, r * 2.0)).grow(2), shade)
+		ci.draw_rect(Rect2(at - Vector2(r, w) * 0.5 - Vector2(r * 0.5, 0), Vector2(r * 2.0, w)).grow(2), shade)
+		ci.draw_rect(Rect2(at - Vector2(w * 0.5, r), Vector2(w, r * 2.0)), Color(0.85, 0.85, 0.9, alpha))
+		ci.draw_rect(Rect2(at - Vector2(r, w * 0.5), Vector2(r * 2.0, w)), Color(0.85, 0.85, 0.9, alpha))
+		return r * 2.0
+	if label == "L" or label == "R":
+		ci.draw_circle(at, r + 2, shade)
+		ci.draw_circle(at, r, Color(0.25, 0.25, 0.3, alpha))
+		ci.draw_arc(at, r * 0.62, 0, TAU, 20, Color(0.85, 0.85, 0.9, alpha), 3.0)
+		_badge_text(ci, font, at, label, r * 0.8, ink)
+		return r * 2.0
+	if BADGE_COLORS.has(label):
+		ci.draw_circle(at, r + 2, shade)
+		ci.draw_circle(at, r, Color(BADGE_COLORS[label], alpha))
+		_badge_text(ci, font, at, label, r * 1.05, ink)
+		return r * 2.0
+	var fs := int(r * 0.85)
+	var tw := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+	var rect := Rect2(at - Vector2(tw * 0.5 + r * 0.55, r * 0.8), Vector2(tw + r * 1.1, r * 1.6))
+	ci.draw_rect(rect.grow(2), shade)
+	ci.draw_rect(rect, Color(0.3, 0.3, 0.36, alpha))
+	_badge_text(ci, font, at, label, r * 0.85, ink)
+	return rect.size.x
+
+
+static func _badge_text(ci: CanvasItem, font: Font, at: Vector2, text: String, size: float, color: Color) -> void:
+	var fs := maxi(8, int(size))
+	var sz := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+	ci.draw_string(font, at + Vector2(-sz.x * 0.5, font.get_ascent(fs) * 0.5 - fs * 0.12), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, color)
+
+
+## Draw a controls card: a dark panel of [badge, text] rows, top centre of
+## `view`, scaled by `k` (1.0 at a 720-wide screen). Used here and by the office.
+static func draw_card(ci: CanvasItem, view: Vector2, rows: Array, k: float, alpha: float, top := 0.0) -> void:
+	if rows.is_empty() or alpha <= 0.0:
+		return
+	var font := ThemeDB.fallback_font
+	var fs := int(22 * k)
+	var r := 17.0 * k
+	var row_h := 46.0 * k
+	var pad := 18.0 * k
+	var w := minf(view.x - 32.0 * k, 560.0 * k)
+	var h := pad * 2.0 + row_h * rows.size()
+	var box := Rect2(Vector2((view.x - w) * 0.5, top + 20.0 * k), Vector2(w, h))
+	ci.draw_rect(box.grow(3.0 * k), Color(1.0, 0.86, 0.25, 0.85 * alpha))
+	ci.draw_rect(box, Color(0.06, 0.05, 0.09, 0.93 * alpha))
+	var y := box.position.y + pad + row_h * 0.5
+	for row in rows:
+		var bx := box.position.x + pad + 44.0 * k
+		draw_badge(ci, Vector2(bx, y), str(row[0]), r, alpha)
+		ci.draw_string(font, Vector2(box.position.x + pad + 100.0 * k, y + font.get_ascent(fs) * 0.5 - fs * 0.1),
+			str(row[1]), HORIZONTAL_ALIGNMENT_LEFT, w - pad * 2.0 - 100.0 * k, fs, Color(1, 1, 1, alpha))
+		y += row_h
+
+
+## Show the controls card (these rows, or the game's guide).
+func show_guide(rows: Array = []) -> void:
+	_card = rows if not rows.is_empty() else guide
+	_card_time = CARD_SECONDS
 
 
 ## Gives the ui_* actions controller buttons: A accepts, B cancels. Safe to
@@ -149,6 +241,9 @@ func _is_nav(event: InputEvent) -> bool:
 
 func _process(delta: float) -> void:
 	_flash = maxf(0.0, _flash - delta * 4.0)
+	_card_time = maxf(0.0, _card_time - delta)
+	if active and hold:
+		_shown = _candidates()
 	if not active or hold:
 		_ring.queue_redraw()
 		return
@@ -164,13 +259,17 @@ func _process(delta: float) -> void:
 	if _valid(_target):
 		_pos = _center(_target)
 	_seen.clear()
-	for b in _candidates():
+	_shown = _candidates()
+	for b in _shown:
 		_seen[b.get_instance_id()] = true
 	_ring.queue_redraw()
 
 
 func _wake() -> void:
 	active = true
+	if not _guided and not guide.is_empty():
+		_guided = true
+		show_guide()
 	if not _valid(_target):
 		_settle()
 
@@ -328,7 +427,20 @@ func _blocked(b: BaseButton, controls: Array) -> bool:
 
 
 func _draw_ring() -> void:
-	if not active or hold or not _valid(_target):
+	var view := get_viewport().get_visible_rect().size
+	var k := minf(view.x, view.y) / 720.0
+	if _card_time > 0.0:
+		draw_card(_ring, view, _card, k, clampf(_card_time, 0.0, 1.0))
+	if not active:
+		return
+	# Shortcut badges on their buttons (shown in the game's own hold mode too).
+	for b in _shown:
+		if _valid(b) and b.has_meta("pad_button"):
+			var label: String = BUTTON_LABELS.get(int(b.get_meta("pad_button")), "")
+			if label != "":
+				var br := _rect(b)
+				draw_badge(_ring, br.position + Vector2(14, 14) * k, label, 15.0 * k, 0.5 if b.disabled else 1.0)
+	if hold or not _valid(_target):
 		return
 	var r := _rect(_target).grow(6.0 + 6.0 * _flash)
 	var pulse := 0.65 + 0.35 * sin(Time.get_ticks_msec() / 160.0)
@@ -338,3 +450,5 @@ func _draw_ring() -> void:
 	col.a = pulse
 	_ring.draw_rect(r, Color(0, 0, 0, 0.5 * pulse), false, 10.0)
 	_ring.draw_rect(r, col, false, 5.0)
+	if not _target.has_meta("pad_button") and not _target.disabled:
+		draw_badge(_ring, Vector2(r.end.x - 4.0 * k, r.position.y + 4.0 * k), "A", 14.0 * k)

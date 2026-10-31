@@ -94,6 +94,15 @@ const STAND_BACK := 0.8
 const PAD_LOOK := 2.4
 const PAD_DEAD := 0.18
 const PAD_SIT_RANGE := 3.0
+## Seated: hold B this long to leave the desk (a tap of B still goes to the game).
+const PAD_LEAVE_HOLD := 0.8
+const PAD_CARD := [
+	["L", "Walk  (click the stick to run)"],
+	["R", "Look around"],
+	["A", "Sit at a computer / talk to Dale"],
+	["BACK", "Leave a desk  (or hold B)"],
+]
+const PadUI := preload("res://scenes/pad_cursor.gd")
 
 
 ## One playable computer: a game running in its own viewport, shown on a screen.
@@ -231,6 +240,12 @@ var _pad_move := Vector2.ZERO
 var _pad_look := Vector2.ZERO
 var _pad_run := false
 var _pad_told := false
+## Seated with the pad: how long B has been held (-1 = not held), and how
+## long the LEAVE chip still shows.
+var _pad_leave := -1.0
+var _pad_chip := 0.0
+var _pad_card := 0.0
+var _pad_carded := false
 
 ## Dale: his rig (feet on the floor, facing local +z), the parts that move,
 ## his story, and the talk box.
@@ -1521,6 +1536,16 @@ func _physics_process(delta: float) -> void:
 
 
 func _process(delta: float) -> void:
+	_pad_chip = maxf(0.0, _pad_chip - delta)
+	_pad_card = maxf(0.0, _pad_card - delta)
+	if _pad_leave >= 0.0:
+		if _seat == null:
+			_pad_leave = -1.0
+		else:
+			_pad_leave += delta
+			if _pad_leave >= PAD_LEAVE_HOLD:
+				_pad_leave = -1.0
+				_set_seat(null)
 	if _seat == null and _pad_look.length() > PAD_DEAD:
 		_look(_pad_look * PAD_LOOK * delta)
 	_player.rotation.y = _yaw
@@ -1569,9 +1594,9 @@ func _process(delta: float) -> void:
 
 	_tick_link(delta)
 	_tick_dale(delta)
-	_sit_button.visible = _touch and _seat == null and not _talking
+	_sit_button.visible = _touch and not _pad and _seat == null and not _talking
 	_sit_button.text = "TALK" if _dale_nearer_than_computers() else "SIT DOWN"
-	_stand_button.visible = (_touch and _seat != null) or _talking
+	_stand_button.visible = not _pad and ((_touch and _seat != null) or _talking)
 	_update_hint(aim, close)
 	_hud.queue_redraw()
 
@@ -1600,12 +1625,10 @@ func _update_hint(aim, close: bool) -> void:
 	elif _pad:
 		if _seat:
 			text = ""
-		elif close:
-			text = "A: SIT DOWN"
-		elif _dale_aimed():
-			text = "A: TALK TO DALE"
-		elif not _moved:
-			text = "LEFT STICK WALK - RIGHT STICK LOOK\nA: SIT AT A COMPUTER"
+		elif close or _dale_aimed():
+			text = ""
+		elif not _moved and _pad_card <= 0.0:
+			text = "WALK UP TO A COMPUTER"
 	elif _touch:
 		if not _moved:
 			text = "TAP A COMPUTER\nTO SIT DOWN"
@@ -1633,14 +1656,60 @@ func _draw_hud() -> void:
 			_hud.draw_arc(c, 9, 0, TAU, 16, Color(1, 1, 1, 0.9), 3)
 		else:
 			_hud.draw_rect(Rect2(c - Vector2(3, 3), Vector2(6, 6)), Color(1, 1, 1, 0.85))
+	if _pad:
+		_draw_pad_hud(size)
 	if _touches.values().has("move"):
 		_hud.draw_arc(_stick_origin, STICK_RADIUS, 0, TAU, 32, Color(1, 1, 1, 0.35), 4)
 		_hud.draw_circle(_stick_origin + _stick * STICK_RADIUS, 34, Color(1, 1, 1, 0.35))
-	elif _touch and _seat == null and not _talking:
+	elif _touch and not _pad and _seat == null and not _talking:
 		# Ghost stick so you can see where the walk thumb goes.
 		var rest := _stick_rest()
 		_hud.draw_arc(rest, STICK_RADIUS, 0, TAU, 32, Color(1, 1, 1, 0.18), 4)
 		_hud.draw_circle(rest, 34, Color(1, 1, 1, 0.18))
+
+
+## Controller prompts: the controls card, an [A] SIT DOWN / TALK prompt
+## under the crosshair, and while seated the LEAVE chip (with a ring that
+## fills while B is held).
+func _draw_pad_hud(size: Vector2) -> void:
+	var k := minf(size.x, size.y) / 720.0
+	var font := ThemeDB.fallback_font
+	var fs := int(22 * k)
+	if _pad_card > 0.0 and _seat == null and not _talking:
+		PadUI.draw_card(_hud, size, PAD_CARD, k, clampf(_pad_card, 0.0, 1.0), _inset.y)
+	if _seat == null and not _talking:
+		var aim = _aim_at(_aim_point())
+		var what := ""
+		if aim != null and aim.dist < PAD_SIT_RANGE:
+			what = "SIT DOWN"
+		elif _dale_aimed():
+			what = "TALK TO DALE"
+		if what != "":
+			var at := size * 0.5 + Vector2(-font.get_string_size(what, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x * 0.5, 70 * k)
+			PadUI.draw_badge(_hud, at, "A", 17 * k)
+			_hud.draw_string_outline(font, at + Vector2(28 * k, fs * 0.4), what, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, int(8 * k), Color.BLACK)
+			_hud.draw_string(font, at + Vector2(28 * k, fs * 0.4), what, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE)
+	if _seat == null:
+		return
+	var holding := _pad_leave >= 0.0
+	var alpha := 1.0 if holding else clampf(_pad_chip, 0.0, 1.0)
+	if alpha <= 0.0:
+		return
+	# [BACK] or hold [B]  LEAVE
+	var x := _inset.x + 24 * k
+	var y := _inset.y + 34 * k
+	var box := Rect2(Vector2(x - 10 * k, y - 26 * k), Vector2(390 * k, 52 * k))
+	_hud.draw_rect(box, Color(0.05, 0.04, 0.08, 0.8 * alpha))
+	x += PadUI.draw_badge(_hud, Vector2(x + 34 * k, y), "BACK", 16 * k, alpha) * 0.5 + 44 * k
+	var small := int(17 * k)
+	_hud.draw_string(font, Vector2(x, y + small * 0.4), "or hold", HORIZONTAL_ALIGNMENT_LEFT, -1, small, Color(1, 1, 1, 0.8 * alpha))
+	x += font.get_string_size("or hold", HORIZONTAL_ALIGNMENT_LEFT, -1, small).x + 28 * k
+	var b_at := Vector2(x, y)
+	PadUI.draw_badge(_hud, b_at, "B", 16 * k, alpha)
+	if holding:
+		var t := clampf(_pad_leave / PAD_LEAVE_HOLD, 0.0, 1.0)
+		_hud.draw_arc(b_at, 22 * k, -PI / 2, -PI / 2 + TAU * t, 24, Color(1, 0.86, 0.25), 5 * k)
+	_hud.draw_string(font, Vector2(x + 30 * k, y + fs * 0.4), "LEAVE", HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(1, 1, 1, alpha))
 
 
 # ---------------------------------------------------------------- input
@@ -1701,14 +1770,20 @@ func _pad_input(event: InputEvent) -> void:
 	if event is InputEventJoypadMotion and absf(event.axis_value) < PAD_DEAD and not _pad:
 		return  # stick drift doesn't count as picking up the pad
 	_pad = true
+	if not _pad_carded:
+		_pad_carded = true
+		_pad_card = 7.0
+		_title.modulate.a = 0.0  # make room for the controls card
 	if _talking:
 		_pad_talk(event)
 		return
-	if event is InputEventJoypadButton and event.button_index == JOY_BUTTON_BACK:
+	if event is InputEventJoypadButton and event.button_index in [JOY_BUTTON_BACK, JOY_BUTTON_GUIDE]:
 		if event.pressed and _seat:
 			_set_seat(null)
 		return
 	if _seat:
+		if event is InputEventJoypadButton and event.button_index == JOY_BUTTON_B:
+			_pad_leave = 0.0 if event.pressed else -1.0
 		_seat.view.push_input(event)
 		return
 	if event is InputEventJoypadMotion:
@@ -1748,10 +1823,7 @@ func _pad_sit() -> void:
 		_toast_time = 2.0
 		return
 	_set_seat(pc)
-	if not _pad_told:
-		_pad_told = true
-		_toast.text = "PLAYING WITH THE CONTROLLER\nBACK / SELECT: STAND UP"
-		_toast_time = 3.5
+	_pad_chip = 6.0
 
 
 ## Chatting with a controller: up/down picks a reply, A says it (or NEXT),
