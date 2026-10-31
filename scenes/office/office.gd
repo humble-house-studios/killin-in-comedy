@@ -260,7 +260,13 @@ func _embed(scene: String, px: Vector2i, base: Vector2i, bus_name: String) -> Wi
 	return w
 
 
+## Each game's bus. They're declared in default_bus_layout.tres because the
+## web build (sample playback) only knows buses that exist at startup: a bus
+## added at runtime plays nothing in Safari. Adding is the fallback.
 func _make_bus(bus_name: String) -> int:
+	var existing := AudioServer.get_bus_index(bus_name)
+	if existing >= 0:
+		return existing
 	var i := AudioServer.bus_count
 	AudioServer.add_bus(i)
 	AudioServer.set_bus_name(i, bus_name)
