@@ -50,6 +50,18 @@ jobs:
           # Accept a pasted dashboard address too: keep just the 32-character ID.
           id=$(echo "$CLOUDFLARE_ACCOUNT_ID" | grep -oE '[0-9a-f]{32}' | head -1)
           [ -n "$id" ] && export CLOUDFLARE_ACCOUNT_ID="$id"
+          # Workers need a free workers.dev subdomain on the account; claim one
+          # the first time if there isn't one yet.
+          api="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain"
+          auth="Authorization: Bearer $CLOUDFLARE_API_TOKEN"
+          have=$(curl -s -H "$auth" "$api" | python3 -c "import sys,json; print((json.load(sys.stdin).get('result') or {}).get('subdomain') or '')" 2>/dev/null)
+          if [ -z "$have" ]; then
+            for name in humble-house humble-house-studios "humble-${CLOUDFLARE_ACCOUNT_ID:0:6}"; do
+              out=$(curl -s -X PUT -H "$auth" -H 'Content-Type: application/json' -d "{\"subdomain\":\"$name\"}" "$api")
+              echo "$out" | grep -q '"success":true' && { echo "::notice title=Dale voice::Claimed $name.workers.dev"; break; }
+              echo "::warning title=Dale voice subdomain::$name: $(echo "$out" | head -c 300)"
+            done
+          fi
           cd voice
           set +e
           npx --yes wrangler@4 deploy 2>&1 | tee deploy.log
