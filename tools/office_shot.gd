@@ -4,7 +4,7 @@ extends SceneTree
 ##     godot --rendering-driver opengl3 --resolution 1280x720 -s res://tools/office_shot.gd
 ## Shots: 0 = by the door, 1 = after tapping the main monitor (seated) and
 ## tapping "Start your set", 2 = standing, facing the Pong desk, 3 = seated at
-## Pong after a tap. Run tools/fetch_games.sh first so Pong is there.
+## Pong after tapping PLAY, 4 = after a right-edge thumb drag. Run tools/fetch_games.sh first so Pong is there.
 
 var office
 
@@ -39,6 +39,17 @@ func _init() -> void:
 		_tap(_screen_point(pong, Vector2(0.5, 0.58)))
 		await _frames(150)
 		_shot(3)
+		# Right thumb at the very edge of the phone, sliding down: the paddle
+		# should follow even though the thumb is off the monitor.
+		var x: float = office._hud.size.x - 20
+		var h: float = office._hud.size.y
+		_touch(Vector2(x, h * 0.2), true)
+		for k in 20:
+			_drag(Vector2(x, h * (0.2 + k * 0.03)))
+			await _frames(2)
+		await _frames(10)
+		_shot(4)
+		_touch(Vector2(x, h * 0.8), false)
 	quit()
 
 
@@ -60,6 +71,21 @@ func _tap(pos: Vector2) -> void:
 		ev.position = pos
 		ev.pressed = pressed
 		office._touch_input(ev)
+
+
+func _touch(pos: Vector2, pressed: bool) -> void:
+	var ev := InputEventScreenTouch.new()
+	ev.index = 1
+	ev.position = pos
+	ev.pressed = pressed
+	office._touch_input(ev)
+
+
+func _drag(pos: Vector2) -> void:
+	var ev := InputEventScreenDrag.new()
+	ev.index = 1
+	ev.position = pos
+	office._touch_input(ev)
 
 
 func _shot(n: int) -> void:

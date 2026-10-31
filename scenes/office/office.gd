@@ -6,6 +6,8 @@ extends Node
 ##   draws only the screens, so they stay readable up close.
 ##   - Main desk: this game (res://scenes/main.tscn) in a SubViewport.
 ##   - Side desk: Phone Pong (res://games/pong, pulled in by tools/fetch_games.sh)
+##     on a pivot monitor: tall when the phone is upright, sideways when it is
+##     (so Pong's paddle sits under the right thumb).
 ##     in an embedded Window (inside a hidden holder viewport), so its own
 ##     window-size logic still works.
 ## - Clicks/taps are ray-cast onto a screen and pushed into that game at that spot.
@@ -31,6 +33,9 @@ const GAME_SIZE := Vector2i(1280, 720)
 const PONG_SCENE := "res://games/pong/main.tscn"
 const PONG_SIZE := Vector2i(720, 1280)
 const PONG_SCREEN := Vector2(0.36, 0.64)
+## Sideways phone = sideways Pong monitor (it pivots), so Pong plays its own
+## landscape mode: paddle on the right, under your right thumb.
+const PONG_SIZE_WIDE := Vector2i(1280, 720)
 const PONG_DESK := Vector3(-3.05, 0.0, 2.0)
 ## Game audio is full volume within NEAR metres of its screen, silent past FAR.
 const AUDIO_NEAR := 1.6
@@ -55,6 +60,7 @@ class Computer:
 	var view: Viewport
 	var pixels: Vector2
 	var hi_mat: ShaderMaterial
+	var quad: QuadMesh
 	var bus := 0
 	## The game reads screen touches (Pong) instead of mouse buttons (Controls).
 	var touch_events := false
@@ -125,6 +131,9 @@ var _game_vp: SubViewport
 var _pong_view: Window
 ## What Pong's screen shows (the holder its window is embedded in).
 var _pong_screen: SubViewport
+var _pong_pc: Computer
+## The Pong monitor's case, which turns 90° when the phone goes sideways.
+var _pong_pivot: Node3D
 var _computers: Array[Computer] = []
 ## Game viewport -> audio bus index, so each game's sounds can fade by distance.
 var _view_bus := {}
@@ -239,6 +248,7 @@ func _add_computer(screen: Node3D, size: Vector2, view: Viewport, pixels: Vector
 	pc.bus = _view_bus[view]
 	var quad := QuadMesh.new()
 	quad.size = size
+	pc.quad = quad
 	var lo := ShaderMaterial.new()
 	lo.shader = _monitor_shader
 	var texture := (shown if shown else view).get_texture()
@@ -458,13 +468,19 @@ func _build_pong_desk() -> void:
 	var cy := 0.84 + h * 0.5 + 0.06
 	_box(Vector3(0.26, 0.02, 0.22), Vector3(0, 0.77, -0.08), shell, false, Vector3.ZERO, rig)
 	_box(Vector3(0.07, 0.08, 0.07), Vector3(0, 0.81, -0.08), shell, false, Vector3.ZERO, rig)
-	_box(Vector3(PONG_SCREEN.x + 0.1, h + 0.12, 0.08), Vector3(0, cy, -0.045), shell, true, Vector3.ZERO, rig)
-	_box(Vector3(PONG_SCREEN.x - 0.04, h - 0.08, 0.26), Vector3(0, cy, -0.22), shell, false, Vector3.ZERO, rig)
-	_box(Vector3(PONG_SCREEN.x + 0.04, h + 0.04, 0.01), Vector3(0, cy, -0.003), dark, false, Vector3.ZERO, rig)
-	_box(Vector3(0.025, 0.012, 0.01), Vector3(0.15, cy - h * 0.5 - 0.035, -0.003), _mat(Color.BLACK, 0, Color.BLACK, 24.0, Color(1.0, 0.3, 0.7)), false, Vector3.ZERO, rig)
-	_label("PONG-O-TRON", Vector3(-0.06, cy - h * 0.5 - 0.033, 0.002), 8, Color(0.75, 0.75, 0.8), Vector3.ZERO, 0.0, rig)
-	_box(Vector3(0.08, 0.08, 0.004), Vector3(0.26, cy + 0.2, 0.0), _mat(Color(0.5, 0.9, 0.6)), false, Vector3(0, 0, -0.15), rig)
-	_label("BEAT\nMY\nBEST", Vector3(0.26, cy + 0.2, 0.004), 8, Color(0.1, 0.15, 0.1), Vector3(0, 0, -0.15), 0.0, rig)
+	# Pivot arm behind the monitor, so it can turn sideways.
+	_box(Vector3(0.06, cy - 0.77, 0.05), Vector3(0, (0.77 + cy) * 0.5, -0.38), shell, false, Vector3.ZERO, rig)
+	_pong_pivot = Node3D.new()
+	_pong_pivot.position = Vector3(0, cy, 0)
+	rig.add_child(_pong_pivot)
+	var pv := _pong_pivot
+	_box(Vector3(PONG_SCREEN.x + 0.1, h + 0.12, 0.08), Vector3(0, 0, -0.045), shell, true, Vector3.ZERO, pv)
+	_box(Vector3(PONG_SCREEN.x - 0.04, h - 0.08, 0.26), Vector3(0, 0, -0.22), shell, false, Vector3.ZERO, pv)
+	_box(Vector3(PONG_SCREEN.x + 0.04, h + 0.04, 0.01), Vector3(0, 0, -0.003), dark, false, Vector3.ZERO, pv)
+	_box(Vector3(0.025, 0.012, 0.01), Vector3(0.15, -h * 0.5 - 0.035, -0.003), _mat(Color.BLACK, 0, Color.BLACK, 24.0, Color(1.0, 0.3, 0.7)), false, Vector3.ZERO, pv)
+	_label("PONG-O-TRON", Vector3(-0.06, -h * 0.5 - 0.033, 0.002), 8, Color(0.75, 0.75, 0.8), Vector3.ZERO, 0.0, pv)
+	_box(Vector3(0.08, 0.08, 0.004), Vector3(0.26, 0.2, 0.0), _mat(Color(0.5, 0.9, 0.6)), false, Vector3(0, 0, -0.15), pv)
+	_label("BEAT\nMY\nBEST", Vector3(0.26, 0.2, 0.004), 8, Color(0.1, 0.15, 0.1), Vector3(0, 0, -0.15), 0.0, pv)
 	_box(Vector3(0.36, 0.03, 0.13), Vector3(0, 0.775, 0.2), _mat(Color(0.3, 0.3, 0.34), 7, Color(0.15, 0.15, 0.17)), false, Vector3(0.08, 0, 0), rig)
 	_cyl(0.05, 0.12, Vector3(-0.42, 0.82, 0.05), _mat(Color(0.95, 0.85, 0.3)), Vector3.ZERO, 8, -1.0, rig)
 
@@ -472,7 +488,7 @@ func _build_pong_desk() -> void:
 	screen.position = Vector3(0, cy, 0)
 	rig.add_child(screen)
 	if _pong_view:
-		_add_computer(screen, PONG_SCREEN, _pong_view, PONG_SIZE, true, _pong_screen)
+		_pong_pc = _add_computer(screen, PONG_SCREEN, _pong_view, PONG_SIZE, true, _pong_screen)
 	else:
 		# Run tools/fetch_games.sh to put Pong on this screen.
 		_label("NO SIGNAL", Vector3(0, 0, 0.002), 12, Color(0.4, 0.5, 0.6), Vector3.ZERO, 0.0, screen)
@@ -629,11 +645,15 @@ func _hud_button(text: String, corner: Control.LayoutPreset) -> Button:
 	down.bg_color = Color(0.3, 0.25, 0.35, 0.9)
 	b.add_theme_stylebox_override("pressed", down)
 	_hud.add_child(b)
+	_place_button(b, corner)
+	return b
+
+
+func _place_button(b: Button, corner: Control.LayoutPreset) -> void:
 	b.set_anchors_and_offsets_preset(corner, Control.PRESET_MODE_MINSIZE, 24)
 	# Grow inward from the corner it's pinned to.
 	b.grow_horizontal = Control.GROW_DIRECTION_BEGIN if b.anchor_left > 0.5 else Control.GROW_DIRECTION_END
 	b.grow_vertical = Control.GROW_DIRECTION_BEGIN if b.anchor_top > 0.5 else Control.GROW_DIRECTION_END
-	return b
 
 
 func _hud_button_at(point: Vector2) -> bool:
@@ -689,6 +709,33 @@ func _on_resized() -> void:
 	# Phones held upright keep a wide view instead of a narrow slit.
 	for cam in [_camera, _screen_camera]:
 		cam.keep_aspect = Camera3D.KEEP_HEIGHT if landscape else Camera3D.KEEP_WIDTH
+	_turn_pong(landscape)
+	# STAND UP: top-left upright; bottom-left sideways, clear of Pong's music
+	# button and the comedy game's cards.
+	_place_button(_stand_button, Control.PRESET_BOTTOM_LEFT if landscape else Control.PRESET_TOP_LEFT)
+
+
+## Turn the Pong monitor (and Pong's window) to match the phone.
+func _turn_pong(wide: bool) -> void:
+	if _pong_pc == null:
+		return
+	var px := PONG_SIZE_WIDE if wide else PONG_SIZE
+	if _pong_view.size == px:
+		return
+	_pong_pc.release()
+	_pong_pc.pointer = null
+	_pong_screen.size = px
+	_pong_view.size = px
+	_pong_view.content_scale_size = px
+	_pong_pc.pixels = Vector2(px)
+	_pong_pc.size = Vector2(PONG_SCREEN.y, PONG_SCREEN.x) if wide else PONG_SCREEN
+	_pong_pc.quad.size = _pong_pc.size
+	_pong_pivot.rotation.z = PI / 2 if wide else 0.0
+	# Pong re-lays itself out when the main window resizes, which may run
+	# before its own window has changed; nudge it once more.
+	var pong := _pong_view.get_child(0)
+	if pong.has_method("_update_layout"):
+		pong.call_deferred("_update_layout")
 
 
 # ---------------------------------------------------------------- frame
@@ -852,10 +899,11 @@ func _touch_input(event: InputEvent) -> void:
 			var aim = _aim_at(event.position)
 			if _seat:
 				# Seated: every tap goes to the game; nothing else moves.
-				if aim != null and aim.pc == _seat and _press_pc == null:
+				var uv = _seat_uv(event.position, aim)
+				if uv != null and _press_pc == null:
 					_touches[i] = "screen"
 					_press_pc = _seat
-					_seat.send_button(aim.uv, true)
+					_seat.send_button(uv, true)
 			elif aim != null and _glide >= 1.0:
 				# Tap a computer from anywhere to sit down at it.
 				_set_seat(aim.pc)
@@ -875,9 +923,9 @@ func _touch_input(event: InputEvent) -> void:
 		return
 	match _touches.get(i):
 		"screen":
-			var aim = _aim_at(event.position)
-			if aim != null and aim.pc == _press_pc:
-				_press_pc.send_motion(aim.uv)
+			var uv = _seat_uv(event.position, _aim_at(event.position))
+			if uv != null and _press_pc:
+				_press_pc.send_motion(uv)
 		"move":
 			var d: Vector2 = (event.position - _stick_origin) / STICK_RADIUS
 			_stick = Vector2(d.x, -d.y).limit_length(1.0)
@@ -923,5 +971,28 @@ func _aim_at(point: Vector2):
 ## Let go of whatever's being pressed, at this HUD point if it's still on that screen.
 func _release_press(point: Vector2) -> void:
 	var aim = _aim_at(point)
-	_press_pc.send_button(aim.uv if aim != null and aim.pc == _press_pc else _press_pc.last_uv(), false)
+	var uv = _seat_uv(point, aim) if _seat == _press_pc else null
+	if uv == null:
+		uv = aim.uv if aim != null and aim.pc == _press_pc else _press_pc.last_uv()
+	_press_pc.send_button(uv, false)
 	_press_pc = null
+
+
+## Where a touch lands on the seated computer's game, or null. Pong takes
+## touches anywhere (clamped to its screen) so a thumb can rest at the phone's
+## edge; the comedy game only takes touches on its screen.
+func _seat_uv(point: Vector2, aim):
+	if _seat == null:
+		return null
+	if not _seat.touch_events:
+		return aim.uv if aim != null and aim.pc == _seat else null
+	var px := point / _hud.size * Vector2(_world_vp.size)
+	var origin := _camera.project_ray_origin(px)
+	var dir := _camera.project_ray_normal(px)
+	var inv := _seat.screen.global_transform.affine_inverse()
+	var lo := inv * origin
+	var ld := inv.basis * dir
+	if ld.z >= -0.0001 or lo.z <= 0:
+		return null
+	var hit := lo + ld * (-lo.z / ld.z)
+	return Vector2(clampf(hit.x / _seat.size.x + 0.5, 0.0, 1.0), clampf(0.5 - hit.y / _seat.size.y, 0.0, 1.0))

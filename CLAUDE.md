@@ -67,7 +67,9 @@ right there, it's right on iPhone, Android and Steam. To keep that true:
   (`humble-house-studios/phone-pong`), pulled into `res://games/pong/` by
   `tools/fetch_games.sh` at build time (not committed; run it before testing the
   office locally). Pong runs in an embedded Window so its window logic works
-  untouched. Each game's sound fades with distance. Published at
+  untouched; its monitor pivots sideways when the phone does, so Pong plays
+  its landscape mode (paddle under the right thumb), and while seated it takes
+  touches anywhere. Each game's sound fades with distance. Published at
   https://humble-house-studios.github.io/killin-in-comedy/office/ (second export
   in `deploy.yml`). Screenshots: `tools/office_shot.gd`. `main.gd` must not touch
   the window when it isn't the root (`_owns_window()`).
