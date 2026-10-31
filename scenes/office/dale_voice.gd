@@ -1,6 +1,7 @@
 extends Node
-## Dale's real voice chat. Hold TALK: the mic records (the "Mic" bus in
-## default_bus_layout.tres has an AudioEffectRecord). Let go: the clip goes to
+## Dale's real voice chat. Hold TALK: the mic plays into the muted "Mic" bus,
+## whose AudioEffectCapture we drain every frame into a 16 kHz mono clip
+## (AudioEffectRecord needs threads, and the web build has none). Let go: the clip goes to
 ## the voice server (voice/, a free Cloudflare Worker) as a small 16 kHz WAV,
 ## which hears it, answers as Dale and sends his voice back to play here.
 ## Works the same on web, phones and desktop (plain HTTPRequest + mic input).
@@ -20,7 +21,11 @@ var history: Array = []
 var busy := false
 
 var _mic: AudioStreamPlayer
-var _record: AudioEffectRecord
+var _capture: AudioEffectCapture
+var _listening := false
+## What you've said so far (16-bit mono at RATE), and where the resampler is.
+var _pcm := PackedByteArray()
+var _phase := 0.0
 var _out: AudioStreamPlayer
 var _http: HTTPRequest
 var _since := 0
@@ -38,11 +43,11 @@ func _ready() -> void:
 		AudioServer.set_bus_name(bus, MIC_BUS)
 		AudioServer.set_bus_mute(bus, true)
 	for i in AudioServer.get_bus_effect_count(bus):
-		if AudioServer.get_bus_effect(bus, i) is AudioEffectRecord:
-			_record = AudioServer.get_bus_effect(bus, i)
-	if _record == null:
-		_record = AudioEffectRecord.new()
-		AudioServer.add_bus_effect(bus, _record)
+		if AudioServer.get_bus_effect(bus, i) is AudioEffectCapture:
+			_capture = AudioServer.get_bus_effect(bus, i)
+	if _capture == null:
+		_capture = AudioEffectCapture.new()
+		AudioServer.add_bus_effect(bus, _capture)
 	_mic = AudioStreamPlayer.new()
 	_mic.stream = AudioStreamMicrophone.new()
 	_mic.bus = MIC_BUS
@@ -58,19 +63,39 @@ func _ready() -> void:
 
 
 func listening() -> bool:
-	return _record != null and _record.is_recording_active()
+	return _listening
 
 
 func speaking() -> bool:
 	return _out.playing
 
 
+## Dale's story lines, pre-recorded with his voice by the build
+## (tools/dale_voice_lines.mjs). Plays the line and returns true if there's a
+## clip for it.
+func play_line(text: String) -> bool:
+	var path := "res://audio/dale/%s.mp3" % text.md5_text().left(12)
+	if not ResourceLoader.exists(path):
+		path = path.replace(".mp3", ".wav")
+		if not ResourceLoader.exists(path):
+			return false
+	_out.stream = load(path)
+	_out.play()
+	return true
+
+
 func start_listening() -> bool:
 	if busy or not available():
 		return false
 	stop_speaking()
-	_mic.play()
-	_record.set_recording_active(true)
+	# The mic stays open for the rest of the chat: the first time, the browser
+	# asks for permission and the stream takes a moment to arrive.
+	if not _mic.playing:
+		_mic.play()
+	_capture.clear_buffer()
+	_pcm = PackedByteArray()
+	_phase = 0.0
+	_listening = true
 	_since = Time.get_ticks_msec()
 	return true
 
@@ -79,20 +104,21 @@ func start_listening() -> bool:
 func stop_listening(persona: String) -> void:
 	if not listening():
 		return
-	_record.set_recording_active(false)
-	var clip := _record.get_recording()
-	_mic.stop()
+	_drain()
+	_listening = false
 	var secs := (Time.get_ticks_msec() - _since) / 1000.0
-	if clip == null or clip.data.size() < 1000 or secs < MIN_SECONDS:
+	if secs < MIN_SECONDS:
 		failed.emit("Hold TALK the whole time you're speaking.")
 		return
-	_send({"audio": Marshalls.raw_to_base64(to_wav16k(clip))}, persona)
+	if _pcm.size() < RATE * 2 * MIN_SECONDS * 0.5 or silent(_pcm):
+		failed.emit("I can't hear you. If your browser asked about the mic, tap Allow, then hold TALK again.")
+		return
+	_send({"audio": Marshalls.raw_to_base64(wav16k(_pcm))}, persona)
 
 
 func cancel() -> void:
-	if listening():
-		_record.set_recording_active(false)
-		_mic.stop()
+	_listening = false
+	_mic.stop()
 	if busy:
 		_http.cancel_request()
 		busy = false
@@ -104,11 +130,40 @@ func stop_speaking() -> void:
 
 
 func _process(_delta: float) -> void:
+	if not _listening:
+		if _capture and _capture.get_frames_available() > 0:
+			_capture.clear_buffer()
+		return
+	_drain()
 	# Don't record forever if the button gets stuck.
-	if listening() and Time.get_ticks_msec() - _since > MAX_SECONDS * 1000.0:
-		_record.set_recording_active(false)
-		_mic.stop()
+	if Time.get_ticks_msec() - _since > MAX_SECONDS * 1000.0:
+		_listening = false
 		failed.emit("That was a long one. Try something shorter.")
+
+
+## Move what the mic captured since last frame into the 16 kHz clip.
+func _drain() -> void:
+	var n := _capture.get_frames_available()
+	if n <= 0:
+		return
+	var step := AudioServer.get_mix_rate() / RATE
+	_phase = add_frames(_pcm, _capture.get_buffer(n), step, _phase)
+
+
+## Appends stereo float frames to a 16-bit mono clip, keeping one frame every
+## `step` (mix rate / RATE). Returns the resampler phase to carry over.
+static func add_frames(pcm: PackedByteArray, frames: PackedVector2Array, step: float, phase: float) -> float:
+	var at := pcm.size()
+	pcm.resize(at + (int((frames.size() + phase) / step) + 1) * 2)
+	var i := phase
+	var n := frames.size()
+	while i < n:
+		var f := frames[int(i)]
+		pcm.encode_s16(at, clampi(int((f.x + f.y) * 0.5 * 32767.0), -32768, 32767))
+		at += 2
+		i += step
+	pcm.resize(at)
+	return i - n
 
 
 func _send(body: Dictionary, persona: String) -> void:
@@ -155,13 +210,17 @@ func _play(b64: String) -> void:
 		_out.play()
 
 
-## A recorded clip as a 16 kHz mono 16-bit WAV file.
-static func to_wav16k(clip: AudioStreamWAV) -> PackedByteArray:
-	var src := clip.data
-	var ch := 2 if clip.stereo else 1
-	var frames := src.size() / (2 * ch)
-	var step := float(clip.mix_rate) / RATE
-	var n := int(frames / step)
+## True when the clip is all (near) zeros: the mic stream hasn't arrived yet.
+static func silent(pcm: PackedByteArray) -> bool:
+	for i in range(0, pcm.size() - 1, 64):
+		if absi(pcm.decode_s16(i)) > 40:
+			return false
+	return true
+
+
+## 16-bit mono samples at RATE as a WAV file.
+static func wav16k(pcm: PackedByteArray) -> PackedByteArray:
+	var n := pcm.size() / 2
 	var out := PackedByteArray()
 	out.resize(44 + n * 2)
 	out.encode_u32(0, 0x46464952)  # RIFF
@@ -177,12 +236,8 @@ static func to_wav16k(clip: AudioStreamWAV) -> PackedByteArray:
 	out.encode_u16(34, 16)
 	out.encode_u32(36, 0x61746164)  # data
 	out.encode_u32(40, n * 2)
-	for i in n:
-		var at := int(i * step) * 2 * ch
-		var s := src.decode_s16(at)
-		if ch == 2:
-			s = (s + src.decode_s16(at + 2)) / 2
-		out.encode_s16(44 + i * 2, s)
+	for i in n * 2:
+		out[44 + i] = pcm[i]
 	return out
 
 
@@ -206,3 +261,4 @@ static func wav_stream(bytes: PackedByteArray) -> AudioStreamWAV:
 			return w
 		at += 8 + size + (size & 1)
 	return null
+

@@ -82,6 +82,29 @@ jobs:
           done
           echo "$reply" | python3 -c "import sys,json; d=json.load(sys.stdin); print('::notice title=Dale says::' + d.get('reply', d.get('error','?'))[:200]); print('::notice title=Dale models::' + json.dumps(d.get('models',{}))[:900]); print('::notice title=Dale audio::%d base64 chars' % len(d.get('audio','')))" || echo "::warning title=Dale voice::Smoke test failed: ${reply:0:300}"
 
+      # Dale's story lines, pre-recorded in his voice so the game plays them
+      # like any other sound. Cached: only new or changed lines get recorded.
+      - uses: actions/cache@v4
+        if: steps.deploy.outputs.url != ''
+        with:
+          path: audio/dale
+          key: dale-lines-${{ hashFiles('data/dale_lines.gd', 'voice/src/index.js') }}
+          restore-keys: dale-lines-
+      - name: Record Dale's lines
+        if: steps.deploy.outputs.url != ''
+        continue-on-error: true
+        run: |
+          node tools/dale_voice_lines.mjs "${{ steps.deploy.outputs.url }}" | tee lines.log
+          echo "::notice title=Dale lines::$(tail -1 lines.log)"
+      - uses: actions/upload-artifact@v4
+        if: steps.deploy.outputs.url != ''
+        continue-on-error: true
+        with:
+          name: dale-lines
+          path: audio/dale
+          if-no-files-found: ignore
+          retention-days: 3
+
   build:
     needs: voice
     runs-on: ubuntu-latest
@@ -89,6 +112,14 @@ jobs:
       image: barichello/godot-ci:4.3
     steps:
       - uses: actions/checkout@v4
+
+      # Dale's pre-recorded lines from the voice job (if it made any).
+      - uses: actions/download-artifact@v4
+        if: needs.voice.outputs.url != ''
+        continue-on-error: true
+        with:
+          name: dale-lines
+          path: audio/dale
 
       - name: Install export templates
         run: |

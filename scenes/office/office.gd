@@ -1431,6 +1431,8 @@ func _say(line: String, speak := true) -> void:
 	_talk_text.visible = true
 	_talk_text.text = line
 	_talk_text.visible_characters = 0
+	if speak and _voice_chat.play_line(line):
+		return
 	if speak and _voice != "":
 		# A slower, lower voice for Dale. The phone's own speech voice, so it
 		# works offline on every platform (web uses the browser's).
@@ -1438,6 +1440,8 @@ func _say(line: String, speak := true) -> void:
 
 
 func _hush() -> void:
+	if _voice_chat:
+		_voice_chat.stop_speaking()
 	if _voice != "":
 		DisplayServer.tts_stop()
 

@@ -101,22 +101,27 @@ func test_persona_keeps_later_chapters_secret() -> void:
 
 func test_voice_clip_becomes_a_small_wav_and_back() -> void:
 	var Voice = load("res://scenes/office/dale_voice.gd")
-	var clip := AudioStreamWAV.new()
-	clip.format = AudioStreamWAV.FORMAT_16_BITS
-	clip.stereo = true
-	clip.mix_rate = 48000
+	# One second of a 48 kHz tone, fed in uneven chunks like real frames.
 	var pcm := PackedByteArray()
-	pcm.resize(48000 * 4)
-	for i in 48000:
-		var v := int(sin(i * 0.05) * 12000)
-		pcm.encode_s16(i * 4, v)
-		pcm.encode_s16(i * 4 + 2, v)
-	clip.data = pcm
-	var wav: PackedByteArray = Voice.to_wav16k(clip)
+	var phase := 0.0
+	var made := 0
+	for chunk in [1000, 4096, 777, 48000 - 5873]:
+		var frames := PackedVector2Array()
+		for k in chunk:
+			var v := sin((made + k) * 0.05) * 0.4
+			frames.append(Vector2(v, v))
+		phase = Voice.add_frames(pcm, frames, 3.0, phase)
+		made += chunk
+	assert_eq(pcm.size(), 16000 * 2)
+	assert_eq(pcm.decode_s16(2 * 10), int(sin(30 * 0.05) * 0.4 * 32767.0))
+	assert_false(Voice.silent(pcm))
+	var quiet := PackedByteArray()
+	quiet.resize(3200)
+	assert_true(Voice.silent(quiet))
+	var wav: PackedByteArray = Voice.wav16k(pcm)
 	assert_eq(wav.size(), 44 + 16000 * 2)
 	assert_eq(wav.slice(0, 4).get_string_from_ascii(), "RIFF")
 	var back: AudioStreamWAV = Voice.wav_stream(wav)
 	assert_eq(back.mix_rate, 16000)
 	assert_false(back.stereo)
-	assert_eq(back.data.size(), 16000 * 2)
-	assert_eq(back.data.decode_s16(2 * 10), int(sin(30 * 0.05) * 12000))
+	assert_eq(back.data, pcm)

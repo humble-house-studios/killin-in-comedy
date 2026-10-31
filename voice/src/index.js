@@ -2,6 +2,7 @@
 //   { audio: base64 WAV (16 kHz mono) or text: "...",
 //     persona: "system prompt from the game", history: [{role, content}] }
 // Returns { heard, reply, audio: base64 (mp3 or wav), models: {...} }.
+// POST /say { text } returns { audio } for one line.
 // Each step tries a few Workers AI models in turn, so a renamed or missing
 // model falls back instead of breaking the chat.
 
@@ -43,6 +44,13 @@ export default {
       return json({ error: "bad json" }, 400);
     }
     const models = {};
+    // POST /say {text}: just Dale's voice for a line (the build pre-records
+    // his story lines with it, so they play offline in the game).
+    if (new URL(req.url).pathname === "/say") {
+      const text = clip(body.text, 400).trim();
+      if (!text) return json({ error: "no text" }, 400);
+      return json({ audio: await speak(env, text, models), models });
+    }
     try {
       let heard = clip(body.text, 500).trim();
       if (!heard && typeof body.audio === "string" && body.audio.length > 100) {
