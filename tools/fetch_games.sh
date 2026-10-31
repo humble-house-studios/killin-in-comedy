@@ -16,12 +16,13 @@ fetch() {
 	# Keep the game's autoloads (e.g. Game, Save), re-pointed at its folder.
 	sed -n '/^\[autoload\]/,/^\[/{/^[A-Za-z_]*=/p}' "games/$name/project.godot" \
 		| sed "s#res://#res://games/$name/#" > "games/$name/autoloads.txt"
-	(cd "games/$name" && rm -rf .git .github tools tests build project.godot export_presets.cfg ./*.md)
+	(cd "games/$name" && rm -rf .git .github tools tests docs integration build project.godot export_presets.cfg ./*.md)
 	find "games/$name" \( -name '*.gd' -o -name '*.tscn' -o -name '*.tres' -o -name '*.gdshader' \) \
 		-exec sed -i "s#res://#res://games/$name/#g" {} +
 }
 fetch pong humble-house-studios/phone-pong
 fetch proof humble-house-studios/proof-hand
+fetch loot humble-house-studios/Loot-Machine
 
 if [ "${1:-}" = "--autoloads" ]; then
 	lines=$(cat games/*/autoloads.txt)

@@ -74,7 +74,14 @@ right there, it's right on iPhone, Android and Steam. To keep that true:
   way; it needs its `Game`/`Save` autoloads, which `fetch_games.sh
   --autoloads` adds to project.godot (CI only; locally `git checkout
   project.godot` after). Other games' autoload names and class_names must not
-  clash with ours. Each game's sound fades with distance. Published at
+  clash with ours. Each game's sound fades with distance. The **Loot Machine** cabinet by the right wall
+  runs `humble-house-studios/Loot-Machine` (fetched into `res://games/loot/` the
+  same way): a slot-machine roguelite whose office relics power up every game.
+  `OfficeLink` (`games/loot/ecosystem/office_link.gd`) is ticked by the office
+  each frame: it applies owned relics to Pong and this game when a run/set
+  starts (read by their variable names, nothing in the games changes) and pays
+  Comp Tokens into the machine for cleared Pong stages and comedy sets. All of
+  it lives in one save, `user://office_relics.cfg`. Published at
   https://humble-house-studios.github.io/killin-in-comedy/office/ (second export
   in `deploy.yml`). Screenshots: `tools/office_shot.gd`. `main.gd` must not touch
   the window when it isn't the root (`_owns_window()`).

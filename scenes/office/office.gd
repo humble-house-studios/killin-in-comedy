@@ -12,6 +12,11 @@ extends Node
 ##     needs its Game/Save autoloads, added by tools/fetch_games.sh --autoloads.
 ##     in an embedded Window (inside a hidden holder viewport), so its own
 ##     window-size logic still works.
+##   - Corner: the Loot Machine (res://games/loot, humble-house-studios/Loot-Machine),
+##     a slot-machine cabinet whose relics power up every game in the room.
+##     OfficeLink (from that repo) applies the relics to Pong and this game
+##     at the start of each run/set, and pays Comp Tokens into the machine
+##     when you clear Pong stages and comedy sets.
 ## - Clicks/taps are ray-cast onto a screen and pushed into that game at that spot.
 ## - Each game has its own audio bus that fades with distance to its screen.
 ## Mouse: click to look around, WASD walk, click the monitor to play, Esc lets go.
@@ -44,6 +49,12 @@ const PROOF_SCENE := "res://games/proof/scenes/main.tscn"
 const PROOF_SIZE := Vector2i(720, 1280)
 const PROOF_BASE := Vector2i(1080, 1920)
 const PROOF_DESK := Vector3(3.05, 0.0, -0.9)
+## Loot Machine cabinet on the right wall, between the chalkboard and the water cooler: an upright screen.
+const LOOT_SCENE := "res://games/loot/scenes/main.tscn"
+const LOOT_LINK := "res://games/loot/ecosystem/office_link.gd"
+const LOOT_SIZE := Vector2i(720, 1280)
+const LOOT_SCREEN := Vector2(0.34, 0.6044)
+const LOOT_SPOT := Vector3(3.12, 0.0, 0.45)
 ## Game audio is full volume within NEAR metres of its screen, silent past FAR.
 const AUDIO_NEAR := 1.6
 const AUDIO_FAR := 5.0
@@ -153,6 +164,11 @@ var _clock_hands: Array[Node3D] = []
 var _hud: Control
 var _hint: Label
 var _title: Label
+## Loot Machine game viewport, and the relic link (null if it isn't fetched).
+var _loot_vp: SubViewport
+var _link: RefCounted
+var _toast: Label
+var _toast_time := 0.0
 
 var _yaw := 0.0
 var _pitch := -0.08
@@ -202,6 +218,15 @@ func _build_game() -> void:
 	add_child(_game_vp)
 	_view_bus[_game_vp] = _make_bus("Comedy")
 	_game_vp.add_child(preload("res://scenes/main.tscn").instantiate())
+	if ResourceLoader.exists(LOOT_SCENE):
+		_loot_vp = SubViewport.new()
+		_loot_vp.size = LOOT_SIZE
+		_loot_vp.disable_3d = true
+		_loot_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+		add_child(_loot_vp)
+		_view_bus[_loot_vp] = _make_bus("Loot")
+		_loot_vp.add_child(load(LOOT_SCENE).instantiate())
+		_link = load(LOOT_LINK).new()
 	if ResourceLoader.exists(PONG_SCENE):
 		_pong_view = _embed(PONG_SCENE, PONG_SIZE, PONG_SIZE, "Pong")
 		_pong_screen = _pong_view.get_parent()
@@ -424,6 +449,7 @@ func _build_room() -> void:
 	_build_desk()
 	_build_pong_desk()
 	_build_proof_desk()
+	_build_loot_cabinet()
 	_build_props()
 
 
@@ -562,6 +588,55 @@ func _build_proof_desk() -> void:
 		_label("NO SIGNAL", Vector3(0, 0, 0.002), 12, Color(0.3, 0.6, 0.35), Vector3.ZERO, 0.0, screen)
 
 
+## The Loot Machine: a grubby red slot cabinet against the right wall, its
+## upright screen running the game, a lever on the side.
+func _build_loot_cabinet() -> void:
+	var rig := Node3D.new()
+	rig.position = LOOT_SPOT
+	rig.rotation.y = -PI / 2
+	_world_vp.add_child(rig)
+	var red := _mat(Color(0.45, 0.1, 0.09), 6, Color.BLACK, 30.0)
+	var dark_red := _mat(Color(0.22, 0.05, 0.05))
+	var brass := _mat(Color(0.75, 0.6, 0.28))
+	var dark := _mat(Color(0.05, 0.04, 0.04))
+	var h := LOOT_SCREEN.y
+	var cy := 1.24
+	# Body, plinth and a sloped top.
+	_box(Vector3(0.62, 1.78, 0.56), Vector3(0, 0.89, -0.12), red, true, Vector3.ZERO, rig)
+	_box(Vector3(0.66, 0.12, 0.6), Vector3(0, 0.06, -0.12), dark_red, false, Vector3.ZERO, rig)
+	# Screen bezel: brass frame, black glass.
+	_box(Vector3(LOOT_SCREEN.x + 0.08, h + 0.08, 0.02), Vector3(0, cy, 0.16), brass, false, Vector3.ZERO, rig)
+	_box(Vector3(LOOT_SCREEN.x + 0.04, h + 0.04, 0.02), Vector3(0, cy, 0.165), dark, false, Vector3.ZERO, rig)
+	# Coin tray and slot under the screen.
+	_box(Vector3(0.5, 0.06, 0.18), Vector3(0, 0.82, 0.22), dark_red, false, Vector3.ZERO, rig)
+	_box(Vector3(0.44, 0.03, 0.14), Vector3(0, 0.85, 0.23), dark, false, Vector3.ZERO, rig)
+	_box(Vector3(0.1, 0.03, 0.01), Vector3(0.18, 0.66, 0.165), brass, false, Vector3.ZERO, rig)
+	_label("INSERT\nCOIN", Vector3(-0.12, 0.66, 0.17), 7, Color(1.0, 0.8, 0.3), Vector3.ZERO, 0.0, rig)
+	# Marquee: a glowing sign on top.
+	_box(Vector3(0.66, 0.24, 0.42), Vector3(0, 1.9, -0.06), _mat(Color(0.2, 0.04, 0.04), 0, Color.BLACK, 24.0, Color(0.5, 0.12, 0.05)), false, Vector3.ZERO, rig)
+	_label("LOOT\nMACHINE", Vector3(0, 1.9, 0.152), 14, Color(1.0, 0.82, 0.25), Vector3.ZERO, 0.0, rig)
+	for i in 6:
+		var bulb := _mat(Color.BLACK, 0, Color.BLACK, 24.0, Color(1.0, 0.85, 0.4))
+		_box(Vector3(0.025, 0.025, 0.01), Vector3(-0.28 + i * 0.112, 2.0, 0.152), bulb, false, Vector3.ZERO, rig)
+		_box(Vector3(0.025, 0.025, 0.01), Vector3(-0.28 + i * 0.112, 1.8, 0.152), bulb, false, Vector3.ZERO, rig)
+	# Lever on the right side (your right as you face the machine).
+	_box(Vector3(0.06, 0.16, 0.1), Vector3(0.34, 1.05, 0.0), brass, false, Vector3.ZERO, rig)
+	_cyl(0.012, 0.42, Vector3(0.38, 1.25, 0.0), _mat(Color(0.8, 0.8, 0.8)), Vector3.ZERO, 6, -1.0, rig)
+	_cyl(0.04, 0.07, Vector3(0.38, 1.48, 0.0), _mat(Color(0.85, 0.1, 0.1), 0, Color.BLACK, 24.0, Color(0.3, 0.0, 0.0)), Vector3.ZERO, 8, -1.0, rig)
+	# A sticky note, because it's still an office.
+	_box(Vector3(0.08, 0.08, 0.004), Vector3(-0.25, cy + h * 0.5 + 0.02, 0.172), _mat(Color(0.95, 0.88, 0.35)), false, Vector3(0, 0, 0.15), rig)
+	_label("RELICS\nFOR\nALL", Vector3(-0.25, cy + h * 0.5 + 0.02, 0.176), 7, Color(0.15, 0.1, 0.1), Vector3(0, 0, 0.15), 0.0, rig)
+
+	var screen := Node3D.new()
+	screen.position = Vector3(0, cy, 0.18)
+	rig.add_child(screen)
+	if _loot_vp:
+		_add_computer(screen, LOOT_SCREEN, _loot_vp, LOOT_SIZE)
+	else:
+		# Run tools/fetch_games.sh to put the Loot Machine on this screen.
+		_label("OUT OF\nORDER", Vector3(0, 0, 0.002), 12, Color(1.0, 0.4, 0.3), Vector3.ZERO, 0.0, screen)
+
+
 func _build_props() -> void:
 	var metal := _mat(Color(0.42, 0.44, 0.42))
 	var dark := _mat(Color(0.1, 0.1, 0.11))
@@ -686,6 +761,22 @@ func _build_hud() -> void:
 	_title.text = "MONDAY, 9:02 AM\nYOU SHOULD BE WORKING."
 	_title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_hud.add_child(_title)
+	# Relic and token news from the Loot Machine link.
+	_toast = Label.new()
+	_toast.add_theme_font_override("font", font)
+	_toast.add_theme_font_size_override("font_size", 18)
+	_toast.add_theme_color_override("font_color", Color(1.0, 0.85, 0.3))
+	_toast.add_theme_color_override("font_outline_color", Color.BLACK)
+	_toast.add_theme_constant_override("outline_size", 8)
+	_toast.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_toast.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_toast.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	_toast.offset_top = 24
+	_toast.offset_left = 300
+	_toast.offset_right = -300
+	_toast.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_toast.modulate.a = 0.0
+	_hud.add_child(_toast)
 	_sit_button = _hud_button("SIT DOWN", Control.PRESET_BOTTOM_RIGHT)
 	_sit_button.pressed.connect(_sit_nearest)
 	_stand_button = _hud_button("STAND UP", Control.PRESET_TOP_LEFT)
@@ -823,6 +914,8 @@ func _physics_process(delta: float) -> void:
 	if move.length() > 0.1:
 		_moved = true
 	var speed := RUN_SPEED if Input.is_physical_key_pressed(KEY_SHIFT) else SPEED
+	if _link:
+		speed *= _link.walk_speed()
 	var want := Basis(Vector3.UP, _yaw) * Vector3(move.x, 0, -move.y) * speed
 	var v := _player.velocity
 	v.x = lerpf(v.x, want.x, minf(1.0, delta * 12.0))
@@ -877,10 +970,26 @@ func _process(delta: float) -> void:
 		_clock_hands[0].rotation.z = -TAU * (fmod(time.hour, 12) + time.minute / 60.0) / 12.0
 		_clock_hands[1].rotation.z = -TAU * time.minute / 60.0
 
+	_tick_link(delta)
 	_sit_button.visible = _touch and _seat == null and not _computers.is_empty()
 	_stand_button.visible = _touch and _seat != null
 	_update_hint(aim, close)
 	_hud.queue_redraw()
+
+
+## Let the Loot Machine's relics reach the other games, and show what happened.
+func _tick_link(delta: float) -> void:
+	_toast_time = maxf(0.0, _toast_time - delta)
+	_toast.modulate.a = clampf(_toast_time, 0.0, 1.0)
+	if _link == null:
+		return
+	_link.tick("comedy", _game_vp.get_child(0))
+	if _pong_view and _pong_view.get_child_count() > 0:
+		_link.tick("pong", _pong_view.get_child(0))
+	var news: Array = _link.pop_news()
+	if not news.is_empty():
+		_toast.text = "\n".join(news)
+		_toast_time = 3.5
 
 
 func _update_hint(aim, close: bool) -> void:
