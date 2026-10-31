@@ -281,6 +281,10 @@ func _on_node_added(node: Node) -> void:
 	for view in _view_bus:
 		if view.is_ancestor_of(node):
 			node.bus = AudioServer.get_bus_name(_view_bus[view])
+			# The web build's default "sample" playback hands sounds to the
+			# browser and drops them for games embedded here; Godot's own
+			# mixer (stream playback) plays them through the per-game buses.
+			node.playback_type = AudioServer.PLAYBACK_TYPE_STREAM
 			return
 
 
