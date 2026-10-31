@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sound test</title>
+<style>
+body{font:20px -apple-system,sans-serif;background:#111;color:#fff;padding:24px;max-width:480px;margin:auto}
+button{display:block;width:100%;padding:22px;margin:16px 0;font-size:22px;border-radius:14px;border:0;background:#e8458b;color:#fff}
+p{color:#aaa;font-size:16px}
+</style></head><body>
+<h2>AirPlay sound test</h2>
+<p>Start AirPlay first, then tap each button. Say which ones you hear on the TV.</p>
+<button id="a">1. Web Audio beep</button>
+<button id="b">2. Audio clip beep</button>
+<p id="s"></p>
+<script>
+try{if(navigator.audioSession){navigator.audioSession.type='playback';}}catch(e){}
+var ctx;
+function say(t){document.getElementById('s').textContent=t;}
+document.getElementById('a').onclick=function(){
+  var AC=window.AudioContext||window.webkitAudioContext;
+  if(!ctx){ctx=new AC();}
+  ctx.resume();
+  var o=ctx.createOscillator(),g=ctx.createGain();
+  o.frequency.value=660;g.gain.value=0.4;
+  o.connect(g);g.connect(ctx.destination);
+  o.start();o.stop(ctx.currentTime+1);
+  say('Web Audio played. Context: '+ctx.state+', '+ctx.sampleRate+' Hz');
+};
+document.getElementById('b').onclick=function(){
+  var n=22050,buf=new ArrayBuffer(44+n*2),v=new DataView(buf);
+  function w(o,s){for(var i=0;i<s.length;i++){v.setUint8(o+i,s.charCodeAt(i));}}
+  w(0,'RIFF');v.setUint32(4,36+n*2,true);w(8,'WAVEfmt ');v.setUint32(16,16,true);
+  v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,22050,true);
+  v.setUint32(28,44100,true);v.setUint16(32,2,true);v.setUint16(34,16,true);
+  w(36,'data');v.setUint32(40,n*2,true);
+  for(var i=0;i<n;i++){v.setInt16(44+i*2,Math.sin(i*2*Math.PI*880/22050)*12000,true);}
+  var el=new Audio(URL.createObjectURL(new Blob([buf],{type:'audio/wav'})));
+  el.play();
+  say('Audio clip played.');
+};
+</script></body></html>

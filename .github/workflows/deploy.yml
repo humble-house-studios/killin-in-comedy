@@ -86,6 +86,9 @@ jobs:
             exit 1
           fi
 
+      - name: Add sound test page
+        run: cp tools/beep.html build/web/beep.html
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: build/web
