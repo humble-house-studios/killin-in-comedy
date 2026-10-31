@@ -55,6 +55,12 @@ const LOOT_LINK := "res://games/loot/ecosystem/office_link.gd"
 const LOOT_SIZE := Vector2i(720, 1280)
 const LOOT_SCREEN := Vector2(0.34, 0.6044)
 const LOOT_SPOT := Vector3(3.12, 0.0, 0.45)
+## Cube Desk (humble-house-studios/rubix): a desk by the door with an upright
+## monitor, a Rubik's cube beside the keyboard.
+const CUBE_SCENE := "res://games/cube/scenes/main.tscn"
+const CUBE_SIZE := Vector2i(720, 1280)
+const CUBE_SCREEN := Vector2(0.36, 0.64)
+const CUBE_DESK := Vector3(-1.6, 0.0, 3.62)
 ## Game audio is full volume within NEAR metres of its screen, silent past FAR.
 const AUDIO_NEAR := 1.6
 const AUDIO_FAR := 5.0
@@ -166,6 +172,7 @@ var _hint: Label
 var _title: Label
 ## Loot Machine game viewport, and the relic link (null if it isn't fetched).
 var _loot_vp: SubViewport
+var _cube_vp: SubViewport
 var _link: RefCounted
 var _toast: Label
 var _toast_time := 0.0
@@ -227,6 +234,14 @@ func _build_game() -> void:
 		_view_bus[_loot_vp] = _make_bus("Loot")
 		_loot_vp.add_child(load(LOOT_SCENE).instantiate())
 		_link = load(LOOT_LINK).new()
+	if ResourceLoader.exists(CUBE_SCENE):
+		# 3D stays on: the cube renders in its own little world inside.
+		_cube_vp = SubViewport.new()
+		_cube_vp.size = CUBE_SIZE
+		_cube_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+		add_child(_cube_vp)
+		_view_bus[_cube_vp] = _make_bus("Cube")
+		_cube_vp.add_child(load(CUBE_SCENE).instantiate())
 	if ResourceLoader.exists(PONG_SCENE):
 		_pong_view = _embed(PONG_SCENE, PONG_SIZE, PONG_SIZE, "Pong")
 		_pong_screen = _pong_view.get_parent()
@@ -460,6 +475,7 @@ func _build_room() -> void:
 	_build_pong_desk()
 	_build_proof_desk()
 	_build_loot_cabinet()
+	_build_cube_desk()
 	_build_props()
 
 
@@ -600,6 +616,53 @@ func _build_proof_desk() -> void:
 
 ## The Loot Machine: a grubby red slot cabinet against the right wall, its
 ## upright screen running the game, a lever on the side.
+func _build_cube_desk() -> void:
+	var rig := Node3D.new()
+	rig.position = CUBE_DESK
+	rig.rotation.y = PI
+	_world_vp.add_child(rig)
+	var wood := _mat(Color(0.3, 0.32, 0.42), 6, Color.BLACK, 40.0)
+	var metal := _mat(Color(0.25, 0.26, 0.28))
+	var shell := _mat(Color(0.12, 0.13, 0.18), 6, Color.BLACK, 40.0)
+	var dark := _mat(Color(0.03, 0.04, 0.08))
+	_box(Vector3(1.2, 0.05, 0.7), Vector3(0, 0.735, 0), wood, true, Vector3.ZERO, rig)
+	_box(Vector3(0.05, 0.71, 0.65), Vector3(-0.56, 0.355, 0), metal, true, Vector3.ZERO, rig)
+	_box(Vector3(0.05, 0.71, 0.65), Vector3(0.56, 0.355, 0), metal, true, Vector3.ZERO, rig)
+	var h := CUBE_SCREEN.y
+	var cy := 0.84 + h * 0.5 + 0.06
+	_box(Vector3(0.24, 0.02, 0.2), Vector3(0, 0.77, -0.1), shell, false, Vector3.ZERO, rig)
+	_box(Vector3(0.06, 0.1, 0.06), Vector3(0, 0.82, -0.1), shell, false, Vector3.ZERO, rig)
+	_box(Vector3(CUBE_SCREEN.x + 0.08, h + 0.1, 0.06), Vector3(0, cy, -0.04), shell, true, Vector3.ZERO, rig)
+	_box(Vector3(CUBE_SCREEN.x + 0.03, h + 0.03, 0.01), Vector3(0, cy, -0.006), dark, false, Vector3.ZERO, rig)
+	_label("CUBETRON", Vector3(0, cy - h * 0.5 - 0.03, 0.0), 8, Color(0.6, 0.65, 0.8), Vector3.ZERO, 0.0, rig)
+	_box(Vector3(0.36, 0.03, 0.13), Vector3(0, 0.775, 0.2), _mat(Color(0.2, 0.2, 0.25), 7, Color(0.1, 0.1, 0.12)), false, Vector3(0.08, 0, 0), rig)
+	# A real cube on the desk: black body, six coloured faces.
+	var cube := Node3D.new()
+	cube.position = Vector3(0.38, 0.81, 0.12)
+	cube.rotation.y = 0.5
+	rig.add_child(cube)
+	_box(Vector3(0.07, 0.07, 0.07), Vector3.ZERO, _mat(Color(0.05, 0.05, 0.06)), false, Vector3.ZERO, cube)
+	for f in [[Vector3(0, 0.036, 0), Vector3(0.06, 0.002, 0.06), Color(0.95, 0.95, 0.95)],
+			[Vector3(0, 0, 0.036), Vector3(0.06, 0.06, 0.002), Color(0.0, 0.65, 0.3)],
+			[Vector3(0.036, 0, 0), Vector3(0.002, 0.06, 0.06), Color(0.88, 0.16, 0.24)],
+			[Vector3(-0.036, 0, 0), Vector3(0.002, 0.06, 0.06), Color(1.0, 0.48, 0.1)],
+			[Vector3(0, 0, -0.036), Vector3(0.06, 0.06, 0.002), Color(0.14, 0.4, 0.85)]]:
+		_box(f[1], f[0], _mat(f[2]), false, Vector3.ZERO, cube)
+	# The record, on a poster above the desk.
+	_box(Vector3(0.6, 0.42, 0.01), Vector3(0, 1.95, -0.33), _mat(Color(0.09, 0.13, 0.24)), false, Vector3.ZERO, rig)
+	_label("WORLD RECORD", Vector3(0, 2.08, -0.32), 10, Color(0.24, 0.9, 0.76), Vector3.ZERO, 0.0, rig)
+	_label("2.51", Vector3(0, 1.95, -0.32), 34, Color(1.0, 0.82, 0.25), Vector3.ZERO, 0.0, rig)
+	_label("CAN YOU GO SUB-60?", Vector3(0, 1.82, -0.32), 7, Color(0.8, 0.85, 1.0), Vector3.ZERO, 0.0, rig)
+
+	var screen := Node3D.new()
+	screen.position = Vector3(0, cy, 0)
+	rig.add_child(screen)
+	if _cube_vp:
+		_add_computer(screen, CUBE_SCREEN, _cube_vp, CUBE_SIZE)
+	else:
+		_label("NO SIGNAL", Vector3(0, 0, 0.002), 12, Color(0.4, 0.5, 0.7), Vector3.ZERO, 0.0, screen)
+
+
 func _build_loot_cabinet() -> void:
 	var rig := Node3D.new()
 	rig.position = LOOT_SPOT
@@ -996,6 +1059,8 @@ func _tick_link(delta: float) -> void:
 	_link.tick("comedy", _game_vp.get_child(0))
 	if _pong_view and _pong_view.get_child_count() > 0:
 		_link.tick("pong", _pong_view.get_child(0))
+	if _cube_vp and _cube_vp.get_child_count() > 0:
+		_link.tick("cube", _cube_vp.get_child(0))
 	var news: Array = _link.pop_news()
 	if not news.is_empty():
 		_toast.text = "\n".join(news)

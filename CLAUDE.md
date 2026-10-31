@@ -81,7 +81,9 @@ right there, it's right on iPhone, Android and Steam. To keep that true:
   each frame: it applies owned relics to Pong and this game when a run/set
   starts (read by their variable names, nothing in the games changes) and pays
   Comp Tokens into the machine for cleared Pong stages and comedy sets. All of
-  it lives in one save, `user://office_relics.cfg`. Published at
+  it lives in one save, `user://office_relics.cfg`. A desk by the door runs **Cube Desk**
+  (`humble-house-studios/rubix`, `res://games/cube/`): watch the 2.51 world record,
+  then unscramble levels; its SubViewport keeps 3D on (the cube has its own world). Published at
   https://humble-house-studios.github.io/killin-in-comedy/office/ (second export
   in `deploy.yml`). Screenshots: `tools/office_shot.gd`. `main.gd` must not touch
   the window when it isn't the root (`_owns_window()`).

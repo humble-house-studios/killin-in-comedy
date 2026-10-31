@@ -23,6 +23,7 @@ fetch() {
 fetch pong humble-house-studios/phone-pong
 fetch proof humble-house-studios/proof-hand
 fetch loot humble-house-studios/Loot-Machine
+fetch cube humble-house-studios/rubix
 
 if [ "${1:-}" = "--autoloads" ]; then
 	lines=$(cat games/*/autoloads.txt)
