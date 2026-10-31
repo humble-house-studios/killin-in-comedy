@@ -47,9 +47,12 @@ jobs:
             echo "::notice title=Dale voice::No Cloudflare secrets yet, skipping voice chat."
             exit 0
           fi
+          # Accept a pasted dashboard address too: keep just the 32-character ID.
+          id=$(echo "$CLOUDFLARE_ACCOUNT_ID" | grep -oE '[0-9a-f]{32}' | head -1)
+          [ -n "$id" ] && export CLOUDFLARE_ACCOUNT_ID="$id"
           cd voice
           set +e
-          npx --yes wrangler@3 deploy 2>&1 | tee deploy.log
+          npx --yes wrangler@4 deploy 2>&1 | tee deploy.log
           code=${PIPESTATUS[0]}
           url=$(grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' deploy.log | head -1)
           if [ $code -ne 0 ] || [ -z "$url" ]; then
