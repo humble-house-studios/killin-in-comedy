@@ -66,6 +66,20 @@ jobs:
             exit 1
           fi
 
+      # Second build: the 3D office where you play the game on a computer
+      # monitor, published at /office/. Same project, different main scene.
+      - name: Export office build
+        shell: bash
+        run: |
+          sed -i 's#run/main_scene="res://scenes/main.tscn"#run/main_scene="res://scenes/office/office.tscn"#' project.godot
+          mkdir -v -p build/web/office
+          godot --headless --export-release "Web" build/web/office/index.html 2>&1 | tail -5
+          git checkout project.godot 2>/dev/null || sed -i 's#run/main_scene="res://scenes/office/office.tscn"#run/main_scene="res://scenes/main.tscn"#' project.godot
+          if [ ! -f build/web/office/index.html ]; then
+            echo "::error title=Office export::no build/web/office/index.html"
+            exit 1
+          fi
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: build/web

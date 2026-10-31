@@ -313,15 +313,20 @@ func _build_hand_area() -> Control:
 
 
 func is_landscape() -> bool:
-	var s := get_window().size
+	var s := get_viewport_rect().size
 	return s.x > s.y
+
+
+## False when the game runs inside another scene (the office monitor's SubViewport).
+func _owns_window() -> bool:
+	return get_viewport() == get_window()
 
 
 func _on_resized() -> void:
 	var landscape := is_landscape()
 	# Same pixel budget both ways round, so text stays readable sideways too.
 	var base := Vector2i(1280, 720) if landscape else Vector2i(720, 1280)
-	if get_window().content_scale_size != base:
+	if _owns_window() and get_window().content_scale_size != base:
 		get_window().content_scale_size = base
 	_body.vertical = not landscape
 	_apply_safe_area()
@@ -335,7 +340,7 @@ func _apply_safe_area() -> void:
 	var top := base
 	var right := base
 	var bottom := base
-	if OS.has_feature("mobile"):
+	if OS.has_feature("mobile") and _owns_window():
 		var window_size := Vector2(DisplayServer.window_get_size())
 		var view_size := get_viewport_rect().size
 		if window_size.x > 0 and window_size.y > 0:
