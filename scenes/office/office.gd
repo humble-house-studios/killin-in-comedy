@@ -1100,7 +1100,9 @@ func _show_step() -> void:
 	var step: Dictionary = steps[_talk_i]
 	_talk_last = _talk_i == steps.size() - 1
 	if step.has("choices"):
+		# Only the replies, so the box stays short and his face stays in view.
 		_talk_text.text = "..."
+		_talk_text.visible = false
 		_talk_text.visible_characters = -1
 		for c in step.choices:
 			_talk_button(c.text, _choose.bind(c))
@@ -1155,6 +1157,7 @@ func _end_talk() -> void:
 
 
 func _say(line: String) -> void:
+	_talk_text.visible = true
 	_talk_text.text = line
 	_talk_text.visible_characters = 0
 	if _voice != "":
