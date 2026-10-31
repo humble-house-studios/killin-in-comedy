@@ -66,7 +66,7 @@ export default {
       let heard = clip(body.text, 500).trim();
       if (!heard && typeof body.audio === "string" && body.audio.length > 100) {
         if (body.audio.length > 2_000_000) return json({ error: "That was a long one. Keep it short." });
-        heard = clip(await hear(env, body.audio, models), 500).trim();
+        heard = clip(await hear(env, body.audio, models, typeof body.mime === "string" ? body.mime : "audio/wav"), 500).trim();
         // Whisper "hears" a lone "you" (or "thank you") in near-silence.
         if (/^(thank you|thanks for watching|you)[.!]?$/i.test(heard)) heard = "";
       }
@@ -116,9 +116,12 @@ const GROQ_SPEAK = [
   ["playai-tts", "Fritz-PlayAI"],
 ];
 
-async function groqHear(env, b64, models) {
+const EXT = { "audio/wav": "wav", "audio/mp4": "m4a", "audio/webm": "webm", "audio/ogg": "ogg", "audio/mpeg": "mp3", "audio/aac": "m4a" };
+
+async function groqHear(env, b64, models, mime = "audio/wav") {
+  const type = mime.split(";")[0];
   const form = new FormData();
-  form.append("file", new Blob([base64ToBytes(b64)], { type: "audio/wav" }), "talk.wav");
+  form.append("file", new Blob([base64ToBytes(b64)], { type }), "talk." + (EXT[type] || "m4a"));
   const hearModel = pick(await groqList(env), GROQ_HEAR_PREFS) || "whisper-large-v3-turbo";
   form.append("model", hearModel);
   form.append("language", "en");
@@ -183,10 +186,10 @@ async function groqSpeak(env, text, models) {
   return "";
 }
 
-async function hear(env, b64, models) {
+async function hear(env, b64, models, mime) {
   if (env.GROQ_API_KEY) {
     try {
-      return await groqHear(env, b64, models);
+      return await groqHear(env, b64, models, mime);
     } catch (e) {
       models.hear_error_groq = String(e).slice(0, 150);
     }

@@ -1346,6 +1346,7 @@ func _add_hold_button() -> void:
 	_hold_button = _talk_buttons.get_child(_talk_buttons.get_child_count() - 1)
 	_hold_button.add_theme_color_override("font_color", Color(1.0, 0.85, 0.3))
 	_hold_button.button_down.connect(_hold_talk)
+	_voice_chat.warm_up()
 	_hold_button.button_up.connect(_release_talk)
 
 

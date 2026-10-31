@@ -23,6 +23,11 @@ var busy := false
 var _mic: AudioStreamPlayer
 var _capture: AudioEffectCapture
 var _listening := false
+## Web: waiting for the browser's recorder to finish, how long TALK was held,
+## and the persona to send once it has.
+var _web_wait := false
+var _held := 0.0
+var _web_persona := ""
 ## What you've said so far (16-bit mono at RATE), and where the resampler is.
 var _pcm := PackedByteArray()
 var _phase := 0.0
@@ -87,10 +92,30 @@ func play_line(text: String) -> bool:
 	return true
 
 
+## On the web the browser records (window.kicRec in the page, see
+## export_presets.cfg): reading the mic through Godot's audio gives silence
+## on some iPhones. Everywhere else, Godot's mic.
+func _web_rec() -> bool:
+	return OS.has_feature("web") and str(JavaScriptBridge.eval("typeof window.kicRec", true)) == "object"
+
+
+## Open the mic ahead of time (the browser may ask for permission), so
+## the first HOLD TO TALK catches every word.
+func warm_up() -> void:
+	if available() and _web_rec():
+		JavaScriptBridge.eval("window.kicRec.warm()", true)
+
+
 func start_listening() -> bool:
 	if busy or not available():
 		return false
 	stop_speaking()
+	if _web_rec():
+		JavaScriptBridge.eval("window.kicRec.start()", true)
+		_web_wait = false
+		_listening = true
+		_since = Time.get_ticks_msec()
+		return true
 	# The mic stays open for the rest of the chat: the first time, the browser
 	# asks for permission and the stream takes a moment to arrive.
 	if not _mic.playing:
@@ -106,6 +131,19 @@ func start_listening() -> bool:
 ## Let go of TALK: send what was said, with Dale's persona and the chat so far.
 func stop_listening(persona: String) -> void:
 	if not listening():
+		return
+	if _web_rec():
+		_listening = false
+		_held = (Time.get_ticks_msec() - _since) / 1000.0
+		if _held < MIN_SECONDS:
+			JavaScriptBridge.eval("window.kicRec.stop()", true)
+			failed.emit(DaleLines.MIC_LINES[0])
+			return
+		JavaScriptBridge.eval("window.kicRec.stop()", true)
+		_web_wait = true
+		_web_persona = persona
+		_since = Time.get_ticks_msec()
+		busy = true
 		return
 	_drain()
 	_listening = false
@@ -125,6 +163,11 @@ func stop_listening(persona: String) -> void:
 func cancel() -> void:
 	_listening = false
 	_mic.stop()
+	if _web_wait:
+		_web_wait = false
+		busy = false
+	if OS.has_feature("web") and _web_rec():
+		JavaScriptBridge.eval("window.kicRec.close()", true)
 	if busy:
 		_http.cancel_request()
 		busy = false
@@ -136,6 +179,15 @@ func stop_speaking() -> void:
 
 
 func _process(_delta: float) -> void:
+	if _web_wait:
+		_poll_web()
+		return
+	if _listening and OS.has_feature("web") and _web_rec():
+		if Time.get_ticks_msec() - _since > MAX_SECONDS * 1000.0:
+			_listening = false
+			JavaScriptBridge.eval("window.kicRec.stop()", true)
+			failed.emit(DaleLines.MIC_LINES[2])
+		return
 	if not _listening:
 		if _capture and _capture.get_frames_available() > 0:
 			_capture.clear_buffer()
@@ -145,6 +197,29 @@ func _process(_delta: float) -> void:
 	if Time.get_ticks_msec() - _since > MAX_SECONDS * 1000.0:
 		_listening = false
 		failed.emit(DaleLines.MIC_LINES[2])
+
+
+## Waiting for the browser to hand back the recording.
+func _poll_web() -> void:
+	var state := str(JavaScriptBridge.eval("window.kicRec.state()", true))
+	var info := str(JavaScriptBridge.eval("window.kicRec.info()", true))
+	if state == "done":
+		_web_wait = false
+		busy = false
+		var url := str(JavaScriptBridge.eval("window.kicRec.take()", true))
+		var comma := url.find(",")
+		var mime := url.substr(5, url.find(";") - 5) if url.begins_with("data:") else "audio/mp4"
+		var b64 := url.substr(comma + 1) if comma >= 0 else ""
+		mic_report = "HELD %.1fs  GOT %s  %dKB %s" % [_held, info, b64.length() * 3 / 4 / 1024, mime.replace("audio/", "")]
+		if b64.length() < 800:
+			failed.emit(DaleLines.MIC_LINES[1])
+			return
+		_send({"audio": b64, "mime": mime}, _web_persona)
+	elif state == "error" or Time.get_ticks_msec() - _since > 6000:
+		_web_wait = false
+		busy = false
+		mic_report = "HELD %.1fs  MIC %s" % [_held, info.to_upper().left(40)]
+		failed.emit(DaleLines.MIC_LINES[1])
 
 
 ## Move what the mic captured since last frame into the 16 kHz clip.
