@@ -68,7 +68,12 @@ right there, it's right on iPhone, Android and Steam. To keep that true:
   hand-made boxes) lit like a sunny morning, where you walk up and play the real
   game on the desk monitor, first person. Every computer is a chunky beige 90s
   CRT (4:3); each game runs in a 90s desktop window on it (wallpaper, title bar,
-  taskbar), built by `_crt()`, `_desktop()` and `_window_frame()` in office.gd. The game runs unchanged
+  taskbar), built by `_crt()`, `_desktop()` and `_window_frame()` in office.gd.
+  A/B test: the LOOK button (top right, or L) flips to look B, slim charcoal
+  CRT TVs with rabbit ears (`_tv()`), the game straight on the glass; each
+  look's shells live in `_style()` groups, screens move to that look's spot,
+  and the choice is remembered in `user://office_look.cfg`. The Loot Machine
+  stays its original tall cabinet in both looks. The game runs unchanged
   in a SubViewport; clicks/taps are ray-cast onto the screen. On touch, tapping
   the computer (or SIT DOWN) glides the camera to a seated view that frames the
   screen; STAND UP returns to walking. A side desk runs Phone Pong

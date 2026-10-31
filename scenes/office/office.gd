@@ -68,6 +68,16 @@ const MAIN_GLASS := Vector2(0.72, 0.54)
 ## Side desks: CRT glass centre height, and how far forward of the desk's middle.
 const SIDE_CY := 1.16
 const SIDE_Z := 0.1
+## Look B, slim CRT TVs: 4:3 glass sizes, and where each game's centre sits
+## (lower, since a TV sits straight on the desk). Pong's wide window shrinks
+## to fit the smaller glass.
+const TV_GLASS := Vector2(0.56, 0.42)
+const TV_MAIN_GLASS := Vector2(0.68, 0.51)
+const TV_SIDE_CY := 1.08
+const TV_MAIN_Y := 1.125
+const PONG_SCREEN_WIDE_TV := Vector2(0.53, 0.298)
+## Which look is on (0 = A beige CRT monitors, 1 = B CRT TVs), remembered here.
+const LOOK_FILE := "user://office_look.cfg"
 ## Sideways phone = sideways Pong monitor (it pivots), so Pong plays its own
 ## landscape mode: paddle on the right, under your right thumb.
 const PONG_SIZE_WIDE := Vector2i(1280, 720)
@@ -81,7 +91,7 @@ const PROOF_DESK := Vector3(3.05, 0.0, -0.9)
 const LOOT_SCENE := "res://games/loot/scenes/main.tscn"
 const LOOT_LINK := "res://games/loot/ecosystem/office_link.gd"
 const LOOT_SIZE := Vector2i(720, 1280)
-const LOOT_SCREEN := Vector2(0.225, 0.4)
+const LOOT_SCREEN := Vector2(0.34, 0.6044)
 const LOOT_SPOT := Vector3(3.12, 0.0, 0.45)
 ## Cube Desk (humble-house-studios/rubix): a desk by the door with an upright
 ## monitor, a Rubik's cube beside the keyboard.
@@ -202,6 +212,14 @@ var _pong_pc: Computer
 var _proof_view: Window
 ## Pong's desktop window, tall and wide; one shows at a time (phone upright / sideways).
 var _pong_frames: Array[Node3D] = []
+## A/B looks: the nodes that belong to each look, and each screen's spot in
+## each look ([screen, spot in A, spot in B]).
+var _look_i := 0
+var _looks: Array = [[], []]
+var _screen_spots: Array = []
+var _look_button: Button
+var _side_a: Node3D
+var _side_b: Node3D
 var _computers: Array[Computer] = []
 ## Game viewport -> audio bus index, so each game's sounds can fade by distance.
 var _view_bus := {}
@@ -296,6 +314,9 @@ var _hold_button: Button
 func _ready() -> void:
 	_touch = DisplayServer.is_touchscreen_available()
 	get_tree().node_added.connect(_on_node_added)
+	var cfg := ConfigFile.new()
+	if cfg.load(LOOK_FILE) == OK:
+		_look_i = clampi(int(cfg.get_value("office", "look", 0)), 0, 1)
 	_build_game()
 	_build_views()
 	_build_room()
@@ -558,7 +579,7 @@ func _crt(parent: Node, pos: Vector3, glass: Vector2, shell: Material, badge: St
 	var bw := glass.x + 0.13
 	var bh := glass.y + 0.16
 	var by := pos.y - 0.015
-	_box(Vector3(bw, bh, 0.09), Vector3(pos.x, by, pos.z - 0.05), shell, true, Vector3.ZERO, parent)
+	_box(Vector3(bw, bh, 0.09), Vector3(pos.x, by, pos.z - 0.05), shell, false, Vector3.ZERO, parent)
 	_box(Vector3(glass.x + 0.035, glass.y + 0.035, 0.004), Vector3(pos.x, pos.y, pos.z - 0.0045), rim, false, Vector3.ZERO, parent)
 	_box(Vector3(bw * 0.86, bh * 0.84, 0.2), Vector3(pos.x, by + 0.005, pos.z - 0.19), shell, false, Vector3.ZERO, parent)
 	_box(Vector3(bw * 0.58, bh * 0.58, 0.12), Vector3(pos.x, by + 0.01, pos.z - 0.34), shell, false, Vector3.ZERO, parent)
@@ -672,6 +693,76 @@ func _build_room() -> void:
 	_build_cube_desk()
 	_build_props()
 	_build_dale()
+	_set_look(_look_i, false)
+
+
+## A group of nodes that only shows in one look (0 = A, 1 = B).
+func _style(parent: Node, look: int) -> Node3D:
+	var n := Node3D.new()
+	parent.add_child(n)
+	_looks[look].append(n)
+	return n
+
+
+## Switch looks: show that look's shells, move each game screen to its spot.
+func _set_look(i: int, save := true) -> void:
+	_look_i = i
+	for k in 2:
+		for n in _looks[k]:
+			n.visible = k == i
+	for spot in _screen_spots:
+		spot[0].position = spot[1 + i]
+	if _pong_pc:
+		var wide := _pong_view.size.x > _pong_view.size.y
+		_pong_pc.size = _pong_wide_size() if wide else PONG_SCREEN
+		_pong_pc.quad.size = _pong_pc.size
+	if _look_button:
+		_look_button.text = "LOOK A" if i == 0 else "LOOK B"
+	if save:
+		var cfg := ConfigFile.new()
+		cfg.set_value("office", "look", i)
+		cfg.save(LOOK_FILE)
+		_toast.text = "LOOK A: BEIGE CRT MONITORS" if i == 0 else "LOOK B: CRT TVS"
+		_toast_time = 2.0
+
+
+func _pong_wide_size() -> Vector2:
+	return PONG_SCREEN_WIDE if _look_i == 0 else PONG_SCREEN_WIDE_TV
+
+
+## Look B: a compact 90s CRT TV, its 4:3 glass centred on pos facing +z: thin
+## bezel, speaker grille, knobs and LED under the glass, a rounded-off back,
+## little feet and rabbit ears. The game shows straight on the glass.
+func _tv(parent: Node, pos: Vector3, glass: Vector2, shell: Material) -> void:
+	var black := _mat(Color.BLACK, 0, Color.BLACK, 24.0, Color(0.02, 0.025, 0.03))
+	var rim := _mat(Color(0.08, 0.08, 0.09))
+	var grille := _mat(Color(0.12, 0.12, 0.13))
+	var bw := glass.x + 0.07
+	var bh := glass.y + 0.13
+	var by := pos.y - 0.03
+	_box(Vector3(bw, bh, 0.06), Vector3(pos.x, by, pos.z - 0.035), shell, false, Vector3.ZERO, parent)
+	_box(Vector3(glass.x + 0.02, glass.y + 0.02, 0.004), Vector3(pos.x, pos.y, pos.z - 0.0045), rim, false, Vector3.ZERO, parent)
+	_box(Vector3(glass.x, glass.y, 0.002), Vector3(pos.x, pos.y, pos.z - 0.0025), black, false, Vector3.ZERO, parent)
+	_box(Vector3(bw * 0.92, bh * 0.88, 0.14), Vector3(pos.x, by, pos.z - 0.13), shell, false, Vector3.ZERO, parent)
+	_box(Vector3(bw * 0.6, bh * 0.56, 0.1), Vector3(pos.x, by + 0.01, pos.z - 0.24), shell, false, Vector3.ZERO, parent)
+	var low := pos.y - glass.y * 0.5 - 0.05
+	for i in 4:
+		_box(Vector3(bw * 0.4, 0.006, 0.004), Vector3(pos.x - bw * 0.22, low + 0.024 - i * 0.016, pos.z - 0.004), grille, false, Vector3.ZERO, parent)
+	for k in 2:
+		_cyl(0.016, 0.014, Vector3(pos.x + bw * 0.5 - 0.13 + k * 0.045, low, pos.z - 0.002), grille, Vector3(PI / 2, 0, 0), 8, -1.0, parent)
+	_box(Vector3(0.016, 0.01, 0.006), Vector3(pos.x + bw * 0.5 - 0.035, low, pos.z - 0.004), _mat(Color.BLACK, 0, Color.BLACK, 24.0, Color(1.0, 0.3, 0.2)), false, Vector3.ZERO, parent)
+	for side in [-1, 1]:
+		_box(Vector3(0.06, 0.015, 0.12), Vector3(pos.x + side * bw * 0.35, by - bh * 0.5 - 0.0075, pos.z - 0.12), rim, false, Vector3.ZERO, parent)
+	var top := by + bh * 0.44
+	_box(Vector3(0.08, 0.025, 0.06), Vector3(pos.x, top + 0.012, pos.z - 0.14), rim, false, Vector3.ZERO, parent)
+	var chrome := _mat(Color(0.78, 0.78, 0.8))
+	for side in [-1, 1]:
+		_cyl(0.004, 0.32, Vector3(pos.x + side * 0.07, top + 0.15, pos.z - 0.14), chrome, Vector3(0, 0, -side * 0.45), 4, -1.0, parent)
+
+
+## TV shells: charcoal, silver and off-white plastic.
+func _charcoal() -> ShaderMaterial:
+	return _mat(Color(0.26, 0.26, 0.28), 6, Color.BLACK, 40.0)
 
 
 func _build_desk() -> void:
@@ -689,21 +780,22 @@ func _build_desk() -> void:
 		_box(Vector3(0.3, 0.02, 0.02), Vector3(0.6, y, -2.19), dark)
 	_tower(_world_vp, Vector3(-0.55, 0, -2.6), beige)
 
-	# The monitor: a big beige 90s CRT, the game in a window on its desktop.
-	_crt(_world_vp, SCREEN_POS, MAIN_GLASS, beige, "SONIX 17", Color(0.2, 1.0, 0.3))
-	_desktop(_world_vp, SCREEN_POS, MAIN_GLASS, Color(0.0, 0.5, 0.5))
-	_window_frame(_world_vp, SCREEN_POS, Vector2(SCREEN_W, SCREEN_H), "KILLIN.EXE")
-	# Sticky notes on the bezel.
-	var note := _mat(Color(0.98, 0.9, 0.4))
-	var nx := MAIN_GLASS.x * 0.5 + 0.03
-	_box(Vector3(0.08, 0.08, 0.004), Vector3(-nx, SCREEN_POS.y + 0.24, SCREEN_POS.z), note, false, Vector3(0, 0, 0.12))
-	_box(Vector3(0.08, 0.08, 0.004), Vector3(nx, SCREEN_POS.y - 0.2, SCREEN_POS.z), _mat(Color(0.98, 0.6, 0.75)), false, Vector3(0, 0, -0.1))
-	_label("TIGHT\nFIVE!", Vector3(-nx, SCREEN_POS.y + 0.24, SCREEN_POS.z + 0.004), 10, Color(0.15, 0.1, 0.1), Vector3(0, 0, 0.12))
-	_label("LAND\nAT THE\nPEAK", Vector3(nx, SCREEN_POS.y - 0.2, SCREEN_POS.z + 0.004), 7, Color(0.15, 0.1, 0.1), Vector3(0, 0, -0.1))
+	# Look A: a big beige 90s CRT, the game in a window on its desktop.
+	var a := _style(_world_vp, 0)
+	_crt(a, SCREEN_POS, MAIN_GLASS, beige, "SONIX 17", Color(0.2, 1.0, 0.3))
+	_desktop(a, SCREEN_POS, MAIN_GLASS, Color(0.0, 0.5, 0.5))
+	_window_frame(a, SCREEN_POS, Vector2(SCREEN_W, SCREEN_H), "KILLIN.EXE")
+	_main_notes(a, SCREEN_POS, MAIN_GLASS.x * 0.5 + 0.03)
+	# Look B: a charcoal CRT TV, the game straight on the glass.
+	var b := _style(_world_vp, 1)
+	var tv_pos := Vector3(SCREEN_POS.x, TV_MAIN_Y, SCREEN_POS.z)
+	_tv(b, tv_pos, TV_MAIN_GLASS, _charcoal())
+	_main_notes(b, tv_pos, TV_MAIN_GLASS.x * 0.5 + 0.015)
 
 	var screen := Node3D.new()
 	screen.position = SCREEN_POS
 	_world_vp.add_child(screen)
+	_screen_spots.append([screen, SCREEN_POS, tv_pos])
 	_add_computer(screen, Vector2(SCREEN_W, SCREEN_H), _game_vp, GAME_SIZE)
 
 	# Keyboard, mouse, mug.
@@ -716,16 +808,30 @@ func _build_desk() -> void:
 	_box(Vector3(0.22, 0.04, 0.3), Vector3(0.7, 0.78, -2.5), _mat(Color(0.96, 0.96, 0.92)), false, Vector3(0, 0.2, 0))
 
 
-## Desk where a tall game runs in a window on a 4:3 CRT. Returns the screen
-## node (centre of the game), facing +z in the rig.
-func _side_desk(rig: Node3D, wood: Material, shell: Material, badge: String, led: Color, wallpaper: Color) -> Node3D:
+## The two sticky notes on the main screen's bezel, nx out from its centre.
+func _main_notes(parent: Node3D, pos: Vector3, nx: float) -> void:
+	var note := _mat(Color(0.98, 0.9, 0.4))
+	_box(Vector3(0.08, 0.08, 0.004), Vector3(-nx, pos.y + 0.22, pos.z), note, false, Vector3(0, 0, 0.12), parent)
+	_box(Vector3(0.08, 0.08, 0.004), Vector3(nx, pos.y - 0.18, pos.z), _mat(Color(0.98, 0.6, 0.75)), false, Vector3(0, 0, -0.1), parent)
+	_label("TIGHT\nFIVE!", Vector3(-nx, pos.y + 0.22, pos.z + 0.004), 10, Color(0.15, 0.1, 0.1), Vector3(0, 0, 0.12), 0.0, parent)
+	_label("LAND\nAT THE\nPEAK", Vector3(nx, pos.y - 0.18, pos.z + 0.004), 7, Color(0.15, 0.1, 0.1), Vector3(0, 0, -0.1), 0.0, parent)
+
+
+## Desk where a tall game runs on a 4:3 screen: in look A a beige CRT with
+## the game in a desktop window (group _side_a), in look B a CRT TV
+## (group _side_b). Returns the screen node (centre of the game), facing +z.
+func _side_desk(rig: Node3D, wood: Material, shell: Material, badge: String, led: Color, wallpaper: Color, tv_shell: Material) -> Node3D:
 	var metal := _mat(Color(0.55, 0.56, 0.56))
 	_box(Vector3(1.2, 0.05, 0.7), Vector3(0, 0.735, 0), wood, true, Vector3.ZERO, rig)
 	_box(Vector3(0.05, 0.71, 0.65), Vector3(-0.56, 0.355, 0), metal, true, Vector3.ZERO, rig)
 	_box(Vector3(0.05, 0.71, 0.65), Vector3(0.56, 0.355, 0), metal, true, Vector3.ZERO, rig)
 	var pos := Vector3(0, SIDE_CY, SIDE_Z)
-	_crt(rig, pos, CRT_GLASS, shell, badge, led)
-	_desktop(rig, pos, CRT_GLASS, wallpaper)
+	var tv_pos := Vector3(0, TV_SIDE_CY, SIDE_Z)
+	_side_a = _style(rig, 0)
+	_crt(_side_a, pos, CRT_GLASS, shell, badge, led)
+	_desktop(_side_a, pos, CRT_GLASS, wallpaper)
+	_side_b = _style(rig, 1)
+	_tv(_side_b, tv_pos, TV_GLASS, tv_shell)
 	_tower(rig, Vector3(-0.32, 0, -0.05), shell)
 	# Keyboard and mouse.
 	_box(Vector3(0.4, 0.03, 0.14), Vector3(-0.02, 0.775, 0.24), _mat(Color(0.88, 0.85, 0.74), 7, Color(0.5, 0.48, 0.42)), false, Vector3(0.08, 0, 0), rig)
@@ -733,6 +839,7 @@ func _side_desk(rig: Node3D, wood: Material, shell: Material, badge: String, led
 	var screen := Node3D.new()
 	screen.position = pos
 	rig.add_child(screen)
+	_screen_spots.append([screen, pos, tv_pos])
 	return screen
 
 
@@ -743,13 +850,15 @@ func _build_pong_desk() -> void:
 	rig.rotation.y = PI / 2
 	_world_vp.add_child(rig)
 	var wood := _mat(Color(0.74, 0.62, 0.46), 3, Color(0.66, 0.55, 0.4), 60.0)
-	var screen := _side_desk(rig, wood, _putty(), "PONG-O-TRON", Color(1.0, 0.4, 0.75), Color(0.42, 0.36, 0.72))
-	_box(Vector3(0.08, 0.08, 0.004), Vector3(CRT_GLASS.x * 0.5 + 0.02, SIDE_CY + 0.2, SIDE_Z), _mat(Color(0.6, 0.95, 0.65)), false, Vector3(0, 0, -0.15), rig)
-	_label("BEAT\nMY\nBEST", Vector3(CRT_GLASS.x * 0.5 + 0.02, SIDE_CY + 0.2, SIDE_Z + 0.004), 8, Color(0.1, 0.15, 0.1), Vector3(0, 0, -0.15), 0.0, rig)
+	var screen := _side_desk(rig, wood, _putty(), "PONG-O-TRON", Color(1.0, 0.4, 0.75), Color(0.42, 0.36, 0.72), _mat(Color(0.62, 0.62, 0.65), 6, Color.BLACK, 40.0))
+	var a := _side_a
+	for spot in [[a, CRT_GLASS.x * 0.5 + 0.02, SIDE_CY + 0.2], [_side_b, TV_GLASS.x * 0.5 + 0.01, TV_SIDE_CY + 0.16]]:
+		_box(Vector3(0.08, 0.08, 0.004), Vector3(spot[1], spot[2], SIDE_Z), _mat(Color(0.6, 0.95, 0.65)), false, Vector3(0, 0, -0.15), spot[0])
+		_label("BEAT\nMY\nBEST", Vector3(spot[1], spot[2], SIDE_Z + 0.004), 8, Color(0.1, 0.15, 0.1), Vector3(0, 0, -0.15), 0.0, spot[0])
 	_cyl(0.05, 0.12, Vector3(0.45, 0.82, 0.12), _mat(Color(0.98, 0.85, 0.3)), Vector3.ZERO, 8, -1.0, rig)
 	if _pong_view:
-		_pong_frames = [_window_frame(rig, screen.position, PONG_SCREEN, "PONG.EXE"),
-				_window_frame(rig, screen.position, PONG_SCREEN_WIDE, "PONG.EXE")]
+		_pong_frames = [_window_frame(a, screen.position, PONG_SCREEN, "PONG.EXE"),
+				_window_frame(a, screen.position, PONG_SCREEN_WIDE, "PONG.EXE")]
 		_pong_frames[1].visible = false
 		_pong_pc = _add_computer(screen, PONG_SCREEN, _pong_view, PONG_SIZE, true, _pong_screen)
 	else:
@@ -765,7 +874,8 @@ func _build_proof_desk() -> void:
 	rig.rotation.y = -PI / 2
 	_world_vp.add_child(rig)
 	var wood := _mat(Color(0.7, 0.52, 0.34), 3, Color(0.62, 0.45, 0.28), 60.0)
-	var screen := _side_desk(rig, wood, _beige(), "THE PROVER", Color(0.3, 1.0, 0.4), Color(0.12, 0.5, 0.32))
+	var screen := _side_desk(rig, wood, _beige(), "THE PROVER", Color(0.3, 1.0, 0.4), Color(0.12, 0.5, 0.32), _charcoal())
+	var a := _side_a
 	# Coffee and a stack of scratch paper.
 	_cyl(0.045, 0.1, Vector3(0.46, 0.81, 0.12), _mat(Color(0.96, 0.96, 0.94)), Vector3.ZERO, 8, -1.0, rig)
 	_box(Vector3(0.22, 0.05, 0.3), Vector3(-0.44, 0.785, 0.12), _mat(Color(0.96, 0.96, 0.9)), false, Vector3(0, -0.25, 0), rig)
@@ -780,7 +890,7 @@ func _build_proof_desk() -> void:
 	_label("PROOF LEFT AS\nAN EXERCISE", Vector3(0.4, 1.75, board_z + 0.025), 11, Color(1.0, 0.8, 0.75), Vector3(0, 0, 0.03), 0.0, rig)
 	_label("QED", Vector3(-0.55, 1.65, board_z + 0.025), 18, Color(1.0, 0.9, 0.5), Vector3(0, 0, 0.08), 0.0, rig)
 	if _proof_view:
-		_window_frame(rig, screen.position, PONG_SCREEN, "PROOF.EXE")
+		_window_frame(a, screen.position, PONG_SCREEN, "PROOF.EXE")
 		# Taps go in Proof Hand's own canvas units (its 1080×1920 base), not
 		# the window's pixels.
 		_add_computer(screen, PONG_SCREEN, _proof_view, PROOF_BASE, false, _proof_view.get_parent())
@@ -797,7 +907,8 @@ func _build_cube_desk() -> void:
 	rig.rotation.y = PI
 	_world_vp.add_child(rig)
 	var wood := _mat(Color(0.62, 0.7, 0.78), 6, Color.BLACK, 40.0)
-	var screen := _side_desk(rig, wood, _putty(), "CUBETRON", Color(0.4, 0.7, 1.0), Color(0.3, 0.5, 0.82))
+	var screen := _side_desk(rig, wood, _putty(), "CUBETRON", Color(0.4, 0.7, 1.0), Color(0.3, 0.5, 0.82), _mat(Color(0.84, 0.82, 0.76), 6, Color.BLACK, 40.0))
+	var a := _side_a
 	# A real cube on the desk: black body, six coloured faces.
 	var cube := Node3D.new()
 	cube.position = Vector3(0.42, 0.81, 0.16)
@@ -816,51 +927,50 @@ func _build_cube_desk() -> void:
 	_label("2.51", Vector3(0, 1.95, -0.32), 34, Color(1.0, 0.85, 0.3), Vector3.ZERO, 0.0, rig)
 	_label("CAN YOU GO SUB-60?", Vector3(0, 1.82, -0.32), 7, Color(0.85, 0.9, 1.0), Vector3.ZERO, 0.0, rig)
 	if _cube_vp:
-		_window_frame(rig, screen.position, CUBE_SCREEN, "CUBE.EXE")
+		_window_frame(a, screen.position, CUBE_SCREEN, "CUBE.EXE")
 		_add_computer(screen, CUBE_SCREEN, _cube_vp, CUBE_SIZE)
 	else:
 		_label("NO SIGNAL", Vector3(0, 0, 0.002), 12, Color(0.9, 0.95, 1.0), Vector3.ZERO, 0.0, screen)
 
 
-## The Loot Machine: a cheery red slot cabinet against the right wall, a
-## 4:3 arcade tube with the game in the middle, a lever on the side.
+## The Loot Machine: a grubby red slot cabinet against the right wall, its
+## upright screen running the game, a lever on the side.
 func _build_loot_cabinet() -> void:
 	var rig := Node3D.new()
 	rig.position = LOOT_SPOT
 	rig.rotation.y = -PI / 2
 	_world_vp.add_child(rig)
-	var red := _mat(Color(0.78, 0.2, 0.18), 6, Color.BLACK, 30.0)
-	var dark_red := _mat(Color(0.45, 0.1, 0.1))
-	var brass := _mat(Color(0.9, 0.74, 0.36))
-	var dark := _mat(Color(0.06, 0.05, 0.05))
+	var red := _mat(Color(0.45, 0.1, 0.09), 6, Color.BLACK, 30.0)
+	var dark_red := _mat(Color(0.22, 0.05, 0.05))
+	var brass := _mat(Color(0.75, 0.6, 0.28))
+	var dark := _mat(Color(0.05, 0.04, 0.04))
+	var h := LOOT_SCREEN.y
 	var cy := 1.24
-	var glass := CRT_GLASS
 	# Body, plinth and a sloped top.
-	_box(Vector3(0.9, 1.78, 0.56), Vector3(0, 0.89, -0.12), red, true, Vector3.ZERO, rig)
-	_box(Vector3(0.94, 0.12, 0.6), Vector3(0, 0.06, -0.12), dark_red, false, Vector3.ZERO, rig)
-	# Tube bezel: brass frame, black glass that glows a little purple.
-	_box(Vector3(glass.x + 0.06, glass.y + 0.06, 0.02), Vector3(0, cy, 0.16), brass, false, Vector3.ZERO, rig)
-	_box(Vector3(glass.x, glass.y, 0.02), Vector3(0, cy, 0.165), _mat(Color.BLACK, 0, Color.BLACK, 24.0, Color(0.16, 0.06, 0.2)), false, Vector3.ZERO, rig)
-	_label("777  JACKPOT  777", Vector3(0, cy + LOOT_SCREEN.y * 0.5 + 0.03, 0.177), 8, Color(1.0, 0.85, 0.35), Vector3.ZERO, 0.0, rig)
+	_box(Vector3(0.62, 1.78, 0.56), Vector3(0, 0.89, -0.12), red, true, Vector3.ZERO, rig)
+	_box(Vector3(0.66, 0.12, 0.6), Vector3(0, 0.06, -0.12), dark_red, false, Vector3.ZERO, rig)
+	# Screen bezel: brass frame, black glass.
+	_box(Vector3(LOOT_SCREEN.x + 0.08, h + 0.08, 0.02), Vector3(0, cy, 0.16), brass, false, Vector3.ZERO, rig)
+	_box(Vector3(LOOT_SCREEN.x + 0.04, h + 0.04, 0.02), Vector3(0, cy, 0.165), dark, false, Vector3.ZERO, rig)
 	# Coin tray and slot under the screen.
 	_box(Vector3(0.5, 0.06, 0.18), Vector3(0, 0.82, 0.22), dark_red, false, Vector3.ZERO, rig)
 	_box(Vector3(0.44, 0.03, 0.14), Vector3(0, 0.85, 0.23), dark, false, Vector3.ZERO, rig)
 	_box(Vector3(0.1, 0.03, 0.01), Vector3(0.18, 0.66, 0.165), brass, false, Vector3.ZERO, rig)
-	_label("INSERT\nCOIN", Vector3(-0.12, 0.66, 0.17), 7, Color(1.0, 0.85, 0.35), Vector3.ZERO, 0.0, rig)
+	_label("INSERT\nCOIN", Vector3(-0.12, 0.66, 0.17), 7, Color(1.0, 0.8, 0.3), Vector3.ZERO, 0.0, rig)
 	# Marquee: a glowing sign on top.
-	_box(Vector3(0.94, 0.24, 0.42), Vector3(0, 1.9, -0.06), _mat(Color(0.3, 0.06, 0.06), 0, Color.BLACK, 24.0, Color(0.85, 0.3, 0.12)), false, Vector3.ZERO, rig)
-	_label("LOOT\nMACHINE", Vector3(0, 1.9, 0.152), 14, Color(1.0, 0.95, 0.5), Vector3.ZERO, 0.0, rig)
-	for i in 8:
-		var bulb := _mat(Color.BLACK, 0, Color.BLACK, 24.0, Color(1.0, 0.88, 0.45))
-		_box(Vector3(0.025, 0.025, 0.01), Vector3(-0.39 + i * 0.111, 2.0, 0.152), bulb, false, Vector3.ZERO, rig)
-		_box(Vector3(0.025, 0.025, 0.01), Vector3(-0.39 + i * 0.111, 1.8, 0.152), bulb, false, Vector3.ZERO, rig)
+	_box(Vector3(0.66, 0.24, 0.42), Vector3(0, 1.9, -0.06), _mat(Color(0.2, 0.04, 0.04), 0, Color.BLACK, 24.0, Color(0.5, 0.12, 0.05)), false, Vector3.ZERO, rig)
+	_label("LOOT\nMACHINE", Vector3(0, 1.9, 0.152), 14, Color(1.0, 0.82, 0.25), Vector3.ZERO, 0.0, rig)
+	for i in 6:
+		var bulb := _mat(Color.BLACK, 0, Color.BLACK, 24.0, Color(1.0, 0.85, 0.4))
+		_box(Vector3(0.025, 0.025, 0.01), Vector3(-0.28 + i * 0.112, 2.0, 0.152), bulb, false, Vector3.ZERO, rig)
+		_box(Vector3(0.025, 0.025, 0.01), Vector3(-0.28 + i * 0.112, 1.8, 0.152), bulb, false, Vector3.ZERO, rig)
 	# Lever on the right side (your right as you face the machine).
-	_box(Vector3(0.06, 0.16, 0.1), Vector3(0.48, 1.05, 0.0), brass, false, Vector3.ZERO, rig)
-	_cyl(0.012, 0.42, Vector3(0.52, 1.25, 0.0), _mat(Color(0.85, 0.85, 0.85)), Vector3.ZERO, 6, -1.0, rig)
-	_cyl(0.04, 0.07, Vector3(0.52, 1.48, 0.0), _mat(Color(0.95, 0.15, 0.15), 0, Color.BLACK, 24.0, Color(0.35, 0.0, 0.0)), Vector3.ZERO, 8, -1.0, rig)
+	_box(Vector3(0.06, 0.16, 0.1), Vector3(0.34, 1.05, 0.0), brass, false, Vector3.ZERO, rig)
+	_cyl(0.012, 0.42, Vector3(0.38, 1.25, 0.0), _mat(Color(0.8, 0.8, 0.8)), Vector3.ZERO, 6, -1.0, rig)
+	_cyl(0.04, 0.07, Vector3(0.38, 1.48, 0.0), _mat(Color(0.85, 0.1, 0.1), 0, Color.BLACK, 24.0, Color(0.3, 0.0, 0.0)), Vector3.ZERO, 8, -1.0, rig)
 	# A sticky note, because it's still an office.
-	_box(Vector3(0.08, 0.08, 0.004), Vector3(-0.38, cy + glass.y * 0.5 + 0.0, 0.172), _mat(Color(0.98, 0.9, 0.4)), false, Vector3(0, 0, 0.15), rig)
-	_label("RELICS\nFOR\nALL", Vector3(-0.38, cy + glass.y * 0.5, 0.176), 7, Color(0.15, 0.1, 0.1), Vector3(0, 0, 0.15), 0.0, rig)
+	_box(Vector3(0.08, 0.08, 0.004), Vector3(-0.25, cy + h * 0.5 + 0.02, 0.172), _mat(Color(0.95, 0.88, 0.35)), false, Vector3(0, 0, 0.15), rig)
+	_label("RELICS\nFOR\nALL", Vector3(-0.25, cy + h * 0.5 + 0.02, 0.176), 7, Color(0.15, 0.1, 0.1), Vector3(0, 0, 0.15), 0.0, rig)
 
 	var screen := Node3D.new()
 	screen.position = Vector3(0, cy, 0.18)
@@ -869,7 +979,7 @@ func _build_loot_cabinet() -> void:
 		_add_computer(screen, LOOT_SCREEN, _loot_vp, LOOT_SIZE)
 	else:
 		# Run tools/fetch_games.sh to put the Loot Machine on this screen.
-		_label("OUT OF\nORDER", Vector3(0, 0, 0.002), 12, Color(1.0, 0.5, 0.4), Vector3.ZERO, 0.0, screen)
+		_label("OUT OF\nORDER", Vector3(0, 0, 0.002), 12, Color(1.0, 0.4, 0.3), Vector3.ZERO, 0.0, screen)
 
 
 func _build_props() -> void:
@@ -1492,6 +1602,11 @@ func _build_hud() -> void:
 	_sit_button.pressed.connect(_sit_nearest)
 	_stand_button = _hud_button("STAND UP", Control.PRESET_TOP_LEFT)
 	_stand_button.pressed.connect(_stand_up)
+	# A/B test the screens: beige CRT monitors (A) or CRT TVs (B). L on keys.
+	_look_button = _hud_button("LOOK A" if _look_i == 0 else "LOOK B", Control.PRESET_TOP_RIGHT)
+	_look_button.custom_minimum_size = Vector2(200, 88)
+	_place_button(_look_button, Control.PRESET_TOP_RIGHT)
+	_look_button.pressed.connect(func(): _set_look(1 - _look_i))
 	var t := create_tween()
 	t.tween_interval(3.5)
 	t.tween_property(_title, "modulate:a", 0.0, 1.5)
@@ -1538,7 +1653,7 @@ func _dale_aimed() -> bool:
 
 
 func _hud_button_at(point: Vector2) -> bool:
-	for b in [_sit_button, _stand_button]:
+	for b in [_sit_button, _stand_button, _look_button]:
 		if b.visible and b.get_global_rect().has_point(point):
 			return true
 	return false
@@ -1614,6 +1729,7 @@ func _apply_insets(force := false) -> void:
 		return
 	_inset = inset
 	_place_button(_sit_button, Control.PRESET_BOTTOM_RIGHT)
+	_place_button(_look_button, Control.PRESET_TOP_RIGHT)
 	_place_stand_button()
 	_place_talk_box()
 	_hint.offset_top = -270 - _inset.w
@@ -1637,7 +1753,7 @@ func _turn_pong(wide: bool) -> void:
 	_pong_view.size = px
 	_pong_view.content_scale_size = px
 	_pong_pc.pixels = Vector2(px)
-	_pong_pc.size = PONG_SCREEN_WIDE if wide else PONG_SCREEN
+	_pong_pc.size = _pong_wide_size() if wide else PONG_SCREEN
 	_pong_pc.quad.size = _pong_pc.size
 	# The CRT stays put; its desktop window goes tall or wide.
 	_pong_frames[0].visible = not wide
@@ -1745,6 +1861,7 @@ func _process(delta: float) -> void:
 	_sit_button.visible = _touch and not _pad and _seat == null and not _talking
 	_sit_button.text = "TALK" if _dale_nearer_than_computers() else "SIT DOWN"
 	_stand_button.visible = not _pad and ((_touch and _seat != null) or _talking)
+	_look_button.visible = not _pad and _seat == null and not _talking
 	_update_hint(aim, close)
 	_hud.queue_redraw()
 
@@ -1865,6 +1982,10 @@ func _draw_pad_hud(size: Vector2) -> void:
 func _input(event: InputEvent) -> void:
 	if event is InputEventJoypadButton or event is InputEventJoypadMotion:
 		_pad_input(event)
+		return
+	if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_L \
+			and _seat == null and not _talking:
+		_set_look(1 - _look_i)
 		return
 	if event is InputEventKey and event.physical_keycode != KEY_ESCAPE:
 		# Keys belong to the game you sit at or point at (Pong's arrows).
