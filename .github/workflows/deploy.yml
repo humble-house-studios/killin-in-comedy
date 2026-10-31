@@ -73,10 +73,10 @@ jobs:
           fi
           echo "url=$url" >> "$GITHUB_OUTPUT"
           echo "::notice title=Dale voice::Live at $url"
-          # Smoke test: one typed line through the whole chain.
+          # Smoke test: one typed line (no voice, to save the free daily allowance).
           for i in 1 2 3; do
             reply=$(curl -s -m 60 -X POST "$url/talk" -H 'Content-Type: application/json' \
-              -d '{"text":"Hi Dale, how is your day going?"}')
+              -d '{"text":"Hi Dale, how is your day going?","voice":false}')
             [ -n "$reply" ] && break
             sleep 5
           done

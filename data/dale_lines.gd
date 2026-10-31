@@ -180,6 +180,7 @@ const MIC_LINES := [
 	"Couldn't reach Dale. Check the connection.",
 	"My line went dead. Try again in a sec.",
 	"Didn't catch that. Hold the button while you talk.",
+	"I'm all talked out for today. Free AI limit. Catch me tomorrow!",
 ]
 
 ## Who Dale is, for the voice chat. DaleStory.persona() adds what he has and

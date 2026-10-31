@@ -22,6 +22,8 @@ const SPEAK = [
   ["@cf/myshell-ai/melotts", (text) => ({ prompt: text, lang: "en" })],
 ];
 
+const TAPPED_OUT = "I'm all talked out for today. Free AI limit. Catch me tomorrow!";
+
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -62,7 +64,10 @@ export default {
       const audio = body.voice === false ? "" : await speak(env, reply, models);
       return json({ heard, reply, audio, models });
     } catch (e) {
-      return json({ error: String(e && e.message ? e.message : e).slice(0, 300), models }, 500);
+      const msg = String(e && e.message ? e.message : e);
+      // Free plan: 10,000 "neurons" a day, reset at midnight UTC.
+      if (msg.includes("4006")) return json({ error: TAPPED_OUT, models });
+      return json({ error: msg.slice(0, 300), models }, 500);
     }
   },
 };
