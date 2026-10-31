@@ -125,3 +125,13 @@ func test_voice_clip_becomes_a_small_wav_and_back() -> void:
 	assert_eq(back.mix_rate, 16000)
 	assert_false(back.stereo)
 	assert_eq(back.data, pcm)
+
+
+func test_quiet_voice_gets_turned_up() -> void:
+	var Voice = load("res://scenes/office/dale_voice.gd")
+	var pcm := PackedByteArray()
+	pcm.resize(800)
+	for i in 400:
+		pcm.encode_s16(i * 2, int(sin(i * 0.1) * 2000))
+	Voice.normalize(pcm)
+	assert_between(Voice.peak(pcm), 20000, 26100)

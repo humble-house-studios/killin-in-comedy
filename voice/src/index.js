@@ -67,6 +67,8 @@ export default {
       if (!heard && typeof body.audio === "string" && body.audio.length > 100) {
         if (body.audio.length > 2_000_000) return json({ error: "That was a long one. Keep it short." });
         heard = clip(await hear(env, body.audio, models), 500).trim();
+        // Whisper "hears" a lone "you" (or "thank you") in near-silence.
+        if (/^(thank you|thanks for watching|you)[.!]?$/i.test(heard)) heard = "";
       }
       if (!heard) return json({ heard: "", reply: "", error: "Didn't catch that. Hold the button while you talk.", models });
       const reply = await think(env, body, heard, models);

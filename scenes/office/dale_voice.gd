@@ -117,6 +117,8 @@ func stop_listening(persona: String) -> void:
 	if _pcm.size() < RATE * 2 * MIN_SECONDS * 0.5 or silent(_pcm):
 		failed.emit(DaleLines.MIC_LINES[1])
 		return
+	# Phone mics come in quiet; turn it up so the hearing AI gets clear words.
+	normalize(_pcm)
 	_send({"audio": Marshalls.raw_to_base64(wav16k(_pcm))}, persona)
 
 
@@ -214,6 +216,18 @@ func _play(b64: String) -> void:
 		_out.play()
 
 
+## Turns a quiet clip up so its loudest sample sits near 80% (at most 12x).
+static func normalize(pcm: PackedByteArray) -> void:
+	var p := peak(pcm)
+	if p <= 0:
+		return
+	var gain := minf(26000.0 / p, 12.0)
+	if gain <= 1.05:
+		return
+	for i in range(0, pcm.size() - 1, 2):
+		pcm.encode_s16(i, clampi(int(pcm.decode_s16(i) * gain), -32768, 32767))
+
+
 ## Loudest sample in a 16-bit clip (0 to 32767).
 static func peak(pcm: PackedByteArray) -> int:
 	var p := 0
@@ -253,24 +267,40 @@ static func wav16k(pcm: PackedByteArray) -> PackedByteArray:
 	return out
 
 
-## A 16-bit PCM WAV file (as some voices come back) as a playable stream.
+## A WAV file (as some voices come back) as a playable stream: 16-bit or
+## 32-bit float PCM, and streamed files whose data size is left blank.
 static func wav_stream(bytes: PackedByteArray) -> AudioStreamWAV:
 	var at := 12
 	var rate := 24000
 	var stereo := false
+	var bits := 16
+	var fmt := 1
 	while at + 8 <= bytes.size():
 		var id := bytes.slice(at, at + 4).get_string_from_ascii()
 		var size := bytes.decode_u32(at + 4)
 		if id == "fmt ":
+			fmt = bytes.decode_u16(at + 8)
 			stereo = bytes.decode_u16(at + 10) == 2
 			rate = bytes.decode_u32(at + 12)
+			bits = bytes.decode_u16(at + 22)
 		elif id == "data":
+			var end := bytes.size() if size == 0 or at + 8 + size > bytes.size() else at + 8 + size
+			var data := bytes.slice(at + 8, end)
+			if bits == 32 and fmt == 3:
+				var pcm := PackedByteArray()
+				pcm.resize(data.size() / 2)
+				for k in data.size() / 4:
+					pcm.encode_s16(k * 2, clampi(int(data.decode_float(k * 4) * 32767.0), -32768, 32767))
+				data = pcm
+			elif bits != 16:
+				return null
 			var w := AudioStreamWAV.new()
 			w.format = AudioStreamWAV.FORMAT_16_BITS
 			w.mix_rate = rate
 			w.stereo = stereo
-			w.data = bytes.slice(at + 8, mini(bytes.size(), at + 8 + size))
+			w.data = data
 			return w
+		if size == 0 or size > bytes.size():
+			return null
 		at += 8 + size + (size & 1)
 	return null
-
