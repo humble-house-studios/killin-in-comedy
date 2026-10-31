@@ -7,7 +7,9 @@ extends Node
 ## - Clicks/taps are ray-cast onto the screen and pushed into the game as mouse
 ##   events at that spot.
 ## Mouse: click to look around, WASD walk, click the monitor to play, Esc lets go.
-## Touch: left thumb walks, right thumb looks, tap the monitor to play.
+## Touch: tap the computer (or SIT DOWN) and the camera glides to the desk and
+## frames the screen; then every tap goes into the game. STAND UP to walk again
+## (left thumb walks, right thumb looks).
 
 const EYE := 1.5
 const SPEED := 2.4
@@ -25,6 +27,11 @@ const PIXEL_SHRINK := 3
 const LAYER_WORLD := 1
 const LAYER_SCREEN := 2
 const STICK_RADIUS := 90.0
+## Seated view: fov, and how much of the view the screen fills.
+const SEAT_FOV := 50.0
+const SEAT_FILL := 0.94
+## Where you stand when you get up from the desk.
+const DESK_SPOT := Vector3(0.0, 0.0, -1.6)
 
 var _ps1 := preload("res://scenes/office/ps1.gdshader")
 var _monitor_shader := preload("res://scenes/office/monitor.gdshader")
@@ -58,6 +65,14 @@ var _stick := Vector2.ZERO
 var _game_pointer = null
 var _game_held := false
 var _moved := false
+var _seated := false
+## Camera glide between walking and seated views.
+var _glide := 1.0
+var _glide_time := 0.6
+var _glide_from := Transform3D()
+var _glide_from_fov := 70.0
+var _sit_button: Button
+var _stand_button: Button
 
 
 func _ready() -> void:
@@ -383,8 +398,8 @@ func _build_hud() -> void:
 	_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_hint.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
-	_hint.offset_top = -150
-	_hint.offset_bottom = -40
+	_hint.offset_top = -270
+	_hint.offset_bottom = -150
 	_hint.offset_left = 30
 	_hint.offset_right = -30
 	_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -403,9 +418,77 @@ func _build_hud() -> void:
 	_title.text = "MONDAY, 9:02 AM\nYOU SHOULD BE WORKING."
 	_title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_hud.add_child(_title)
+	_sit_button = _hud_button("SIT DOWN", Control.PRESET_BOTTOM_RIGHT)
+	_sit_button.pressed.connect(_set_seated.bind(true))
+	_stand_button = _hud_button("STAND UP", Control.PRESET_TOP_LEFT)
+	_stand_button.pressed.connect(_set_seated.bind(false))
 	var t := create_tween()
 	t.tween_interval(3.5)
 	t.tween_property(_title, "modulate:a", 0.0, 1.5)
+
+
+func _hud_button(text: String, corner: Control.LayoutPreset) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.focus_mode = Control.FOCUS_NONE
+	b.add_theme_font_override("font", preload("res://fonts/press_start_2p.ttf"))
+	b.add_theme_font_size_override("font_size", 22)
+	b.custom_minimum_size = Vector2(260, 96)
+	b.visible = false
+	var normal := StyleBoxFlat.new()
+	normal.bg_color = Color(0.08, 0.06, 0.1, 0.8)
+	normal.border_color = Color(1, 1, 1, 0.8)
+	normal.set_border_width_all(4)
+	b.add_theme_stylebox_override("normal", normal)
+	b.add_theme_stylebox_override("hover", normal)
+	var down := normal.duplicate()
+	down.bg_color = Color(0.3, 0.25, 0.35, 0.9)
+	b.add_theme_stylebox_override("pressed", down)
+	_hud.add_child(b)
+	b.set_anchors_and_offsets_preset(corner, Control.PRESET_MODE_MINSIZE, 24)
+	# Grow inward from the corner it's pinned to.
+	b.grow_horizontal = Control.GROW_DIRECTION_BEGIN if b.anchor_left > 0.5 else Control.GROW_DIRECTION_END
+	b.grow_vertical = Control.GROW_DIRECTION_BEGIN if b.anchor_top > 0.5 else Control.GROW_DIRECTION_END
+	return b
+
+
+func _hud_button_at(point: Vector2) -> bool:
+	for b in [_sit_button, _stand_button]:
+		if b.visible and b.get_global_rect().has_point(point):
+			return true
+	return false
+
+
+func _set_seated(on: bool) -> void:
+	if on == _seated:
+		return
+	_seated = on
+	_glide_from = _camera.global_transform
+	_glide_from_fov = _camera.fov
+	_glide_time = 0.5 + 0.12 * _glide_from.origin.distance_to(SCREEN_POS) if on else 0.5
+	_glide = 0.0
+	_touches.clear()
+	_stick = Vector2.ZERO
+	_moved = true
+	if on:
+		# Leave the body at the desk so standing up puts you right there.
+		_player.velocity = Vector3.ZERO
+		_player.position = DESK_SPOT
+		_yaw = 0.0
+		_pitch = -0.3
+	elif _game_held:
+		_send_button(_last_uv(), false)
+
+
+## Camera transform that frames the whole screen, centred.
+func _seat_transform() -> Transform3D:
+	var size := Vector2(_world_vp.size)
+	var aspect := size.x / maxf(size.y, 1.0)
+	var half := tan(deg_to_rad(SEAT_FOV) * 0.5)
+	var tan_w := half if _camera.keep_aspect == Camera3D.KEEP_WIDTH else half * aspect
+	var tan_h := half if _camera.keep_aspect == Camera3D.KEEP_HEIGHT else half / aspect
+	var d := maxf(SCREEN_W * 0.5 / SEAT_FILL / tan_w, SCREEN_H * 0.5 / SEAT_FILL / tan_h)
+	return Transform3D(Basis.IDENTITY, SCREEN_POS + Vector3(0, 0, d))
 
 
 func _on_resized() -> void:
@@ -431,7 +514,7 @@ func _physics_process(delta: float) -> void:
 		move.x -= 1
 	if Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT):
 		move.x += 1
-	move = move.limit_length(1.0)
+	move = Vector2.ZERO if _seated else move.limit_length(1.0)
 	if move.length() > 0.1:
 		_moved = true
 	var speed := RUN_SPEED if Input.is_physical_key_pressed(KEY_SHIFT) else SPEED
@@ -453,9 +536,20 @@ func _process(delta: float) -> void:
 	_head.rotation.x = _pitch
 	# Lean in a bit while looking at the monitor up close.
 	var aim = _aim_at(_aim_point())
-	var close: bool = aim != null and aim.dist < REACH
+	var close: bool = aim != null and aim.dist < REACH and not _seated
 	_zoom = move_toward(_zoom, 1.0 if close else 0.0, delta * 2.5)
-	_camera.fov = lerpf(70.0, 52.0, _zoom * _zoom * (3.0 - 2.0 * _zoom))
+	var walk_fov := lerpf(70.0, 52.0, _zoom * _zoom * (3.0 - 2.0 * _zoom))
+	# Glide between the walking view and the seated view.
+	_glide = minf(1.0, _glide + delta / _glide_time)
+	var target := _seat_transform() if _seated else _head.global_transform
+	var target_fov := SEAT_FOV if _seated else walk_fov
+	if _glide < 1.0:
+		var e := _glide * _glide * (3.0 - 2.0 * _glide)
+		_camera.global_transform = _glide_from.interpolate_with(target, e)
+		_camera.fov = lerpf(_glide_from_fov, target_fov, e)
+	else:
+		_camera.global_transform = target
+		_camera.fov = target_fov
 	_screen_camera.global_transform = _camera.global_transform
 	_screen_camera.fov = _camera.fov
 	var dist := _camera.global_position.distance_to(SCREEN_POS)
@@ -474,6 +568,8 @@ func _process(delta: float) -> void:
 		_clock_hands[0].rotation.z = -TAU * (fmod(time.hour, 12) + time.minute / 60.0) / 12.0
 		_clock_hands[1].rotation.z = -TAU * time.minute / 60.0
 
+	_sit_button.visible = _touch and not _seated
+	_stand_button.visible = _touch and _seated
 	_update_hint(aim, close)
 	_hud.queue_redraw()
 
@@ -482,7 +578,7 @@ func _update_hint(aim, close: bool) -> void:
 	var text := ""
 	if _touch:
 		if not _moved:
-			text = "LEFT THUMB: WALK\nRIGHT THUMB: LOOK\nTAP THE MONITOR TO PLAY"
+			text = "TAP THE COMPUTER\nTO SIT DOWN"
 	elif Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		text = "CLICK TO LOOK AROUND\nWASD WALK - MOUSE LOOK - ESC LETS GO"
 	elif close:
@@ -506,6 +602,11 @@ func _draw_hud() -> void:
 	if _touches.values().has("move"):
 		_hud.draw_arc(_stick_origin, STICK_RADIUS, 0, TAU, 32, Color(1, 1, 1, 0.35), 4)
 		_hud.draw_circle(_stick_origin + _stick * STICK_RADIUS, 34, Color(1, 1, 1, 0.35))
+	elif _touch and not _seated:
+		# Ghost stick so you can see where the walk thumb goes.
+		var rest := _stick_rest()
+		_hud.draw_arc(rest, STICK_RADIUS, 0, TAU, 32, Color(1, 1, 1, 0.18), 4)
+		_hud.draw_circle(rest, 34, Color(1, 1, 1, 0.18))
 
 
 # ---------------------------------------------------------------- input
@@ -544,14 +645,25 @@ func _mouse_button(event: InputEventMouseButton) -> void:
 		_send_button(aim.uv if aim != null else _last_uv(), false)
 
 
+func _stick_rest() -> Vector2:
+	return Vector2(STICK_RADIUS + 50, _hud.size.y - STICK_RADIUS - 60)
+
+
 func _touch_input(event: InputEvent) -> void:
 	var i: int = event.index
 	if event is InputEventScreenTouch:
 		if event.pressed:
+			if _hud_button_at(event.position):
+				return
 			var aim = _aim_at(event.position)
-			if aim != null and aim.dist < REACH and not _touches.values().has("screen"):
-				_touches[i] = "screen"
-				_send_button(aim.uv, true)
+			if _seated:
+				# Seated: every tap goes to the game; nothing else moves.
+				if aim != null and not _touches.values().has("screen"):
+					_touches[i] = "screen"
+					_send_button(aim.uv, true)
+			elif aim != null and _glide >= 1.0:
+				# Tap the computer from anywhere to sit down at it.
+				_set_seated(true)
 			elif event.position.x < _hud.size.x * 0.45 and not _touches.values().has("move"):
 				_touches[i] = "move"
 				_stick_origin = event.position

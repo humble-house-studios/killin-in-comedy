@@ -61,7 +61,9 @@ right there, it's right on iPhone, Android and Steam. To keep that true:
   re-run it after editing. Effects are WAV, the music loop is OGG.
 - **The office** (`scenes/office/`): a PS1-style 3D office where you walk up and
   play the real game on the desk monitor, first person. The game runs unchanged
-  in a SubViewport; clicks/taps are ray-cast onto the screen. Published at
+  in a SubViewport; clicks/taps are ray-cast onto the screen. On touch, tapping
+  the computer (or SIT DOWN) glides the camera to a seated view that frames the
+  screen; STAND UP returns to walking. Published at
   https://humble-house-studios.github.io/killin-in-comedy/office/ (second export
   in `deploy.yml`). Screenshots: `tools/office_shot.gd`. `main.gd` must not touch
   the window when it isn't the root (`_owns_window()`).
