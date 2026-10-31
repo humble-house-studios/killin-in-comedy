@@ -80,8 +80,11 @@ jobs:
               && echo "::notice title=Dale voice::Groq key set" \
               || echo "::warning title=Dale voice::Couldn't set the Groq key"
             sleep 5
+            curl -s -m 30 -X POST "$url/groq" -d '{}' | python3 -c "import sys,json; d=json.load(sys.stdin); print('::notice title=Groq models::hear=%s think=%s all=%s %s' % (d.get('hear'), d.get('think'), ','.join(d.get('ids',[]))[:500], d.get('error','')))" || true
+            curl -s -m 60 -X POST "$url/talk" -H 'Content-Type: application/json' -d '{"text":"Hey Dale, quick one: favourite snack?","voice":false}' \
+              | python3 -c "import sys,json; d=json.load(sys.stdin); print('::notice title=Groq Dale says::%s | %s' % (d.get('reply', d.get('error')), json.dumps(d.get('models',{}))[:400]))" || true
             curl -s -m 60 -X POST "$url/say" -H 'Content-Type: application/json' -d '{"text":"Testing, testing.","engine":"groq"}' \
-              | python3 -c "import sys,json; d=json.load(sys.stdin); print('::notice title=Groq voice::%d chars %s' % (len(d.get('audio','')), json.dumps(d.get('models',{}))[:600]))" || true
+              | python3 -c "import sys,json; d=json.load(sys.stdin); print('::notice title=Groq voice::%d chars %s' % (len(d.get('audio','')), json.dumps(d.get('models',{}))[:1200]))" || true
           fi
           # Smoke test: one typed line (no voice, to save the free daily allowance).
           for i in 1 2 3; do

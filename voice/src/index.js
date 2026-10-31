@@ -45,6 +45,15 @@ export default {
       return json({ error: "bad json" }, 400);
     }
     const models = {};
+    // POST /groq: which Groq models this key can use (build diagnostics).
+    if (new URL(req.url).pathname === "/groq") {
+      try {
+        const ids = await groqList(env);
+        return json({ ids, hear: pick(ids, GROQ_HEAR_PREFS), think: pick(ids, GROQ_THINK_PREFS, NOT_CHAT) });
+      } catch (e) {
+        return json({ error: String(e).slice(0, 300) });
+      }
+    }
     // POST /say {text}: just Dale's voice for a line (the build pre-records
     // his story lines with it, so they play offline in the game).
     if (new URL(req.url).pathname === "/say") {
@@ -76,8 +85,29 @@ export default {
 // Cloudflare's free daily allowance goes to Dale's voice. Each falls back to
 // the other.
 const GROQ = "https://api.groq.com/openai/v1";
-const GROQ_HEAR = "whisper-large-v3-turbo";
-const GROQ_THINK = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"];
+// Groq renames and retires models often, so Dale asks which ones exist and
+// picks by these preferences (first match wins).
+const GROQ_HEAR_PREFS = ["whisper-large-v3-turbo", "whisper"];
+const GROQ_THINK_PREFS = ["llama-4-maverick", "llama-4-scout", "llama-3.3-70b", "kimi-k2", "qwen3", "gpt-oss-120b", "gpt-oss-20b", "llama"];
+const NOT_CHAT = /whisper|tts|orpheus|playai|guard|prompt-guard|safeguard|compound|distil/i;
+let groqModels = null;
+
+async function groqList(env) {
+  if (groqModels) return groqModels;
+  const r = await fetch(GROQ + "/models", { headers: { Authorization: "Bearer " + env.GROQ_API_KEY } });
+  const j = await r.json();
+  if (!r.ok) throw new Error("groq models " + r.status + " " + JSON.stringify(j).slice(0, 150));
+  groqModels = (j.data || []).filter((m) => m.active !== false).map((m) => m.id);
+  return groqModels;
+}
+
+function pick(ids, prefs, skip) {
+  for (const p of prefs) {
+    const hit = ids.find((id) => id.toLowerCase().includes(p) && !(skip && skip.test(id)));
+    if (hit) return hit;
+  }
+  return "";
+}
 const GROQ_SPEAK = [
   ["canopylabs/orpheus-v1-english", "troy"],
   ["canopylabs/orpheus-v1-english", "daniel"],
@@ -87,23 +117,33 @@ const GROQ_SPEAK = [
 async function groqHear(env, b64, models) {
   const form = new FormData();
   form.append("file", new Blob([base64ToBytes(b64)], { type: "audio/wav" }), "talk.wav");
-  form.append("model", GROQ_HEAR);
+  const hearModel = pick(await groqList(env), GROQ_HEAR_PREFS) || "whisper-large-v3-turbo";
+  form.append("model", hearModel);
   form.append("language", "en");
   form.append("response_format", "json");
   const r = await fetch(GROQ + "/audio/transcriptions", { method: "POST", headers: { Authorization: "Bearer " + env.GROQ_API_KEY }, body: form });
   const j = await r.json();
   if (!r.ok) throw new Error("groq hear " + r.status + " " + JSON.stringify(j).slice(0, 150));
-  models.hear = "groq/" + GROQ_HEAR;
+  models.hear = "groq/" + hearModel;
   return j.text || "";
 }
 
 async function groqThink(env, messages, models) {
-  let last;
-  for (const model of GROQ_THINK) {
+  let last = "no groq chat model";
+  const ids = await groqList(env);
+  const tried = new Set();
+  for (const pref of GROQ_THINK_PREFS) {
+    const model = pick(ids.filter((id) => !tried.has(id)), [pref], NOT_CHAT);
+    if (!model) continue;
+    tried.add(model);
+    if (tried.size > 3) break;
+    const body = { model, messages, max_tokens: 160, temperature: 0.8 };
+    // Reasoning models think first; keep that short so the answer fits.
+    if (/gpt-oss|qwen3/i.test(model)) Object.assign(body, { max_tokens: 700, reasoning_effort: /qwen/i.test(model) ? "none" : "low" });
     const r = await fetch(GROQ + "/chat/completions", {
       method: "POST",
       headers: { Authorization: "Bearer " + env.GROQ_API_KEY, "Content-Type": "application/json" },
-      body: JSON.stringify({ model, messages, max_tokens: 140, temperature: 0.8 }),
+      body: JSON.stringify(body),
     });
     const j = await r.json();
     const text = cleanReply(j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content);
@@ -126,7 +166,7 @@ async function groqSpeak(env, text, models) {
         body: JSON.stringify({ model, voice, input: text, response_format: "wav" }),
       });
       if (!r.ok) {
-        models["speak_error_groq_" + model + "_" + voice] = r.status + " " + (await r.text()).slice(0, 150);
+        models["speak_error_groq_" + model + "_" + voice] = r.status + " " + (await r.text()).slice(0, 400);
         continue;
       }
       const b64 = bytesToBase64(new Uint8Array(await r.arrayBuffer()));
