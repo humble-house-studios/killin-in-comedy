@@ -8,6 +8,8 @@ extends Node
 ##   - Side desk: Phone Pong (res://games/pong, pulled in by tools/fetch_games.sh)
 ##     on a pivot monitor: tall when the phone is upright, sideways when it is
 ##     (so Pong's paddle sits under the right thumb).
+##   - Right-wall desk: Proof Hand (res://games/proof), same embedding; it also
+##     needs its Game/Save autoloads, added by tools/fetch_games.sh --autoloads.
 ##     in an embedded Window (inside a hidden holder viewport), so its own
 ##     window-size logic still works.
 ## - Clicks/taps are ray-cast onto a screen and pushed into that game at that spot.
@@ -37,6 +39,11 @@ const PONG_SCREEN := Vector2(0.36, 0.64)
 ## landscape mode: paddle on the right, under your right thumb.
 const PONG_SIZE_WIDE := Vector2i(1280, 720)
 const PONG_DESK := Vector3(-3.05, 0.0, 2.0)
+## Proof Hand: a tall terminal on a desk by the right wall, under a chalkboard.
+const PROOF_SCENE := "res://games/proof/scenes/main.tscn"
+const PROOF_SIZE := Vector2i(720, 1280)
+const PROOF_BASE := Vector2i(1080, 1920)
+const PROOF_DESK := Vector3(3.05, 0.0, -0.9)
 ## Game audio is full volume within NEAR metres of its screen, silent past FAR.
 const AUDIO_NEAR := 1.6
 const AUDIO_FAR := 5.0
@@ -132,6 +139,7 @@ var _pong_view: Window
 ## What Pong's screen shows (the holder its window is embedded in).
 var _pong_screen: SubViewport
 var _pong_pc: Computer
+var _proof_view: Window
 ## The Pong monitor's case, which turns 90° when the phone goes sideways.
 var _pong_pivot: Node3D
 var _computers: Array[Computer] = []
@@ -194,28 +202,37 @@ func _build_game() -> void:
 	add_child(_game_vp)
 	_view_bus[_game_vp] = _make_bus("Comedy")
 	_game_vp.add_child(preload("res://scenes/main.tscn").instantiate())
-	if not ResourceLoader.exists(PONG_SCENE):
-		return
-	# Pong sizes itself from get_window(), so it gets a window of its own,
-	# embedded in a holder viewport that's never drawn (only its texture is
-	# shown), so the window can't pop up over the office.
+	if ResourceLoader.exists(PONG_SCENE):
+		_pong_view = _embed(PONG_SCENE, PONG_SIZE, PONG_SIZE, "Pong")
+		_pong_screen = _pong_view.get_parent()
+	# Proof Hand needs its autoloads (Game, Save), which the office build adds
+	# (tools/fetch_games.sh --autoloads).
+	if ResourceLoader.exists(PROOF_SCENE) and has_node("/root/Game"):
+		_proof_view = _embed(PROOF_SCENE, PROOF_SIZE, PROOF_BASE, "Proof")
+
+
+## Runs a game that sizes itself from get_window() in a window of its own,
+## embedded in a holder viewport that's never drawn (only its texture is
+## shown), so the window can't pop up over the office. Returns the window;
+## its parent is the holder.
+func _embed(scene: String, px: Vector2i, base: Vector2i, bus_name: String) -> Window:
 	var holder := SubViewport.new()
-	holder.size = PONG_SIZE
+	holder.size = px
 	holder.disable_3d = true
 	holder.gui_embed_subwindows = true
 	holder.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	add_child(holder)
-	_pong_screen = holder
-	_pong_view = Window.new()
-	_pong_view.size = PONG_SIZE
-	_pong_view.borderless = true
-	_pong_view.unfocusable = true
-	_pong_view.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
-	_pong_view.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_EXPAND
-	_pong_view.content_scale_size = PONG_SIZE
-	holder.add_child(_pong_view)
-	_view_bus[_pong_view] = _make_bus("Pong")
-	_pong_view.add_child(load(PONG_SCENE).instantiate())
+	var w := Window.new()
+	w.size = px
+	w.borderless = true
+	w.unfocusable = true
+	w.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
+	w.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_EXPAND
+	w.content_scale_size = base
+	holder.add_child(w)
+	_view_bus[w] = _make_bus(bus_name)
+	w.add_child(load(scene).instantiate())
+	return w
 
 
 func _make_bus(bus_name: String) -> int:
@@ -237,7 +254,8 @@ func _on_node_added(node: Node) -> void:
 
 
 ## A screen showing a game's viewport, plus its crisp copy for the screen pass.
-## view gets the input; shown (default: view) is what the screen displays.
+## view gets the input, in `pixels` units (the game's canvas size); shown
+## (default: view) is what the screen displays.
 func _add_computer(screen: Node3D, size: Vector2, view: Viewport, pixels: Vector2i, touch_events := false, shown: Viewport = null) -> Computer:
 	var pc := Computer.new()
 	pc.screen = screen
@@ -405,6 +423,7 @@ func _build_room() -> void:
 
 	_build_desk()
 	_build_pong_desk()
+	_build_proof_desk()
 	_build_props()
 
 
@@ -494,6 +513,55 @@ func _build_pong_desk() -> void:
 		_label("NO SIGNAL", Vector3(0, 0, 0.002), 12, Color(0.4, 0.5, 0.6), Vector3.ZERO, 0.0, screen)
 
 
+## Desk by the right wall, facing into the room: a green-screen terminal
+## running Proof Hand, under a chalkboard of half-finished maths.
+func _build_proof_desk() -> void:
+	var rig := Node3D.new()
+	rig.position = PROOF_DESK
+	rig.rotation.y = -PI / 2
+	_world_vp.add_child(rig)
+	var wood := _mat(Color(0.45, 0.33, 0.22), 3, Color(0.38, 0.27, 0.17), 60.0)
+	var metal := _mat(Color(0.25, 0.26, 0.28))
+	var shell := _mat(Color(0.7, 0.68, 0.58), 6, Color.BLACK, 40.0)
+	var dark := _mat(Color(0.03, 0.06, 0.04))
+	_box(Vector3(1.2, 0.05, 0.7), Vector3(0, 0.735, 0), wood, true, Vector3.ZERO, rig)
+	_box(Vector3(0.05, 0.71, 0.65), Vector3(-0.56, 0.355, 0), metal, true, Vector3.ZERO, rig)
+	_box(Vector3(0.05, 0.71, 0.65), Vector3(0.56, 0.355, 0), metal, true, Vector3.ZERO, rig)
+	var h := PONG_SCREEN.y
+	var cy := 0.84 + h * 0.5 + 0.06
+	_box(Vector3(0.3, 0.06, 0.26), Vector3(0, 0.79, -0.08), shell, false, Vector3.ZERO, rig)
+	_box(Vector3(PONG_SCREEN.x + 0.12, h + 0.14, 0.08), Vector3(0, cy, -0.045), shell, true, Vector3.ZERO, rig)
+	_box(Vector3(PONG_SCREEN.x - 0.02, h - 0.04, 0.3), Vector3(0, cy, -0.24), shell, false, Vector3.ZERO, rig)
+	_box(Vector3(PONG_SCREEN.x + 0.04, h + 0.04, 0.01), Vector3(0, cy, -0.003), dark, false, Vector3.ZERO, rig)
+	_box(Vector3(0.025, 0.012, 0.01), Vector3(0.16, cy - h * 0.5 - 0.04, -0.003), _mat(Color.BLACK, 0, Color.BLACK, 24.0, Color(0.3, 1.0, 0.4)), false, Vector3.ZERO, rig)
+	_label("THE PROVER", Vector3(-0.05, cy - h * 0.5 - 0.038, 0.002), 8, Color(0.2, 0.25, 0.2), Vector3.ZERO, 0.0, rig)
+	_box(Vector3(0.4, 0.03, 0.14), Vector3(0, 0.775, 0.2), _mat(Color(0.72, 0.7, 0.6), 7, Color(0.4, 0.4, 0.35)), false, Vector3(0.08, 0, 0), rig)
+	# Coffee and a stack of scratch paper.
+	_cyl(0.045, 0.1, Vector3(0.45, 0.81, 0.1), _mat(Color(0.9, 0.9, 0.88)), Vector3.ZERO, 8, -1.0, rig)
+	_box(Vector3(0.22, 0.05, 0.3), Vector3(-0.42, 0.785, 0.05), _mat(Color(0.92, 0.92, 0.86)), false, Vector3(0, -0.25, 0), rig)
+	# Chalkboard on the wall behind.
+	var board_z := -0.33
+	_box(Vector3(1.7, 0.95, 0.04), Vector3(0, 1.95, board_z), _mat(Color(0.12, 0.2, 0.16), 6, Color.BLACK, 30.0), false, Vector3.ZERO, rig)
+	_box(Vector3(1.78, 0.05, 0.07), Vector3(0, 1.45, board_z + 0.02), wood, false, Vector3.ZERO, rig)
+	var chalk := Color(0.88, 0.9, 0.85)
+	_label("a^2 + b^2 = c^2", Vector3(-0.42, 2.25, board_z + 0.025), 14, chalk, Vector3(0, 0, 0.04), 0.0, rig)
+	_label("1 + 1 = 2 ?", Vector3(0.45, 2.12, board_z + 0.025), 16, chalk, Vector3(0, 0, -0.05), 0.0, rig)
+	_label("f(x) -> INF", Vector3(-0.35, 1.9, board_z + 0.025), 14, chalk, Vector3(0, 0, -0.03), 0.0, rig)
+	_label("PROOF LEFT AS\nAN EXERCISE", Vector3(0.4, 1.72, board_z + 0.025), 11, Color(0.95, 0.75, 0.7), Vector3(0, 0, 0.03), 0.0, rig)
+	_label("QED", Vector3(-0.55, 1.62, board_z + 0.025), 18, Color(0.95, 0.88, 0.5), Vector3(0, 0, 0.08), 0.0, rig)
+
+	var screen := Node3D.new()
+	screen.position = Vector3(0, cy, 0)
+	rig.add_child(screen)
+	if _proof_view:
+		# Taps go in Proof Hand's own canvas units (its 1080×1920 base), not
+		# the window's pixels.
+		_add_computer(screen, PONG_SCREEN, _proof_view, PROOF_BASE, false, _proof_view.get_parent())
+	else:
+		# Run tools/fetch_games.sh --autoloads to put Proof Hand on this screen.
+		_label("NO SIGNAL", Vector3(0, 0, 0.002), 12, Color(0.3, 0.6, 0.35), Vector3.ZERO, 0.0, screen)
+
+
 func _build_props() -> void:
 	var metal := _mat(Color(0.42, 0.44, 0.42))
 	var dark := _mat(Color(0.1, 0.1, 0.11))
@@ -543,7 +611,7 @@ func _build_props() -> void:
 
 	# Wall clock on the right wall, showing the real time.
 	var clock := Node3D.new()
-	clock.position = Vector3(3.48, 2.0, -0.6)
+	clock.position = Vector3(3.48, 2.0, 2.3)
 	clock.rotation.y = -PI / 2
 	_world_vp.add_child(clock)
 	_cyl(0.18, 0.04, Vector3.ZERO, _mat(Color(0.92, 0.92, 0.88)), Vector3(PI / 2, 0, 0), 10, -1.0, clock)

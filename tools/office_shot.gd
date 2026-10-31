@@ -4,12 +4,16 @@ extends SceneTree
 ##     godot --rendering-driver opengl3 --resolution 1280x720 -s res://tools/office_shot.gd
 ## Shots: 0 = by the door, 1 = after tapping the main monitor (seated) and
 ## tapping "Start your set", 2 = standing, facing the Pong desk, 3 = seated at
-## Pong after tapping PLAY, 4 = after a right-edge thumb drag. Run tools/fetch_games.sh first so Pong is there.
+## Pong after tapping PLAY, 4 = after a right-edge thumb drag,
+## 5 = facing the Proof Hand desk, 6 = seated there after tapping two cards. Run tools/fetch_games.sh --autoloads first so
+## the other games are there (then `git checkout project.godot`).
 
 var office
 
 
 func _init() -> void:
+	# Let autoloads (Proof Hand's Game/Save) finish _ready first, as in a real launch.
+	for i in 3: await process_frame
 	office = load("res://scenes/office/office.tscn").instantiate()
 	root.add_child(office)
 	for i in 5: await process_frame
@@ -50,6 +54,22 @@ func _init() -> void:
 		await _frames(10)
 		_shot(4)
 		_touch(Vector2(x, h * 0.8), false)
+	if office._computers.size() > 2:
+		office._set_seat(null)
+		await _frames(40)
+		office._player.position = Vector3(1.4, 0, -0.9)
+		office._yaw = -PI / 2
+		office._pitch = -0.1
+		await _frames(60)
+		_shot(5)
+		var proof = office._computers[2]
+		_tap(_screen_point(proof, Vector2(0.5, 0.5)))
+		await _frames(120)
+		_tap(_screen_point(proof, Vector2(0.14, 0.64)))
+		await _frames(10)
+		_tap(_screen_point(proof, Vector2(0.38, 0.64)))
+		await _frames(30)
+		_shot(6)
 	quit()
 
 

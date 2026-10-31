@@ -21,10 +21,10 @@ varying vec3 light;
 varying vec3 wnormal;
 varying float fog;
 
-const int LIGHTS = 5;
-const vec3 L_POS[5] = vec3[](vec3(0.0, 2.45, -1.6), vec3(0.0, 2.45, 2.2), vec3(0.0, 1.17, -2.2), vec3(-3.2, 1.5, -0.5), vec3(-2.75, 1.2, 2.0));
-const vec3 L_COL[5] = vec3[](vec3(1.1, 1.1, 0.95), vec3(1.0, 1.0, 0.9), vec3(0.35, 0.55, 0.9), vec3(0.45, 0.55, 0.7), vec3(0.6, 0.3, 0.6));
-const float L_RANGE[5] = float[](5.5, 5.5, 2.2, 4.5, 2.0);
+const int LIGHTS = 6;
+const vec3 L_POS[6] = vec3[](vec3(0.0, 2.45, -1.6), vec3(0.0, 2.45, 2.2), vec3(0.0, 1.17, -2.2), vec3(-3.2, 1.5, -0.5), vec3(-2.75, 1.2, 2.0), vec3(2.75, 1.2, -0.9));
+const vec3 L_COL[6] = vec3[](vec3(1.1, 1.1, 0.95), vec3(1.0, 1.0, 0.9), vec3(0.35, 0.55, 0.9), vec3(0.45, 0.55, 0.7), vec3(0.6, 0.3, 0.6), vec3(0.3, 0.6, 0.35));
+const float L_RANGE[6] = float[](5.5, 5.5, 2.2, 4.5, 2.0, 2.0);
 const vec3 FOG_COL = vec3(0.06, 0.07, 0.09);
 const float BAYER[16] = float[](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
 

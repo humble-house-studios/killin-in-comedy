@@ -69,7 +69,12 @@ right there, it's right on iPhone, Android and Steam. To keep that true:
   office locally). Pong runs in an embedded Window so its window logic works
   untouched; its monitor pivots sideways when the phone does, so Pong plays
   its landscape mode (paddle under the right thumb), and while seated it takes
-  touches anywhere. Each game's sound fades with distance. Published at
+  touches anywhere. A third desk (right wall, under a chalkboard) runs Proof
+  Hand (`humble-house-studios/proof-hand`) in `res://games/proof/` the same
+  way; it needs its `Game`/`Save` autoloads, which `fetch_games.sh
+  --autoloads` adds to project.godot (CI only; locally `git checkout
+  project.godot` after). Other games' autoload names and class_names must not
+  clash with ours. Each game's sound fades with distance. Published at
   https://humble-house-studios.github.io/killin-in-comedy/office/ (second export
   in `deploy.yml`). Screenshots: `tools/office_shot.gd`. `main.gd` must not touch
   the window when it isn't the root (`_owns_window()`).
