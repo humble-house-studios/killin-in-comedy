@@ -76,6 +76,26 @@ var _shown_laughs := 0.0
 var _bit_lines: Array = []
 ## Card objects in hand last drawn, to pop in only the new ones.
 var _hand_shown: Array = []
+## Full-screen layer for coins and numbers that fly between parts of the screen.
+var _top_fx: Control
+## Laughs still flying toward the meter as coins; the counter waits for them.
+var _in_flight := 0
+## The big centre text of a landing payout (one slot, so it never piles up).
+var _slam: Label
+## The clock waits for the first joke of each set.
+var _started := false
+## The coach: one line of help above the hand.
+var _coach: PanelContainer
+var _coach_label: Label
+var _tips_seen := {}
+var _tip_queue: Array = []
+var _tip_text := ""
+var _tip_left := 0.0
+var _coach_time := 0.0
+var _ha_clock := 0.0
+## Laugh-meter milestones already celebrated this set (25, 50, 75).
+var _milestones := {}
+const TIPS_PATH := "user://tips.cfg"
 
 
 func _ready() -> void:
@@ -140,6 +160,12 @@ func _build_ui() -> void:
 	_body.add_child(_build_stage())
 	_body.add_child(_build_hand_area())
 
+	_top_fx = Control.new()
+	_top_fx.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_top_fx.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_top_fx)
+	_load_tips()
+
 	_overlay = Control.new()
 	_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_overlay.visible = false
@@ -158,6 +184,8 @@ func _build_ui() -> void:
 
 	var crt := _shader_rect(preload("res://scenes/crt.gdshader"))
 	_crt_mat = crt.material
+	# A shader setting must exist before it can be tweened (for screen shake).
+	_crt_mat.set_shader_parameter("shake", Vector2.ZERO)
 	add_child(crt)
 
 
@@ -233,6 +261,20 @@ func _build_stage() -> Control:
 	_fx_layer = Control.new()
 	_fx_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	stage.add_child(_fx_layer)
+	var slam_center := CenterContainer.new()
+	slam_center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	slam_center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_fx_layer.add_child(slam_center)
+	_slam = _label("", 40, COLOR_GOLD)
+	_slam.add_theme_font_override("font", _pixel_font)
+	_slam.add_theme_constant_override("outline_size", 14)
+	_slam.add_theme_color_override("font_outline_color", COLOR_OUTLINE)
+	_slam.add_theme_color_override("font_shadow_color", COLOR_OUTLINE)
+	_slam.add_theme_constant_override("shadow_offset_x", 5)
+	_slam.add_theme_constant_override("shadow_offset_y", 5)
+	_slam.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_slam.modulate.a = 0.0
+	slam_center.add_child(_slam)
 
 	# Meters under the stage.
 	var meters := PanelContainer.new()
@@ -280,6 +322,18 @@ func _build_hand_area() -> Control:
 	side.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	side.size_flags_stretch_ratio = 1.0
 	side.add_theme_constant_override("separation", 12)
+
+	_coach = PanelContainer.new()
+	var coach_style := _box_style(Color(0.05, 0.1, 0.18), 10, OUTLINE)
+	coach_style.border_color = COLOR_NEON_BLUE
+	_coach.add_theme_stylebox_override("panel", coach_style)
+	_coach.visible = false
+	side.add_child(_coach)
+	_coach_label = _label("", 22, Color.WHITE)
+	_coach_label.add_theme_font_override("font", _heading_font)
+	_coach_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_coach_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_coach.add_child(_coach_label)
 
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -381,7 +435,7 @@ func _show_title() -> void:
 func _new_run() -> void:
 	_run = Run.new(randi())
 	_patter = Patter.new(randi())
-	_start_set()
+	_show_next_up()
 
 
 func _start_set() -> void:
@@ -392,6 +446,9 @@ func _start_set() -> void:
 	_bit_lines = []
 	_mic_whole = -1
 	_shown_laughs = 0.0
+	_in_flight = 0
+	_started = false
+	_milestones = {}
 	_patter.start_set()
 	var crowd: int = CROWD_SIZES.get(_battle.audience.id, 9)
 	_stage_view.set_crowd(crowd, _battle.audience.is_boss)
@@ -404,10 +461,14 @@ func _start_set() -> void:
 func _process(delta: float) -> void:
 	if _battle == null:
 		return
-	# Roll the laugh counter toward the real total, like a slot machine.
-	if _shown_laughs < _battle.laughs:
-		_shown_laughs = minf(_battle.laughs, _shown_laughs + maxf(40.0, (_battle.laughs - _shown_laughs) * 6.0) * delta)
-	if _battle.result == Battle.Result.ONGOING and not _paused and not _overlay.visible:
+	# Roll the laugh counter toward the real total, like a slot machine. Laughs
+	# still flying in as coins aren't counted until they land.
+	var target := float(_battle.laughs - _in_flight)
+	if _shown_laughs < target:
+		_shown_laughs = minf(target, _shown_laughs + maxf(40.0, (target - _shown_laughs) * 6.0) * delta)
+	_update_coach(delta)
+	_ambient(delta)
+	if _battle.result == Battle.Result.ONGOING and not _paused and not _overlay.visible and _started:
 		_battle.tick(delta)
 		for ev in _battle.pop_events():
 			_on_battle_event(ev)
@@ -458,6 +519,10 @@ func _on_card_pressed(index: int) -> void:
 	if _battle == null or not _battle.can_play(index) or _paused:
 		return
 	var card := _battle.hand[index]
+	var from := _card_center(index)
+	if not _started:
+		_started = true
+		_sound.start_music()
 	var linked := _battle.is_linked(card)
 	var chained := _battle.chains(card)
 	var taste := _battle.taste(card)
@@ -473,14 +538,18 @@ func _on_card_pressed(index: int) -> void:
 	_say(line, COLOR_PAPER)
 	_play_reaction(card, gained, energy)
 	if gained > 0:
-		_float_text("+%s" % _num(gained), COLOR_GOLD, gained >= 150)
+		_fling_to_pot(gained, from)
 	if chained:
 		_float_text("CHAIN! ×%.1f" % _battle.chain_multiplier(), COLOR_NEON, false, false, 0.22)
 		_sound.play("chime", 0.0, 1.0 + 0.12 * _battle.chain_links)
+		_ding_run(2 + _battle.chain_links, 1.1)
 		_stage_view.react(0.6)
+		_tip("chain", "CHAIN! Setup → Punchline → Tag each multiply the whole bit ×1.5. Keep it going!")
 	elif linked:
 		_float_text("LINK!", COLOR_NEON_BLUE, false, false, 0.30)
 		_sound.play("chime")
+	if card.is_joke() and _battle.cards_played_this_bit == 1:
+		_tip("land", "Nice! Jokes stack up into a BIT. Add more, then tap LAND IT to cash in.", 99.0)
 	if taste > 0:
 		_float_text("THEY LOVE %s!" % CardData.TOPIC_NAMES[card.topic].to_upper(), Color(0.6, 1, 0.6), false, false, 0.38)
 	elif taste < 0:
@@ -501,50 +570,120 @@ func _on_end_turn() -> void:
 		_on_battle_event(ev)
 
 
-## The landing, casino-style: every joke in the bit fires in quick succession
-## with a rising pitch, the multiplier slams in, then the total pays out.
+## The landing, casino-style. Ding ding ding: every joke in the bit pops up
+## in a row with a rising pitch, each multiplier slams in by name (so you see
+## WHY it got big), the total spins up, a NICE / BIG LAUGH / HUGE / JACKPOT
+## banner hits, and the payout showers into the laugh meter as coins.
 func _cascade() -> void:
-	var jokes := _battle.landed_jokes.duplicate()
-	var raw := _battle.landed_raw
-	var mult := _battle.landed_mult
-	var score := _battle.last_landed
+	var b := _battle
+	var jokes := b.landed_jokes.duplicate()
+	var score := b.last_landed
 	var lines := _bit_lines.duplicate()
 	_bit_lines = []
+	# Hold the counter back until the coins arrive.
+	_in_flight += score
 	_refresh()
+	_bubble.modulate.a = 0.0
 	_sound.play("thump", -4.0)
-	var gap := clampf(0.9 / maxf(1.0, jokes.size()), 0.05, 0.12)
-	var running := 0
-	for k in jokes.size():
-		var joke: Dictionary = jokes[k]
-		running += joke.laughs
-		var c: CardData = joke.card
-		var label := ("AGAIN! +%s" if joke.retrigger else "+%s") % _num(joke.laughs)
-		_float_burst(label, COLOR_GOLD if not joke.retrigger else COLOR_NEON, 28 + mini(k * 2, 20))
-		_sound.play("card", -6.0, 1.0 + 0.08 * k)
-		if k % 2 == 0:
-			_sound.play("laugh_small", -10.0, 1.0 + 0.05 * k)
+	var area := _fx_layer.get_global_rect()
+
+	# 1. The jokes, left to right, ding ding ding.
+	var shown := jokes.filter(func(j): return j.laughs > 0)
+	var gap := clampf(0.8 / maxf(1.0, shown.size()), 0.05, 0.11)
+	for k in shown.size():
+		var joke: Dictionary = shown[k]
+		# Two staggered rows across the stage, so a long bit never piles up.
+		var per_row := ceili(shown.size() / 2.0) if shown.size() > 4 else shown.size()
+		var col := k % per_row
+		var row := k / per_row
+		var x := area.position.x + area.size.x * (0.14 + 0.72 * (col + 0.5 + 0.5 * row) / (per_row + 0.5 * row))
+		var y := area.position.y + area.size.y * (0.42 + 0.24 * row)
+		var text := "+%s" % _num(joke.laughs)
+		var why: Array = joke.get("why", [])
+		if joke.retrigger and why.is_empty():
+			why = ["AGAIN"]
+		_pop_number(text, Vector2(x, y), COLOR_NEON if joke.retrigger else COLOR_GOLD, 26, _short_reasons(why))
+		_sound.play("ding", -6.0, 1.0 + 0.07 * k)
 		_stage_view.react(0.3 + 0.05 * k)
 		await get_tree().create_timer(gap).timeout
-	_float_text("%s × %.1f" % [_num(raw), mult], COLOR_NEON_BLUE, true, false, 0.18)
+
+	# 2. The multipliers, one slam each.
+	var mults: Array = [["×%.1f  THE ROOM" % b.landed_room, COLOR_HOT]]
+	if b.landed_links > 0:
+		mults.append(["×%s  CHAIN" % _mult_text(b.landed_chain), COLOR_NEON])
+	if b.landed_keep < 0.999:
+		mults.append(["×%s  CREW CUT" % _mult_text(b.landed_keep), Color(0.8, 0.75, 1)])
+	for m in mults.size():
+		_slam_show(mults[m][0], mults[m][1], 30)
+		_sound.play("ding", -2.0, 0.8 + 0.15 * m)
+		_shake(3.0 + m)
+		await get_tree().create_timer(0.28).timeout
+
+	# 3. The total spins up like a slot reel.
+	var frac := float(score) / maxf(1.0, b.laughs_needed)
 	_sound.play("rimshot", -2.0)
-	_shake(4.0)
-	await get_tree().create_timer(0.25).timeout
-	_float_text("= %s!" % _num(score), COLOR_GOLD, true, false, 0.34)
-	_sound.play("laugh_huge" if score >= 2000 else ("laugh_big" if score >= 600 else "laugh_small"))
-	if score >= 2000:
+	var spin := create_tween()
+	spin.tween_method(func(v: float):
+		_slam.text = "+%s" % _num(int(v)), 0.0, float(score), 0.45).set_ease(Tween.EASE_OUT)
+	_slam_show("+0", COLOR_GOLD, 44, false)
+	for t in 8:
+		_sound.play("coin", -8.0, 1.0 + 0.1 * t)
+		await get_tree().create_timer(0.055).timeout
+	_slam.text = "+%s" % _num(score)
+
+	# 4. The banner, sized to how much of the night's target this bit was.
+	var tier := "NICE!"
+	var coins := 6
+	if frac >= 0.5:
+		tier = "JACKPOT!!!"
+		coins = 48
+	elif frac >= 0.25:
+		tier = "HUGE!"
+		coins = 32
+	elif frac >= 0.1:
+		tier = "BIG LAUGH!"
+		coins = 18
+	else:
+		coins = 6 + int(frac * 120)
+	_slam_show("+%s\n%s" % [_num(score), tier], COLOR_GOLD, 44)
+	if frac >= 0.25:
+		_sound.play("jackpot", -2.0)
 		_sound.play_later("applause", 0.3, -4.0)
-		for n in mini(12, 3 + score / 1000):
-			_float_burst("HA", COLOR_GOLD.lightened(0.3), 22)
-	_stage_view.react(minf(score / 1500.0, 1.6))
-	_shake(minf(3.0 + score / 500.0, 14.0))
-	_flash(_laugh_label)
-	# The hero joke: the biggest line of the bit, shown big at the end.
+	else:
+		_ding_run(3, 1.2)
+	_sound.play("laugh_huge" if frac >= 0.25 else ("laugh_big" if frac >= 0.1 else "laugh_small"))
+	_stage_view.react(minf(0.5 + frac * 2.0, 1.6))
+	_shake(minf(4.0 + frac * 30.0, 18.0))
+	_coin_shower(score, coins, area.get_center())
+	if b.result == Battle.Result.ONGOING and b.cards_played_this_set <= 6:
+		_tip("room", "The ROOM line multiplies every bit. Land when it's HIGH, before a heckle drops it.", 7.0)
+
+	# 5. The hero joke: the biggest line of the bit, shown at the end.
+	await get_tree().create_timer(1.1).timeout
+	create_tween().tween_property(_slam, "modulate:a", 0.0, 0.25)
 	var hero: Dictionary = {}
 	for l in lines:
 		if hero.is_empty() or l.laughs > hero.laughs:
 			hero = l
 	if not hero.is_empty() and _battle.result == Battle.Result.ONGOING:
 		_say(hero.line, COLOR_GOLD.lightened(0.5))
+
+
+## One-word tags for a joke's reasons, small enough to sit under its number.
+func _short_reasons(why: Array) -> Array:
+	var out := []
+	for w in why:
+		var word: String = str(w).split(" ")[0]
+		if word == "PUNCHLINE":
+			word = "AGAIN"
+		if word != "COMBO" and not out.has(word):
+			out.append(word)
+	return out.slice(0, 1)
+
+
+func _mult_text(m: float) -> String:
+	var t := "%.2f" % m
+	return t.trim_suffix("0").trim_suffix(".0") if t.ends_with("0") else t
 
 
 func _check_result() -> void:
@@ -641,12 +780,16 @@ func _show_next_up() -> void:
 	_open_overlay()
 	var next := _run.current_audience()
 	var heading := "HEADLINE SHOW" if next.is_boss else "NEXT SET"
+	if _run.set_index == 0:
+		heading = "FIRST SET"
 	_overlay_box.add_child(_neon(heading, 40, COLOR_NEON_BLUE))
 	_overlay_box.add_child(_centered(_label(next.title, 36)))
-	_overlay_box.add_child(_centered(_label("%s laughs in %d seconds    Deck: %d cards" % [_num(next.laughs_needed), int(next.seconds), _run.deck.size()], 24)))
-	var tastes := _taste_text(next)
-	if tastes != "":
-		_overlay_box.add_child(_centered(_label(tastes, 24, Color(0.85, 1, 0.85))))
+	_overlay_box.add_child(_neon("GOAL: %s LAUGHS" % _num(next.laughs_needed), 28, COLOR_GOLD))
+	_overlay_box.add_child(_centered(_label("before the light goes on (%d seconds).  Deck: %d cards" % [int(next.seconds), _run.deck.size()], 24)))
+	for t in next.loves:
+		_overlay_box.add_child(_centered(_label("LOVES %s:  ×%s laughs, +Heat" % [CardData.TOPIC_NAMES[t], str(Balance.LOVED_MULT)], 26, Color(0.6, 1, 0.6))))
+	for t in next.hates:
+		_overlay_box.add_child(_centered(_label("HATES %s:  ×%s laughs, -Heat" % [CardData.TOPIC_NAMES[t], str(Balance.HATED_MULT)], 26, Color(1, 0.6, 0.6))))
 	if not _run.crew.is_empty():
 		var names := _run.crew.map(func(id): return Crew.info(id).title)
 		_overlay_box.add_child(_centered(_label("Crew: " + ", ".join(names), 22, Color(0.8, 0.75, 1))))
@@ -744,6 +887,11 @@ func _refresh() -> void:
 			_pop_in(widget, 0.0)
 	_hand_shown = b.hand.duplicate()
 	_mic_whole = int(b.mic)
+	if _started and b.result == Battle.Result.ONGOING:
+		if b.hand.any(func(c): return c.setups > 0) and b.hand.any(func(c): return c.is_punchline):
+			_tip("setup", "Purple SETUP, then orange PUNCHLINE = DOUBLE laughs!")
+		if b.hand.any(func(c): return b.taste(c) > 0):
+			_tip("loved", "Cards marked LOVED are this crowd's favourite topic: ×1.5 laughs and +Heat!")
 
 
 ## 12,345 / 1.2M style numbers.
@@ -960,6 +1108,230 @@ func _update_mute_label() -> void:
 
 ## Floats a number up over the stage: laughs near the top right, energy
 ## (low = true) just above the crowd so it never covers the speech bubble.
+# ---------------------------------------------------------------- casino fx
+
+## Centre of the card in hand slot `index`, on screen.
+func _card_center(index: int) -> Vector2:
+	var live := _hand_grid.get_children().filter(func(c): return not c.is_queued_for_deletion())
+	if index < live.size():
+		return (live[index] as Control).get_global_rect().get_center()
+	return _hand_grid.get_global_rect().get_center()
+
+
+## A played card's laughs fly up into the bit (the pot): the number, plus a
+## handful of coins clinking in one after another.
+func _fling_to_pot(gained: int, from: Vector2) -> void:
+	var to := _bit_label.get_global_rect().get_center()
+	var label := _fx_label("+%s" % _num(gained), COLOR_GOLD, 28)
+	_fly(label, from, to, 0.0, func():
+		_sound.play("ding", -8.0, 1.3)
+		_bump(_bit_label))
+	var count := clampi(2 + gained / (5 * Balance.LAUGH_SCALE), 3, 10)
+	for i in count:
+		_fly(_coin(), from, to + Vector2(randf_range(-60, 60), 0), 0.04 * i, func():
+			_sound.play("coin", -12.0, 1.0 + 0.06 * i))
+
+
+## Laughs pour into the meter as coins; each one counts as it lands.
+func _coin_shower(total: int, count: int, from: Vector2) -> void:
+	var to_rect := _laugh_bar.get_global_rect()
+	var each := total / maxi(1, count)
+	for i in count:
+		var value := each if i < count - 1 else total - each * (count - 1)
+		var to := Vector2(randf_range(to_rect.position.x + 20, to_rect.end.x - 20), to_rect.get_center().y)
+		var node: Control = _coin() if i % 3 != 0 else _fx_label("+%s" % _num(value), COLOR_GOLD, 18)
+		_fly(node, from, to, 0.025 * i, func():
+			_in_flight = maxi(0, _in_flight - value)
+			if i % 2 == 0:
+				_sound.play("coin", -10.0, 1.0 + 0.5 * float(i) / count)
+			_bump(_laugh_bar))
+
+
+## Bursts `node` out of `from`, then flies it into `to`; `arrive` runs on landing.
+func _fly(node: Control, from: Vector2, to: Vector2, delay: float, arrive: Callable) -> void:
+	_top_fx.add_child(node)
+	node.position = from - node.size / 2
+	node.pivot_offset = node.size / 2
+	node.scale = Vector2(0.3, 0.3)
+	node.modulate.a = 0.0
+	var burst := from + Vector2(randf_range(-110, 110), randf_range(-120, -20))
+	var t := create_tween()
+	t.tween_interval(delay)
+	t.tween_property(node, "modulate:a", 1.0, 0.01)
+	t.parallel().tween_property(node, "scale", Vector2.ONE, 0.16).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	t.parallel().tween_property(node, "position", burst - node.size / 2, 0.18).set_ease(Tween.EASE_OUT)
+	t.tween_property(node, "position", to - node.size / 2, randf_range(0.28, 0.4)) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	t.parallel().tween_property(node, "scale", Vector2(0.6, 0.6), 0.3)
+	t.tween_callback(arrive)
+	t.tween_callback(node.queue_free)
+
+
+## A number popping up in place during the payout, with its reasons under it.
+func _pop_number(text: String, at: Vector2, color: Color, size: int, why: Array) -> void:
+	var box := VBoxContainer.new()
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_theme_constant_override("separation", 0)
+	box.add_child(_fx_label(text, color, size))
+	for w in why:
+		box.add_child(_fx_label(w, COLOR_NEON_BLUE if not str(w).begins_with("HATED") else COLOR_COLD, 12))
+	_top_fx.add_child(box)
+	box.reset_size()
+	box.position = at - box.size / 2
+	box.pivot_offset = box.size / 2
+	box.scale = Vector2(0.2, 0.2)
+	var t := create_tween()
+	t.tween_property(box, "scale", Vector2.ONE, 0.14).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	t.tween_interval(0.5)
+	t.tween_property(box, "position:y", box.position.y - 30, 0.3)
+	t.parallel().tween_property(box, "modulate:a", 0.0, 0.3)
+	t.tween_callback(box.queue_free)
+
+
+## Puts text in the big centre slot of the stage with a slam.
+func _slam_show(text: String, color: Color, size: int, slam := true) -> void:
+	_slam.text = text
+	_slam.add_theme_color_override("font_color", color)
+	# Shrink to fit the stage instead of wrapping mid-word (Press Start is 1em wide).
+	var longest := 1
+	for part in text.split("\n"):
+		longest = maxi(longest, part.length())
+	var fit := int(_fx_layer.size.x * 0.92 / longest)
+	_slam.add_theme_font_size_override("font_size", clampi(fit, 16, size))
+	_slam.modulate.a = 1.0
+	await get_tree().process_frame
+	_slam.pivot_offset = _slam.size / 2
+	if slam:
+		_slam.scale = Vector2(1.8, 1.8)
+		create_tween().tween_property(_slam, "scale", Vector2.ONE, 0.16) \
+			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
+
+## Quick rising dings: ding ding ding.
+func _ding_run(count: int, pitch: float) -> void:
+	for i in count:
+		_sound.play("ding", -6.0, pitch + 0.12 * i)
+		await get_tree().create_timer(0.07).timeout
+
+
+## A casino token: a gold square with a $ on it.
+func _coin() -> Control:
+	var coin := PanelContainer.new()
+	coin.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var style := _box_style(COLOR_GOLD, 0, 3)
+	style.border_color = Color(0.55, 0.35, 0.0)
+	coin.add_theme_stylebox_override("panel", style)
+	coin.custom_minimum_size = Vector2(26, 26)
+	var mark := _label("$", 14, Color(0.5, 0.3, 0.0))
+	mark.add_theme_font_override("font", _pixel_font)
+	mark.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	mark.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	coin.add_child(mark)
+	coin.size = coin.custom_minimum_size
+	return coin
+
+
+func _fx_label(text: String, color: Color, size: int) -> Label:
+	var label := _label(text, size, color)
+	label.add_theme_font_override("font", _pixel_font)
+	label.add_theme_constant_override("outline_size", 8)
+	label.add_theme_color_override("font_outline_color", COLOR_OUTLINE)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.reset_size()
+	return label
+
+
+## Background fizz: the hotter the room, the more "HA!"s pop over the crowd;
+## the meter dings as it passes each quarter of the target.
+func _ambient(delta: float) -> void:
+	var b := _battle
+	if b.result != Battle.Result.ONGOING or not _started or _paused or _overlay.visible:
+		return
+	_ha_clock -= delta
+	var heat := clampf(b.crowd_energy / Balance.MAX_CROWD_ENERGY, 0.0, 1.0)
+	if _ha_clock <= 0.0 and heat > 0.35:
+		_ha_clock = lerpf(0.9, 0.12, (heat - 0.35) / 0.65)
+		var area := _fx_layer.get_global_rect()
+		var at := Vector2(randf_range(area.position.x + 40, area.end.x - 40), area.end.y - randf_range(30, 90))
+		var ha := _fx_label(["HA!", "HA", "HAHA", "LOL"][randi() % 4], COLOR_GOLD.lightened(randf() * 0.4), 14 + int(heat * 10))
+		_top_fx.add_child(ha)
+		ha.position = at - ha.size / 2
+		var t := create_tween()
+		t.tween_property(ha, "position:y", ha.position.y - 50, 0.7)
+		t.parallel().tween_property(ha, "modulate:a", 0.0, 0.7).set_delay(0.25)
+		t.tween_callback(ha.queue_free)
+	var pct := int(100.0 * _shown_laughs / maxf(1.0, b.laughs_needed))
+	for mark in [25, 50, 75]:
+		if pct >= mark and not _milestones.has(mark):
+			_milestones[mark] = true
+			_float_text("%d%%!" % mark, COLOR_GOLD, false, false, 0.62)
+			_ding_run(mark / 25 + 1, 1.0 + mark / 100.0)
+			_bump(_laugh_bar)
+
+
+## A quick squash on whatever just got paid.
+func _bump(node: Control) -> void:
+	node.pivot_offset = node.size / 2
+	node.scale = Vector2(1.06, 1.25)
+	create_tween().tween_property(node, "scale", Vector2.ONE, 0.12)
+
+
+# ---------------------------------------------------------------- coach
+
+func _load_tips() -> void:
+	var cfg := ConfigFile.new()
+	if cfg.load(TIPS_PATH) == OK and cfg.has_section("seen"):
+		for id in cfg.get_section_keys("seen"):
+			_tips_seen[id] = true
+
+
+## Queues a one-time tip (each is shown once ever, then remembered).
+func _tip(id: String, text: String, seconds := 6.0) -> void:
+	if _tips_seen.has(id):
+		return
+	_tips_seen[id] = true
+	var cfg := ConfigFile.new()
+	for seen in _tips_seen:
+		cfg.set_value("seen", seen, true)
+	cfg.save(TIPS_PATH)
+	_tip_queue.append([id, text, seconds])
+
+
+## Picks the coach's line: urgent warnings first, then how to start, then tips.
+func _update_coach(delta: float) -> void:
+	_coach_time += delta
+	if _tip_left > 0.0:
+		_tip_left -= delta
+	if _tip_left <= 0.0 and not _tip_queue.is_empty():
+		var next: Array = _tip_queue.pop_front()
+		_tip_text = next[1]
+		_tip_left = next[2]
+	var b := _battle
+	var text := ""
+	var urgent := false
+	if b.result == Battle.Result.ONGOING and not _overlay.visible:
+		var intent := b.current_intent()
+		if not _started:
+			text = "TAP ANY CARD TO START!  The clock waits for your first joke."
+		elif intent and intent.kind == IntentData.Kind.DRAIN and b.bit_open() and b.event_in() < 3.0:
+			text = "HECKLE IN %d!  LAND IT NOW or lose half the bit!" % ceili(b.event_in())
+			urgent = true
+		elif _tip_left > 0.0:
+			text = _tip_text
+	_coach.visible = text != ""
+	_coach_label.text = text
+	var glow := 0.5 + 0.5 * sin(_coach_time * (10.0 if urgent else 4.0))
+	_coach_label.add_theme_color_override("font_color",
+		COLOR_HOT.lerp(Color.WHITE, glow * 0.4) if urgent else Color.WHITE.lerp(COLOR_GOLD, glow))
+	(_coach.get_theme_stylebox("panel") as StyleBoxFlat).border_color = COLOR_HOT if urgent else COLOR_NEON_BLUE
+	# LAND IT pulses while you're being told to press it.
+	var pulse := (urgent or _tip_text.contains("LAND IT") and _tip_left > 0.0) and b.bit_open()
+	_end_turn_button.modulate = Color(1.0 + 0.5 * glow, 1.0 + 0.3 * glow, 1.0) if pulse else Color.WHITE
+	if _tip_text.contains("LAND IT") and b.landed_raw > 0:
+		_tip_left = 0.0
+
+
 func _float_text(text: String, color: Color, big: bool, low := false, y_frac := -1.0) -> void:
 	var label := _label(text, 48 if big else (24 if low else 32), color)
 	label.add_theme_font_override("font", _pixel_font)

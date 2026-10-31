@@ -257,6 +257,25 @@ def make_sfx():
     thump += shape(noise(0.16), [(400, 300, 1.0)]) * decay(0.16, 0.02) * 0.4
     write_wav("thump", thump, 0.6)
 
+    # Casino sounds. Pure tones only (no RNG), so every other sound stays identical.
+    def bell_tone(f0, dur, tau):
+        t = t_axis(dur)
+        b = sum(np.sin(2 * np.pi * f0 * k * t) * a for k, a in ((1, 1.0), (2.0, 0.45), (3.01, 0.2), (4.2, 0.1)))
+        return b * decay(dur, tau, 0.001)
+    # Slot-machine ding: bright and short, made to repeat fast and pitch up.
+    write_wav("ding", bell_tone(1760, 0.32, 0.09) + 0.5 * bell_tone(2637, 0.32, 0.06), 0.55)
+    # Coin clink: two tiny metallic hits.
+    coin = np.zeros(int(SR * 0.16))
+    place(coin, bell_tone(3520, 0.1, 0.025), 0.0, 1.0)
+    place(coin, bell_tone(4186, 0.1, 0.02), 0.045, 0.7)
+    write_wav("coin", coin, 0.45)
+    # Jackpot: a rising run of dings that rings out.
+    jack = np.zeros(int(SR * 1.4))
+    for i, m in enumerate([72, 76, 79, 84, 88, 91, 96]):
+        place(jack, bell_tone(note(m), 0.6, 0.18), i * 0.07, 0.8)
+    place(jack, bell_tone(note(96), 0.9, 0.3), 0.5, 0.6)
+    write_wav("jackpot", reverb(jack, 0.15), 0.7)
+
 
 def make_music():
     """8 bars of swinging lounge jazz in Bb, looping."""

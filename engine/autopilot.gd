@@ -65,10 +65,12 @@ static func _score(battle: Battle, card: CardData) -> float:
 	var mult := (1.0 + (battle.crowd_energy + heat) * Balance.HEAT_MULT_PER_POINT) \
 		* battle.chain_multiplier() * (Balance.CHAIN_X if battle.chains(card) else 1.0)
 	var value := (battle.bit_laughs + gained) * mult - battle.bit_laughs * battle.bit_multiplier()
-	var energy_weight := 60.0 if battle.crowd_energy <= 6 else 15.0
-	value += heat * energy_weight + card.draw * 30.0 + card.mic_gain * 40.0
+	# Weights below were tuned with laughs ×10; k keeps them in step with LAUGH_SCALE.
+	var k := Balance.LAUGH_SCALE / 10.0
+	var energy_weight := (60.0 if battle.crowd_energy <= 6 else 15.0) * k
+	value += heat * energy_weight + (card.draw * 30.0 + card.mic_gain * 40.0) * k
 	if card.setups > 0 and _hand_has_punchline(battle):
-		value += 150.0
+		value += 150.0 * k
 	return value / maxf(1.0, card.cost)
 
 

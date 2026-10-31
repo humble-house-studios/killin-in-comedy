@@ -10,7 +10,10 @@ const MUSIC_DB := -11.0
 const NAMES := [
 	"laugh_small", "laugh_big", "laugh_huge", "applause", "cheer", "crickets",
 	"groan", "rimshot", "sad_trombone", "fanfare", "click", "card", "chime", "thump",
+	"ding", "coin", "jackpot",
 ]
+## Casino sounds fire in fast runs, so they get more voices.
+const RAPID := ["ding", "coin"]
 
 var muted := false
 
@@ -22,7 +25,7 @@ func _ready() -> void:
 	for sfx in NAMES:
 		var player := AudioStreamPlayer.new()
 		player.stream = load("res://audio/%s.wav" % sfx)
-		player.max_polyphony = 3
+		player.max_polyphony = 8 if sfx in RAPID else 3
 		add_child(player)
 		_players[sfx] = player
 	var music := load("res://audio/music.ogg") as AudioStreamOggVorbis

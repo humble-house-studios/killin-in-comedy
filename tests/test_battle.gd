@@ -73,8 +73,8 @@ func test_landing_scores_pot_times_heat() -> void:
 	b.crowd_energy = 10.0
 	b.play_card(0)
 	assert_almost_eq(b.bit_multiplier(), 2.0, 0.001)
-	assert_eq(b.land_bit(), 120)
-	assert_eq(b.laughs, 120)
+	assert_eq(b.land_bit(), 12 * S)
+	assert_eq(b.laughs, 12 * S)
 	assert_false(b.bit_open())
 
 
@@ -102,7 +102,7 @@ func test_chains_multiply_and_tags_refire_the_punchline() -> void:
 	b.play_card(0)
 	assert_eq(b.chain_links, 2)
 	# Punchline 120 (doubled), tag 20 + 50 link, plus the punchline again: 120.
-	assert_eq(b.bit_laughs, 120 + 70 + 120)
+	assert_eq(b.bit_laughs, 12 * S + 7 * S + 12 * S)
 	assert_almost_eq(b.bit_multiplier(), 2.0 * Balance.CHAIN_X * Balance.CHAIN_X, 0.001)
 	var retriggers := b.bit_jokes.filter(func(j): return j.retrigger)
 	assert_eq(retriggers.size(), 1)
@@ -148,9 +148,9 @@ func test_loved_and_hated_topics() -> void:
 	b.hand.append(CardLibrary.card("punchline").with_topic("dating"))
 	b.hand.append(CardLibrary.card("punchline").with_topic("work"))
 	b.hand.append(CardLibrary.card("punchline").with_topic("food"))
-	assert_eq(b.laughs_for(b.hand[0]), 90)
-	assert_eq(b.laughs_for(b.hand[1]), 30)
-	assert_eq(b.laughs_for(b.hand[2]), 60)
+	assert_eq(b.laughs_for(b.hand[0]), 9 * S)
+	assert_eq(b.laughs_for(b.hand[1]), 3 * S)
+	assert_eq(b.laughs_for(b.hand[2]), 6 * S)
 	var heat := b.crowd_energy
 	b.play_card(0)
 	assert_eq(b.crowd_energy, heat + Balance.LOVED_HEAT)
@@ -199,7 +199,7 @@ func test_lawyer_softens_heckles() -> void:
 	var b := _battle_with_hand(["punchline"], _audience([_intent(IntentData.Kind.DRAIN, 2)]), ["lawyer"])
 	b.play_card(0)
 	b.tick(5.1)
-	assert_eq(b.bit_laughs, int(60 * 0.75))
+	assert_eq(b.bit_laughs, int(6 * S * 0.75))
 
 
 func test_restless_drains_mic_and_tough_crowd_raises_target() -> void:

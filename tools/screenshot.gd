@@ -9,6 +9,7 @@ func _init() -> void:
 	root.add_child(main)
 	for i in 5: await process_frame
 	main._new_run()
+	main._start_set()  # past the goal screen
 	var t := 0.0
 	var wait := 0.0
 	var shot := 0

@@ -103,9 +103,18 @@ Prove the core loop is fun in under 10 minutes on a phone:
 - **Chains:** Setup → Punchline → Tag → Tag… Each link **multiplies the bit ×1.5**.
   A Tag that chains also **re-fires the Punchline** before it. Other cards don't
   break a chain. A Setup doubles the next Punchline. Rule of Three fires 3 times.
-- **Casino landing:** every joke in the bit pops in rapid fire with a rising pitch,
-  then the multiplier slams in, then the total pays out; the laugh counter rolls
-  up like a slot machine; the biggest joke shows big at the end.
+- **Casino landing (ding ding ding):** every joke in the bit pops up in two rows
+  with a one-word reason (SETUP, LOVED, AGAIN) and a rising ding; each
+  multiplier slams in by name (×2.8 THE ROOM, ×2.25 CHAIN, ×0.85 CREW CUT); the
+  total spins up; a NICE / BIG LAUGH / HUGE / JACKPOT banner (by share of the
+  set's target) hits; then the payout showers into the laugh meter as coins,
+  and the counter only counts coins that have landed. Played cards fling their
+  laughs and coins into the bit. Hot rooms fizz with HA! pops; the meter dings
+  at 25/50/75%. Sounds: `ding`, `coin`, `jackpot` (tools/make_audio.py).
+- **Coach:** a line above the hand. Before each set a goal screen (target,
+  seconds, loves/hates); the clock waits for the first card. Urgent "HECKLE IN
+  3! LAND IT NOW" warnings always; one-time tips (bit/LAND IT, Setup→Punchline,
+  LOVED cards, chains, the Room) are remembered in `user://tips.cfg`.
 - **Read the room:** joke cards roll a **topic** (Dating, Family, Work, Tech,
   Food, Animals). Each crowd **loves** some (×1.5 laughs, +1 Heat) and **hates**
   others (×0.5, −1 Heat).

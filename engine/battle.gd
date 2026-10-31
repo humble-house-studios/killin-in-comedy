@@ -44,6 +44,11 @@ var bit_jokes: Array[Dictionary] = []
 var landed_jokes: Array[Dictionary] = []
 var landed_raw := 0
 var landed_mult := 1.0
+## The landed bit's multiplier, split up so the payout can name each part.
+var landed_room := 1.0
+var landed_chain := 1.0
+var landed_links := 0
+var landed_keep := 1.0
 var last_landed := 0
 
 var cards_played_this_bit := 0
@@ -185,6 +190,24 @@ func laughs_for(card: CardData) -> int:
 	return total
 
 
+## Short reasons a card scores more (or less) than its printed laughs right
+## now, e.g. ["SETUP ×2", "LOVED ×1.5"]. Shown in the landing payout.
+func _reasons(card: CardData) -> Array:
+	var why := []
+	if card.is_punchline and setups_pending > 0:
+		why.append("SETUP ×%d" % Balance.SETUP_MULTIPLIER)
+	match taste(card):
+		1:
+			why.append("LOVED ×%s" % str(Balance.LOVED_MULT))
+		-1:
+			why.append("HATED ×%s" % str(Balance.HATED_MULT))
+	if is_linked(card) and card.link_laughs > 0:
+		why.append("LINK")
+	if card.combo_bonus != 0 and cards_played_this_bit >= card.combo_after:
+		why.append("COMBO")
+	return why
+
+
 func can_play(hand_index: int) -> bool:
 	return result == Result.ONGOING \
 		and hand_index >= 0 and hand_index < hand.size() \
@@ -201,13 +224,14 @@ func play_card(hand_index: int) -> bool:
 	var per := laughs_per_trigger(card)
 	var linked := is_linked(card)
 	var chained := chains(card)
+	var why := _reasons(card)
 	for i in maxi(1, card.triggers):
 		if per > 0:
-			bit_jokes.append({"card": card, "laughs": per, "retrigger": i > 0})
+			bit_jokes.append({"card": card, "laughs": per, "retrigger": i > 0, "why": why})
 			bit_laughs += per
 	if card.beat == CardData.Beat.TAG and chained and _last_punch_laughs > 0:
 		var again := int(_last_punch_laughs * Balance.RETRIGGER_SHARE)
-		bit_jokes.append({"card": card, "laughs": again, "retrigger": true})
+		bit_jokes.append({"card": card, "laughs": again, "retrigger": true, "why": ["PUNCHLINE AGAIN"]})
 		bit_laughs += again
 	if card.is_punchline:
 		_last_punch_laughs = per * maxi(1, card.triggers)
@@ -215,7 +239,7 @@ func play_card(hand_index: int) -> bool:
 			setups_pending -= 1
 	if per <= 0 and card.is_joke():
 		# Setups score nothing alone, but they're still part of the bit.
-		bit_jokes.append({"card": card, "laughs": 0, "retrigger": false})
+		bit_jokes.append({"card": card, "laughs": 0, "retrigger": false, "why": why})
 	if chained:
 		chain_links += 1
 	if card.is_joke():
@@ -260,6 +284,10 @@ func land_bit() -> int:
 	landed_jokes = bit_jokes.duplicate()
 	landed_raw = bit_laughs
 	landed_mult = bit_multiplier()
+	landed_room = heat_multiplier()
+	landed_chain = chain_multiplier()
+	landed_links = chain_links
+	landed_keep = _keep
 	last_landed = bit_score()
 	laughs += last_landed
 	_change_energy(chain_links * Balance.LAND_HEAT_PER_LINK)
@@ -383,8 +411,9 @@ func _apply_intent(intent: IntentData) -> void:
 				var keep := 0.75 if crew.has("lawyer") else Balance.INTERRUPT_KEEP
 				bit_laughs = int(bit_laughs * keep)
 				for j in bit_jokes.size():
-					bit_jokes[j] = {"card": bit_jokes[j].card, "laughs": int(bit_jokes[j].laughs * keep),
-						"retrigger": bit_jokes[j].retrigger}
+					var cut: Dictionary = bit_jokes[j].duplicate()
+					cut.laughs = int(cut.laughs * keep)
+					bit_jokes[j] = cut
 				chain_links = 0
 				last_beat = CardData.Beat.NONE
 				_events.append("interrupt")
