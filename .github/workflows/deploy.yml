@@ -21,7 +21,54 @@ env:
   GODOT_VERSION: "4.3"
 
 jobs:
+  # Dale's voice server (voice/): a free Cloudflare Worker that hears you, answers
+  # as Dale and talks back. Deployed only when the repo has the
+  # CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID secrets; its address goes into
+  # the office build so the TALK button knows where to call. Without them (or if
+  # this fails) the game still builds, just without voice chat.
+  voice:
+    runs-on: ubuntu-latest
+    outputs:
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Deploy Dale's voice server
+        id: deploy
+        continue-on-error: true
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::notice title=Dale voice::No Cloudflare secrets yet, skipping voice chat."
+            exit 0
+          fi
+          cd voice
+          set +e
+          npx --yes wrangler@3 deploy 2>&1 | tee deploy.log
+          code=${PIPESTATUS[0]}
+          url=$(grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' deploy.log | head -1)
+          if [ $code -ne 0 ] || [ -z "$url" ]; then
+            grep -iE "error|✘" deploy.log | head -8 | while IFS= read -r line; do echo "::error title=Dale voice deploy::${line}"; done
+            exit 1
+          fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "::notice title=Dale voice::Live at $url"
+          # Smoke test: one typed line through the whole chain.
+          for i in 1 2 3; do
+            reply=$(curl -s -m 60 -X POST "$url/talk" -H 'Content-Type: application/json' \
+              -d '{"text":"Hi Dale, how is your day going?"}')
+            [ -n "$reply" ] && break
+            sleep 5
+          done
+          echo "$reply" | python3 -c "import sys,json; d=json.load(sys.stdin); print('::notice title=Dale says::' + d.get('reply', d.get('error','?'))[:200]); print('::notice title=Dale models::' + json.dumps(d.get('models',{}))[:900]); print('::notice title=Dale audio::%d base64 chars' % len(d.get('audio','')))" || echo "::warning title=Dale voice::Smoke test failed: ${reply:0:300}"
+
   build:
+    needs: voice
     runs-on: ubuntu-latest
     container:
       image: barichello/godot-ci:4.3
@@ -70,7 +117,14 @@ jobs:
       # monitor, published at /office/. Same project, different main scene.
       - name: Export office build
         shell: bash
+        env:
+          VOICE_URL: ${{ needs.voice.outputs.url }}
         run: |
+          # Point Dale's TALK button at his voice server, if it's deployed.
+          if [ -n "$VOICE_URL" ]; then
+            sed -i "s#^const URL := \"\"#const URL := \"$VOICE_URL\"#" data/voice_server.gd
+            grep -n "const URL" data/voice_server.gd
+          fi
           # The office's other computers run other games (Phone Pong, Proof
           # Hand) and need their autoloads; fetch them only for this build so
           # the main game stays small.

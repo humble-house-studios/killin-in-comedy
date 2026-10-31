@@ -273,6 +273,11 @@ var _talk_buttons: VBoxContainer
 var _voice := ""
 ## The reply a controller has highlighted.
 var _talk_pick := 0
+## Real voice chat with Dale (scenes/office/dale_voice.gd), once the story bit
+## of a conversation is over: hold TALK, say anything.
+var _voice_chat: Node
+var _chatting := false
+var _hold_button: Button
 
 
 func _ready() -> void:
@@ -286,6 +291,10 @@ func _ready() -> void:
 	_build_talk_box()
 	_dale_story = DaleStory.new()
 	_pick_voice()
+	_voice_chat = preload("res://scenes/office/dale_voice.gd").new()
+	add_child(_voice_chat)
+	_voice_chat.replied.connect(_on_dale_replied)
+	_voice_chat.failed.connect(_on_dale_failed)
 	get_viewport().size_changed.connect(_on_resized)
 	_on_resized()
 	# The phone reports its safe area a moment after it turns; re-check twice a second.
@@ -1091,6 +1100,8 @@ func _set_talk(on: bool) -> void:
 		_show_step()
 	else:
 		_hush()
+		_voice_chat.cancel()
+		_chatting = false
 
 
 ## Where the camera sits while you chat: across his desk, Dale in the top part
@@ -1125,7 +1136,7 @@ func _show_step() -> void:
 		_show_pick()
 		return
 	_say(step.dale)
-	_talk_button("SEE YA" if _talk_last else "NEXT >>", _advance)
+	_end_buttons()
 
 
 func _choose(choice: Dictionary) -> void:
@@ -1134,7 +1145,70 @@ func _choose(choice: Dictionary) -> void:
 		c.queue_free()
 	_talk_last = _talk_i == _talk.steps.size() - 1
 	_say(choice.reply)
-	_talk_button("SEE YA" if _talk_last else "NEXT >>", _advance)
+	_end_buttons()
+
+
+## NEXT, or at the end of the story bit: HOLD TO TALK (when Dale's voice
+## server is set up) and SEE YA.
+func _end_buttons() -> void:
+	if not _talk_last:
+		_talk_button("NEXT >>", _advance)
+		return
+	# The story bit is done; remember it now, so chatting on doesn't lose it.
+	_dale_story.finish(_talk.id, _talk_stats)
+	if _voice_chat.available():
+		_add_hold_button()
+	_talk_button("SEE YA", _advance)
+
+
+func _add_hold_button() -> void:
+	_talk_button("HOLD TO TALK", func(): pass)
+	_hold_button = _talk_buttons.get_child(_talk_buttons.get_child_count() - 1)
+	_hold_button.add_theme_color_override("font_color", Color(1.0, 0.85, 0.3))
+	_hold_button.button_down.connect(_hold_talk)
+	_hold_button.button_up.connect(_release_talk)
+
+
+func _hold_talk() -> void:
+	if _voice_chat.busy or _voice_chat.listening():
+		return
+	_hush()
+	if _voice_chat.start_listening():
+		_chatting = true
+		_talk_name.text = "DALE  -  LISTENING..."
+		_hold_button.text = "LISTENING... (LET GO TO SEND)"
+
+
+func _release_talk() -> void:
+	if not _voice_chat.listening():
+		return
+	_voice_chat.stop_listening(_dale_story.persona(_talk_stats))
+	if _voice_chat.busy:
+		_talk_name.text = "DALE  -  THINKING..."
+		_hold_button.text = "..."
+		_hold_button.disabled = true
+
+
+func _on_dale_replied(heard: String, reply: String) -> void:
+	if not _talking:
+		return
+	_talk_name.text = "YOU: " + heard.to_upper().left(60)
+	_say(reply, not _voice_chat.speaking())
+	_reset_hold_button()
+
+
+func _on_dale_failed(message: String) -> void:
+	if not _talking:
+		return
+	_talk_name.text = "DALE"
+	_say(message, false)
+	_reset_hold_button()
+
+
+func _reset_hold_button() -> void:
+	if is_instance_valid(_hold_button):
+		_hold_button.disabled = false
+		_hold_button.text = "HOLD TO TALK"
 
 
 ## NEXT: finish typing the line first, then move on.
@@ -1161,21 +1235,23 @@ func _on_talk_box_input(event: InputEvent) -> void:
 	var pressed: bool = (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT) \
 			or (event is InputEventScreenTouch and event.pressed)
 	# Tapping the line itself works like NEXT (not while a reply is wanted).
-	if pressed:
+	if pressed and not _chatting:
 		_advance()
 
 
 func _end_talk() -> void:
 	_dale_story.finish(_talk.id, _talk_stats)
+	_voice_chat.cancel()
+	_chatting = false
 	_dale_alert.visible = false
 	_set_talk(false)
 
 
-func _say(line: String) -> void:
+func _say(line: String, speak := true) -> void:
 	_talk_text.visible = true
 	_talk_text.text = line
 	_talk_text.visible_characters = 0
-	if _voice != "":
+	if speak and _voice != "":
 		# A slower, lower voice for Dale. The phone's own speech voice, so it
 		# works offline on every platform (web uses the browser's).
 		DisplayServer.tts_speak(line, _voice, 80, 0.8, 0.95, 0, true)
@@ -1215,7 +1291,7 @@ func _tick_dale(delta: float) -> void:
 		var shown := mini(n, _talk_text.visible_characters + maxi(1, int(TALK_CPS * delta + randf())))
 		_talk_text.visible_characters = -1 if shown >= n else shown
 		typing = shown < n
-	var talking := typing or (_voice != "" and _talking and DisplayServer.tts_is_speaking())
+	var talking: bool = typing or _voice_chat.speaking() or (_voice != "" and _talking and DisplayServer.tts_is_speaking())
 	var open := 0.6 + 0.6 * absf(sin(_dale_time * 13.0)) if talking else 0.25
 	_dale_mouth.scale.y = lerpf(_dale_mouth.scale.y, open, minf(1.0, delta * 20.0))
 	# Every couple of seconds, see whether the games unlocked a new chapter.
@@ -1829,6 +1905,12 @@ func _pad_sit() -> void:
 ## Chatting with a controller: up/down picks a reply, A says it (or NEXT),
 ## B or Back says bye.
 func _pad_talk(event: InputEvent) -> void:
+	if event is InputEventJoypadButton and event.button_index == JOY_BUTTON_Y and is_instance_valid(_hold_button):
+		if event.pressed:
+			_hold_talk()
+		else:
+			_release_talk()
+		return
 	if not (event is InputEventJoypadButton and event.pressed):
 		return
 	var buttons := _talk_buttons.get_children().filter(func(b): return not b.is_queued_for_deletion())

@@ -6,7 +6,8 @@ extends SceneTree
 ## tapping "Start your set", 2 = standing, facing the Pong desk, 3 = seated at
 ## Pong after tapping PLAY, 4 = after a right-edge thumb drag,
 ## 5 = facing the Proof Hand desk, 6 = seated there after tapping two cards,
-## 7 = facing Dale, 8 = chatting with him, 9 = his first question. Run tools/fetch_games.sh --autoloads first so
+## 7 = facing Dale, 8 = chatting with him, 9 = his first question, 10 = the end
+## of chapter 1, 11 = a voice-chat reply. Run tools/fetch_games.sh --autoloads first so
 ## the other games are there (then `git checkout project.godot`).
 
 var office
@@ -87,6 +88,19 @@ func _init() -> void:
 		office._advance()
 	await _frames(30)
 	_shot(9)
+	# Answer, read to the end (10), then a voice-chat reply (11), as if the
+	# voice server had answered.
+	office._talk_buttons.get_child(1).pressed.emit()
+	for k in 8:
+		office._talk_text.visible_characters = -1
+		if office._talk_last:
+			break
+		office._advance()
+	await _frames(30)
+	_shot(10)
+	office._on_dale_replied("is the coffee always this bad", "Worse on Mondays. I think it's a test. Like stand-up, but with burns.")
+	await _frames(240)
+	_shot(11)
 	quit()
 
 

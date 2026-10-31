@@ -83,3 +83,40 @@ func test_every_line_fits_the_talk_box() -> void:
 		assert_true(has_choice, ch.id)
 	for line in lines:
 		assert_lt(line.length(), 112, line)
+
+
+func test_persona_keeps_later_chapters_secret() -> void:
+	var d := DaleStory.new(PATH, 1)
+	d.finish("notes", {})
+	var p := d.persona({"comedy_sets": 2})
+	var told := p.find(DaleLines.CHAPTERS[0].fact)
+	var secret := p.find("Secrets you have NOT told yet")
+	assert_gt(told, -1)
+	assert_gt(secret, told)
+	assert_gt(p.find(DaleLines.CHAPTERS[6].fact), secret)
+	assert_string_contains(p, "comedy sets 2")
+	for ch in DaleLines.CHAPTERS:
+		assert_gt(ch.fact.length(), 20, ch.id)
+
+
+func test_voice_clip_becomes_a_small_wav_and_back() -> void:
+	var Voice = load("res://scenes/office/dale_voice.gd")
+	var clip := AudioStreamWAV.new()
+	clip.format = AudioStreamWAV.FORMAT_16_BITS
+	clip.stereo = true
+	clip.mix_rate = 48000
+	var pcm := PackedByteArray()
+	pcm.resize(48000 * 4)
+	for i in 48000:
+		var v := int(sin(i * 0.05) * 12000)
+		pcm.encode_s16(i * 4, v)
+		pcm.encode_s16(i * 4 + 2, v)
+	clip.data = pcm
+	var wav: PackedByteArray = Voice.to_wav16k(clip)
+	assert_eq(wav.size(), 44 + 16000 * 2)
+	assert_eq(wav.slice(0, 4).get_string_from_ascii(), "RIFF")
+	var back: AudioStreamWAV = Voice.wav_stream(wav)
+	assert_eq(back.mix_rate, 16000)
+	assert_false(back.stereo)
+	assert_eq(back.data.size(), 16000 * 2)
+	assert_eq(back.data.decode_s16(2 * 10), int(sin(30 * 0.05) * 12000))

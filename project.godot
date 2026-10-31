@@ -12,6 +12,7 @@ config/features=PackedStringArray("4.3", "GL Compatibility")
 
 [audio]
 
+driver/enable_input=true
 general/text_to_speech=true
 
 [display]

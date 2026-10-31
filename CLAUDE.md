@@ -94,7 +94,13 @@ right there, it's right on iPhone, Android and Steam. To keep that true:
   text-to-speech), pick replies. His story is a mystery about following your
   dreams (who writes the sticky notes?), chapters in `data/dale_lines.gd`,
   unlocked by the shared stats via `engine/dale_story.gd` (memory in
-  `user://dale.cfg`). Next: real voice chat through a free cloud AI. Published at
+  `user://dale.cfg`). After each story bit, HOLD TO TALK records the mic
+  (`scenes/office/dale_voice.gd`, the muted `Mic` bus) and sends it to Dale's
+  voice server (`voice/`, a Cloudflare Worker on free Workers AI: Whisper hears,
+  Llama answers as Dale with `DaleStory.persona()` keeping later chapters
+  secret, Aura speaks). `deploy.yml`'s `voice` job deploys it when the repo has
+  `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` secrets and writes its URL
+  into `data/voice_server.gd` for the office build (empty = no TALK). Published at
   https://humble-house-studios.github.io/killin-in-comedy/office/ (second export
   in `deploy.yml`). Screenshots: `tools/office_shot.gd`. `main.gd` must not touch
   the window when it isn't the root (`_owns_window()`).

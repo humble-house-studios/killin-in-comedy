@@ -91,6 +91,32 @@ func next_talk(stats: Dictionary) -> Dictionary:
 	return {"id": "", "title": "", "steps": steps}
 
 
+## The system prompt for the voice chat: who Dale is, what he's told you so
+## far, the secrets he's still keeping, and what you should do next.
+func persona(stats: Dictionary) -> String:
+	var told: Array[String] = []
+	var secret: Array[String] = []
+	for ch in DaleLines.CHAPTERS:
+		(told if done.has(ch.id) else secret).append("- " + ch.fact)
+	var lines: Array[String] = [DaleLines.PERSONA]
+	if not told.is_empty():
+		lines.append("What you have already told the new hire (you can talk about it):\n" + "\n".join(told))
+	if not secret.is_empty():
+		lines.append("Secrets you have NOT told yet. Never reveal or hint at them directly; if asked, dodge with a joke or change the subject:\n" + "\n".join(secret))
+	var ch := next_chapter()
+	if not ch.is_empty() and ch.hint != "":
+		lines.append("If it fits, nudge them toward this: " + ch.hint)
+	var did: Array[String] = []
+	for key in ["comedy_sets", "comedy_shows", "pong_stages", "loot_runs", "loot_wins"]:
+		if int(stats.get(key, 0)) > 0:
+			did.append("%s %d" % [key.replace("_", " "), int(stats[key])])
+	if not did.is_empty():
+		lines.append("What they've done in the games so far: " + ", ".join(did) + ".")
+	var mood := "You don't know them well yet." if trust < 2 else ("You like them." if trust < 5 else "They're your friend; you trust them.")
+	lines.append(mood)
+	return "\n\n".join(lines)
+
+
 func add_trust(n: int) -> void:
 	trust += n
 

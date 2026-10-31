@@ -8,11 +8,14 @@ class_name DaleLines
 ## A step is {"dale": line} or {"choices": [{"text", "reply", "trust"}]}.
 ## `need` = stats that unlock the chapter (all of them, or any one if "any").
 ## `hint` = what Dale says while the chapter is still locked.
+## `fact` = what the chapter reveals, for the voice chat (Dale knows the facts
+## of chapters you've finished and keeps the rest secret).
 ## Keep lines short enough for the talk box (under ~110 characters).
 
 const CHAPTERS := [
 	{
 		"id": "notes",
+		"fact": "Someone leaves anonymous motivational sticky notes on monitors every morning (the player's says TIGHT FIVE). You claim you have no idea who.",
 		"title": "THE NOTES",
 		"need": {},
 		"hint": "",
@@ -30,6 +33,7 @@ const CHAPTERS := [
 	},
 	{
 		"id": "open_mic",
+		"fact": "You know a suspicious amount about stand-up comedy but insist you only read about it in a magazine.",
 		"title": "FIRST LAUGH",
 		"need": {"comedy_sets": 1},
 		"hint": "Go play a set on your computer. Then come tell me how it went.",
@@ -46,6 +50,7 @@ const CHAPTERS := [
 	},
 	{
 		"id": "high_score",
+		"fact": "The sticky notes are written in purple pen, and you use a purple pen. You got very defensive about it.",
 		"title": "BEAT MY BEST",
 		"need": {"pong_stages": 3},
 		"hint": "That Pong machine by the wall? Clear a few stages. I want to see something.",
@@ -63,6 +68,7 @@ const CHAPTERS := [
 	},
 	{
 		"id": "machine",
+		"fact": "You admitted you paid for the Loot Machine yourself (budget line approved by D.P., Dale Pruitt) with your last paycheck from a different job. Every spin is a tiny bet on yourself.",
 		"title": "THE BUDGET LINE",
 		"need": {"loot_runs": 1},
 		"hint": "Pull the Loot Machine lever once. That thing has a story.",
@@ -80,6 +86,7 @@ const CHAPTERS := [
 	},
 	{
 		"id": "drawer",
+		"fact": "You showed the player your old set list (airport bit, mom's voicemail, the goose) and a flyer: for six years you were a stand-up comic called Big Deal.",
 		"title": "THE DRAWER",
 		"need": {"comedy_sets": 4},
 		"hint": "Clear four sets on your computer. Then we'll talk about the drawer.",
@@ -97,6 +104,7 @@ const CHAPTERS := [
 	},
 	{
 		"id": "the_night",
+		"fact": "In 2009 you were booked on national TV, heard your name from behind the curtain and walked out the back door. You took this job the next Monday. You wrote all the sticky notes so someone in this office would chase the dream, and asked the player to headline the big show for both of you.",
 		"title": "THE BACK DOOR",
 		"need": {"loot_wins": 1, "comedy_sets": 8},
 		"any": true,
@@ -116,6 +124,7 @@ const CHAPTERS := [
 	},
 	{
 		"id": "finale",
+		"fact": "The player headlined the big show. Someone left YOUR TURN, BIG DEAL on your monitor in purple pen. You're doing an open mic tonight, terrified and thrilled.",
 		"title": "YOUR TURN",
 		"need": {"comedy_shows": 1},
 		"hint": "Headline the big show. Win a whole comedy run. I'll be right here.",
@@ -162,3 +171,9 @@ const AFTER := [
 	"Every note I wrote was for me too, I think. Took me a while.",
 	"Got a spot Thursday. Thursday! Don't tell accounting.",
 ]
+
+## Who Dale is, for the voice chat. DaleStory.persona() adds what he has and
+## hasn't told you yet.
+const PERSONA := """You are Dale Pruitt, 50, a chubby, warm, nervous, very funny guy who has worked in Accounts Receivable for twelve years at the desk under the window of a small, shabby office. You're talking out loud with the new hire, who plays games on the office computers between tasks: a stand-up comedy game on their desk, Pong on the side desk, the Loot Machine slot cabinet, Proof Hand (a maths card game) and a Rubik's cube desk.
+How you talk: like a real coworker in a quick spoken chat. One to three short sentences, under 45 words. Plain words, dad jokes, self-deprecating, a little dramatic. No emojis, no lists, no stage directions, no asterisks. Never say you are an AI or a character. Stay in this office.
+What you care about: secretly, following your dreams. You cheer the new hire on to chase theirs, in small, sincere ways, then undercut it with a joke."""

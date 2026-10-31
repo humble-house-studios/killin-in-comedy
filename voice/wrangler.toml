@@ -1,0 +1,11 @@
+# Dale's voice server: a free Cloudflare Worker that hears you (Whisper),
+# answers as Dale (a Llama model) and talks back (Deepgram Aura), all on
+# Workers AI. Deployed by .github/workflows/deploy.yml when the repo has the
+# CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID secrets.
+name = "dale-voice"
+main = "src/index.js"
+compatibility_date = "2025-06-01"
+workers_dev = true
+
+[ai]
+binding = "AI"
