@@ -1380,8 +1380,12 @@ func _on_dale_replied(heard: String, reply: String) -> void:
 func _on_dale_failed(message: String) -> void:
 	if not _talking:
 		return
-	_talk_name.text = "DALE"
+	# The mic readout (how long you held, how much sound arrived) helps tell a
+	# blocked mic from a quiet one.
+	_talk_name.text = "DALE" + ("   [%s]" % _voice_chat.mic_report if _voice_chat.mic_report != "" else "")
+	_voice_chat.mic_report = ""
 	_say(message, false)
+	_voice_chat.play_line(message)
 	_reset_hold_button()
 
 

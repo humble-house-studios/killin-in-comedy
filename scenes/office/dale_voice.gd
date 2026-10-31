@@ -29,6 +29,9 @@ var _phase := 0.0
 var _out: AudioStreamPlayer
 var _http: HTTPRequest
 var _since := 0
+## What the last TALK picked up, shown when Dale can't hear you (helps tell
+## a closed mic from a quiet one).
+var mic_report := ""
 
 
 static func available() -> bool:
@@ -107,11 +110,12 @@ func stop_listening(persona: String) -> void:
 	_drain()
 	_listening = false
 	var secs := (Time.get_ticks_msec() - _since) / 1000.0
+	mic_report = "HELD %.1fs  GOT %.1fs  LEVEL %d" % [secs, _pcm.size() / 2.0 / RATE, peak(_pcm)]
 	if secs < MIN_SECONDS:
-		failed.emit("Hold TALK the whole time you're speaking.")
+		failed.emit(DaleLines.MIC_LINES[0])
 		return
 	if _pcm.size() < RATE * 2 * MIN_SECONDS * 0.5 or silent(_pcm):
-		failed.emit("I can't hear you. If your browser asked about the mic, tap Allow, then hold TALK again.")
+		failed.emit(DaleLines.MIC_LINES[1])
 		return
 	_send({"audio": Marshalls.raw_to_base64(wav16k(_pcm))}, persona)
 
@@ -138,7 +142,7 @@ func _process(_delta: float) -> void:
 	# Don't record forever if the button gets stuck.
 	if Time.get_ticks_msec() - _since > MAX_SECONDS * 1000.0:
 		_listening = false
-		failed.emit("That was a long one. Try something shorter.")
+		failed.emit(DaleLines.MIC_LINES[2])
 
 
 ## Move what the mic captured since last frame into the 16 kHz clip.
@@ -174,18 +178,18 @@ func _send(body: Dictionary, persona: String) -> void:
 			HTTPClient.METHOD_POST, JSON.stringify(body))
 	if err != OK:
 		busy = false
-		failed.emit("Couldn't reach Dale. Check the connection.")
+		failed.emit(DaleLines.MIC_LINES[3])
 
 
 func _on_done(result: int, code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
 	busy = false
 	var data = JSON.parse_string(body.get_string_from_utf8()) if body.size() > 0 else null
 	if result != HTTPRequest.RESULT_SUCCESS or not data is Dictionary:
-		failed.emit("Dale's line went dead. Try again in a sec.")
+		failed.emit(DaleLines.MIC_LINES[4])
 		return
 	var reply := str(data.get("reply", ""))
 	if code != 200 or reply == "":
-		failed.emit(str(data.get("error", "Didn't catch that.")))
+		failed.emit(str(data.get("error", DaleLines.MIC_LINES[5])))
 		return
 	var heard := str(data.get("heard", ""))
 	history.append({"role": "user", "content": heard})
@@ -208,6 +212,14 @@ func _play(b64: String) -> void:
 	if stream:
 		_out.stream = stream
 		_out.play()
+
+
+## Loudest sample in a 16-bit clip (0 to 32767).
+static func peak(pcm: PackedByteArray) -> int:
+	var p := 0
+	for i in range(0, pcm.size() - 1, 8):
+		p = maxi(p, absi(pcm.decode_s16(i)))
+	return p
 
 
 ## True when the clip is all (near) zeros: the mic stream hasn't arrived yet.

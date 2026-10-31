@@ -172,6 +172,16 @@ const AFTER := [
 	"Got a spot Thursday. Thursday! Don't tell accounting.",
 ]
 
+## What Dale says when the voice chat goes wrong (pre-recorded like the rest).
+const MIC_LINES := [
+	"Hold TALK the whole time you're speaking.",
+	"I can't hear you. If your browser asked about the mic, tap Allow, then hold TALK again.",
+	"That was a long one. Try something shorter.",
+	"Couldn't reach Dale. Check the connection.",
+	"My line went dead. Try again in a sec.",
+	"Didn't catch that. Hold the button while you talk.",
+]
+
 ## Who Dale is, for the voice chat. DaleStory.persona() adds what he has and
 ## hasn't told you yet.
 const PERSONA := """You are Dale Pruitt, 50, a chubby, warm, nervous, very funny guy who has worked in Accounts Receivable for twelve years at the desk under the window of a small, shabby office. You're talking out loud with the new hire, who plays games on the office computers between tasks: a stand-up comedy game on their desk, Pong on the side desk, the Loot Machine slot cabinet, Proof Hand (a maths card game) and a Rubik's cube desk.

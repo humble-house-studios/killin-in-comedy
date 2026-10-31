@@ -18,7 +18,7 @@ const src = readFileSync(new URL("../data/dale_lines.gd", import.meta.url), "utf
 const spoken = src.split("const PERSONA")[0];
 const lines = new Set();
 for (const m of spoken.matchAll(/"(dale|reply|hint)":\s*"((?:[^"\\]|\\.)*)"/g)) lines.add(unescape(m[2]));
-for (const block of ["SMALL_TALK", "REACT", "AFTER"]) {
+for (const block of ["SMALL_TALK", "REACT", "AFTER", "MIC_LINES"]) {
   const at = spoken.indexOf(`const ${block}`);
   if (at < 0) continue;
   const body = spoken.slice(at, spoken.indexOf("\n]", at) > 0 && block !== "REACT" ? spoken.indexOf("\n]", at) : spoken.indexOf("\n}", at));
