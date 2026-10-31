@@ -19,6 +19,10 @@ extends Node
 ##     when you clear Pong stages and comedy sets.
 ## - Clicks/taps are ray-cast onto a screen and pushed into that game at that spot.
 ## - Each game has its own audio bus that fades with distance to its screen.
+## - Dale: the coworker under the window. Tap him (or TALK) and the camera
+##   glides to his desk for a chat: subtitles, three replies to pick, and the
+##   phone's own voice reading his lines. His story (engine/dale_story.gd,
+##   data/dale_lines.gd) unlocks chapter by chapter as you play the games.
 ## Mouse: click to look around, WASD walk, click the monitor to play, Esc lets go.
 ## Touch: tap the computer (or SIT DOWN) and the camera glides to the desk and
 ## frames the screen; then every tap goes into the game. STAND UP to walk again
@@ -35,6 +39,13 @@ const LOOK_SENS := 0.0025
 const TOUCH_LOOK_SENS := 0.006
 ## How far away you can still click a monitor (metres).
 const REACH := 2.6
+## Dale's chair, under the window on the left wall; he faces into the room.
+const DALE_SPOT := Vector3(-3.05, 0.0, -0.6)
+## Talking to Dale: how close you can click him (mouse), the camera's fov, and
+## how fast his words type out (characters per second).
+const DALE_REACH := 3.4
+const TALK_FOV := 46.0
+const TALK_CPS := 38.0
 ## Main monitor: screen size in metres (16:9, matches the game viewport).
 const SCREEN_W := 0.66
 const SCREEN_H := 0.37125
@@ -221,6 +232,33 @@ var _pad_look := Vector2.ZERO
 var _pad_run := false
 var _pad_told := false
 
+## Dale: his rig (feet on the floor, facing local +z), the parts that move,
+## his story, and the talk box.
+var _dale: Node3D
+var _dale_body: Node3D
+var _dale_head: Node3D
+var _dale_mouth: Node3D
+var _dale_eyes: Array[Node3D] = []
+var _dale_alert: Label3D
+var _dale_story: DaleStory
+var _dale_time := 0.0
+var _blink_in := 2.5
+var _news_check := 0.0
+var _talking := false
+## The conversation in progress: {id, title, steps}, and where we are in it.
+var _talk := {}
+var _talk_i := 0
+var _talk_stats := {}
+## The step on screen ends the talk once read.
+var _talk_last := false
+var _talk_panel: PanelContainer
+var _talk_name: Label
+var _talk_text: Label
+var _talk_buttons: VBoxContainer
+var _voice := ""
+## The reply a controller has highlighted.
+var _talk_pick := 0
+
 
 func _ready() -> void:
 	_touch = DisplayServer.is_touchscreen_available()
@@ -230,6 +268,9 @@ func _ready() -> void:
 	_build_room()
 	_build_player()
 	_build_hud()
+	_build_talk_box()
+	_dale_story = DaleStory.new()
+	_pick_voice()
 	get_viewport().size_changed.connect(_on_resized)
 	_on_resized()
 	# The phone reports its safe area a moment after it turns; re-check twice a second.
@@ -503,6 +544,7 @@ func _build_room() -> void:
 	_build_loot_cabinet()
 	_build_cube_desk()
 	_build_props()
+	_build_dale()
 
 
 func _build_desk() -> void:
@@ -800,6 +842,412 @@ func _build_props() -> void:
 	_label("BREAK ROOM ->", Vector3(0.4, 1.9, 3.99), 30, Color(0.9, 0.9, 0.8), Vector3(0, PI, 0))
 
 
+## Dale's corner under the window: a cluttered desk facing into the room, and
+## Dale himself behind it, built from chunky PS1 boxes like everything else.
+func _build_dale() -> void:
+	_dale = Node3D.new()
+	_dale.position = DALE_SPOT
+	_dale.rotation.y = PI / 2
+	_world_vp.add_child(_dale)
+	var r := _dale
+	var wood := _mat(Color(0.48, 0.34, 0.2), 3, Color(0.4, 0.28, 0.16), 60.0)
+	var metal := _mat(Color(0.28, 0.29, 0.31))
+	var dark := _mat(Color(0.1, 0.1, 0.11))
+	var skin := _mat(Color(0.93, 0.72, 0.58))
+	var shirt := _mat(Color(0.86, 0.84, 0.66), 6, Color.BLACK, 40.0)
+	var hair := _mat(Color(0.36, 0.24, 0.15))
+	var tie := _mat(Color(0.62, 0.12, 0.42), 4, Color(0.5, 0.08, 0.34), 40.0)
+	var pants := _mat(Color(0.22, 0.24, 0.3))
+
+	# Chair behind him.
+	var fabric := _mat(Color(0.32, 0.18, 0.14), 1, Color(0.26, 0.14, 0.11), 50.0)
+	_box(Vector3(0.56, 0.08, 0.5), Vector3(0, 0.46, 0), fabric, false, Vector3.ZERO, r)
+	_box(Vector3(0.54, 0.62, 0.08), Vector3(0, 0.86, -0.3), fabric, false, Vector3(0.12, 0, 0), r)
+	_cyl(0.03, 0.4, Vector3(0, 0.22, 0), dark, Vector3.ZERO, 6, -1.0, r)
+
+	# Desk in front of him (top at 0.76), with a modesty panel facing the room.
+	var dz := 0.62
+	_box(Vector3(1.3, 0.05, 0.62), Vector3(0, 0.735, dz), wood, true, Vector3.ZERO, r)
+	_box(Vector3(1.26, 0.6, 0.03), Vector3(0, 0.42, dz + 0.29), wood, true, Vector3.ZERO, r)
+	_box(Vector3(0.05, 0.71, 0.58), Vector3(-0.62, 0.355, dz), metal, true, Vector3.ZERO, r)
+	_box(Vector3(0.38, 0.6, 0.5), Vector3(0.42, 0.41, dz), metal, true, Vector3.ZERO, r)
+	for y in [0.58, 0.36]:
+		_box(Vector3(0.12, 0.02, 0.01), Vector3(0.42, y, dz - 0.25), dark, false, Vector3.ZERO, r)
+	# Nameplate, facing you.
+	_box(Vector3(0.34, 0.07, 0.03), Vector3(0.0, 0.795, dz + 0.24), _mat(Color(0.75, 0.6, 0.28)), false, Vector3(-0.3, 0, 0), r)
+	_label("DALE P.\nACCTS RECEIVABLE", Vector3(0.0, 0.797, dz + 0.258), 7, Color(0.15, 0.1, 0.05), Vector3(-0.3, 0, 0), 0.0, r)
+	# His old monitor, turned away to the side so you can see him.
+	var beige := _mat(Color(0.74, 0.7, 0.58), 6, Color.BLACK, 40.0)
+	_box(Vector3(0.36, 0.3, 0.3), Vector3(-0.5, 0.95, dz - 0.12), beige, false, Vector3(0, -0.9, 0), r)
+	_box(Vector3(0.2, 0.03, 0.18), Vector3(-0.5, 0.78, dz - 0.12), beige, false, Vector3(0, -0.9, 0), r)
+	# A purple sticky note on its side. Hmm.
+	_box(Vector3(0.07, 0.07, 0.004), Vector3(-0.38, 1.0, dz + 0.04), _mat(Color(0.72, 0.5, 0.95)), false, Vector3(0, -0.9, 0.1), r)
+	# Mug, invoices, a purple pen.
+	_cyl(0.045, 0.1, Vector3(0.42, 0.81, dz + 0.08), _mat(Color(0.95, 0.95, 0.92)), Vector3.ZERO, 8, -1.0, r)
+	_label("#1\nDAD", Vector3(0.42, 0.815, dz + 0.127), 5, Color(0.2, 0.3, 0.7), Vector3.ZERO, 0.0, r)
+	_box(Vector3(0.24, 0.05, 0.3), Vector3(0.18, 0.785, dz - 0.02), _mat(Color(0.92, 0.92, 0.86)), false, Vector3(0, 0.15, 0), r)
+	_box(Vector3(0.012, 0.012, 0.14), Vector3(0.05, 0.768, dz + 0.12), _mat(Color(0.55, 0.25, 0.85)), false, Vector3(0, 0.7, 0), r)
+
+	# Dale. The body breathes; the head turns to look at you.
+	_dale_body = Node3D.new()
+	_dale_body.position = Vector3(0, 0.5, 0)
+	r.add_child(_dale_body)
+	var b := _dale_body
+	# Legs, mostly hidden by the desk.
+	_box(Vector3(0.44, 0.16, 0.42), Vector3(0, 0.06, 0.16), pants, false, Vector3.ZERO, b)
+	# Belly and chest: a big round shirt.
+	_ball(0.31, Vector3(0, 0.3, 0.05), shirt, b, Vector3(1.05, 1.0, 0.95))
+	_ball(0.26, Vector3(0, 0.52, -0.02), shirt, b, Vector3(1.15, 0.8, 0.9))
+	# Tie, riding the curve of the belly.
+	_box(Vector3(0.07, 0.04, 0.03), Vector3(0, 0.66, 0.17), tie, false, Vector3.ZERO, b)
+	_box(Vector3(0.06, 0.24, 0.02), Vector3(0, 0.52, 0.24), tie, false, Vector3(0.25, 0, 0), b)
+	_box(Vector3(0.06, 0.12, 0.02), Vector3(0, 0.34, 0.33), tie, false, Vector3(-0.15, 0, 0), b)
+	# Shoulders, sleeves and arms resting on the desk.
+	for side in [-1, 1]:
+		_ball(0.1, Vector3(side * 0.3, 0.6, -0.02), shirt, b)
+		_box(Vector3(0.12, 0.26, 0.12), Vector3(side * 0.34, 0.46, 0.04), shirt, false, Vector3(0.5, 0, side * 0.12), b)
+		_box(Vector3(0.1, 0.1, 0.3), Vector3(side * 0.3, 0.3, 0.26), skin, false, Vector3(0.0, -side * 0.25, 0), b)
+		_box(Vector3(0.1, 0.06, 0.1), Vector3(side * 0.22, 0.29, 0.42), skin, false, Vector3.ZERO, b)
+	# Neck and double chin.
+	_box(Vector3(0.2, 0.08, 0.18), Vector3(0, 0.7, 0.0), skin, false, Vector3.ZERO, b)
+	_dale_head = Node3D.new()
+	_dale_head.position = Vector3(0, 0.74, 0.0)
+	b.add_child(_dale_head)
+	var h := _dale_head
+	_box(Vector3(0.27, 0.27, 0.25), Vector3(0, 0.15, 0.02), skin, false, Vector3.ZERO, h)
+	_box(Vector3(0.23, 0.06, 0.06), Vector3(0, 0.02, 0.12), skin, false, Vector3.ZERO, h)
+	# Bald on top, a horseshoe of brown hair around the sides and back.
+	_box(Vector3(0.29, 0.1, 0.12), Vector3(0, 0.2, -0.07), hair, false, Vector3.ZERO, h)
+	for side in [-1, 1]:
+		_box(Vector3(0.03, 0.1, 0.16), Vector3(side * 0.14, 0.19, 0.0), hair, false, Vector3.ZERO, h)
+		# Ears.
+		_box(Vector3(0.03, 0.06, 0.04), Vector3(side * 0.145, 0.14, 0.03), skin, false, Vector3.ZERO, h)
+	# Glasses: two dark frames and a bridge, eyes behind.
+	var frame := _mat(Color(0.08, 0.08, 0.1))
+	var glass := _mat(Color(0.75, 0.85, 0.9), 0, Color.BLACK, 24.0, Color(0.12, 0.15, 0.18))
+	for side in [-1, 1]:
+		_box(Vector3(0.09, 0.065, 0.01), Vector3(side * 0.06, 0.17, 0.146), frame, false, Vector3.ZERO, h)
+		_box(Vector3(0.07, 0.045, 0.01), Vector3(side * 0.06, 0.17, 0.149), glass, false, Vector3.ZERO, h)
+		var eye := Node3D.new()
+		eye.position = Vector3(side * 0.06, 0.17, 0.155)
+		h.add_child(eye)
+		_box(Vector3(0.022, 0.026, 0.006), Vector3.ZERO, dark, false, Vector3.ZERO, eye)
+		_dale_eyes.append(eye)
+		# Eyebrows.
+		_box(Vector3(0.07, 0.014, 0.01), Vector3(side * 0.06, 0.218, 0.15), hair, false, Vector3(0, 0, side * -0.12), h)
+	_box(Vector3(0.03, 0.012, 0.01), Vector3(0, 0.175, 0.15), frame, false, Vector3.ZERO, h)
+	# Nose, moustache, mouth (it opens while he talks).
+	_box(Vector3(0.045, 0.05, 0.04), Vector3(0, 0.12, 0.155), _mat(Color(0.9, 0.6, 0.5)), false, Vector3.ZERO, h)
+	_box(Vector3(0.12, 0.025, 0.02), Vector3(0, 0.085, 0.148), hair, false, Vector3.ZERO, h)
+	_dale_mouth = Node3D.new()
+	_dale_mouth.position = Vector3(0, 0.058, 0.146)
+	h.add_child(_dale_mouth)
+	_box(Vector3(0.07, 0.03, 0.01), Vector3.ZERO, _mat(Color(0.35, 0.1, 0.1)), false, Vector3.ZERO, _dale_mouth)
+	_dale_mouth.scale.y = 0.25
+
+	# A floating "!" when he has something new to tell you.
+	_dale_alert = _label("!", Vector3(0, 1.72, 0), 48, Color(1.0, 0.85, 0.3), Vector3.ZERO, 0.0, r)
+	_dale_alert.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_dale_alert.visible = false
+
+
+## A low-poly sphere (faceted, like the rest of the room).
+func _ball(radius: float, pos: Vector3, mat: Material, parent: Node3D, squash := Vector3.ONE) -> MeshInstance3D:
+	var mesh := SphereMesh.new()
+	mesh.radius = radius
+	mesh.height = radius * 2.0
+	mesh.radial_segments = 10
+	mesh.rings = 5
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	mi.material_override = mat
+	mi.layers = LAYER_WORLD
+	mi.position = pos
+	mi.scale = squash
+	parent.add_child(mi)
+	return mi
+
+
+# ---------------------------------------------------------------- Dale talk
+
+## The talk box: Dale's name and story file, his line typing out, and the
+## replies (or NEXT) underneath.
+func _build_talk_box() -> void:
+	var font := preload("res://fonts/press_start_2p.ttf")
+	_talk_panel = PanelContainer.new()
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.07, 0.05, 0.1, 0.92)
+	style.border_color = Color(0.72, 0.5, 0.95)
+	style.set_border_width_all(4)
+	style.set_content_margin_all(22)
+	_talk_panel.add_theme_stylebox_override("panel", style)
+	_talk_panel.visible = false
+	_hud.add_child(_talk_panel)
+	_talk_panel.gui_input.connect(_on_talk_box_input)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 16)
+	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_talk_panel.add_child(col)
+	_talk_name = Label.new()
+	_talk_name.add_theme_font_override("font", font)
+	_talk_name.add_theme_font_size_override("font_size", 16)
+	_talk_name.add_theme_color_override("font_color", Color(1.0, 0.85, 0.3))
+	col.add_child(_talk_name)
+	_talk_text = Label.new()
+	_talk_text.add_theme_font_override("font", font)
+	_talk_text.add_theme_font_size_override("font_size", 21)
+	_talk_text.add_theme_constant_override("line_spacing", 10)
+	_talk_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_talk_text.custom_minimum_size.y = 120
+	_talk_text.visible_characters_behavior = TextServer.VC_CHARS_AFTER_SHAPING
+	col.add_child(_talk_text)
+	_talk_buttons = VBoxContainer.new()
+	_talk_buttons.add_theme_constant_override("separation", 10)
+	col.add_child(_talk_buttons)
+	_place_talk_box()
+
+
+func _place_talk_box() -> void:
+	if _talk_panel == null:
+		return
+	var w := _hud.size.x
+	var side := maxf(20.0, (w - 980.0) * 0.5)
+	_talk_panel.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	_talk_panel.offset_left = side + _inset.x
+	_talk_panel.offset_right = -side - _inset.z
+	_talk_panel.offset_bottom = -24 - _inset.w
+	_talk_panel.offset_top = -24 - _inset.w
+	_talk_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
+
+
+func _talk_button(text: String, action: Callable) -> void:
+	var b := Button.new()
+	b.text = text
+	b.focus_mode = Control.FOCUS_NONE
+	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	b.add_theme_font_override("font", preload("res://fonts/press_start_2p.ttf"))
+	b.add_theme_font_size_override("font_size", 19)
+	b.custom_minimum_size = Vector2(0, 88)
+	var normal := StyleBoxFlat.new()
+	normal.bg_color = Color(0.16, 0.11, 0.22)
+	normal.border_color = Color(1, 1, 1, 0.7)
+	normal.set_border_width_all(3)
+	normal.set_content_margin_all(16)
+	b.add_theme_stylebox_override("normal", normal)
+	b.add_theme_stylebox_override("hover", normal)
+	var down := normal.duplicate()
+	down.bg_color = Color(0.4, 0.26, 0.55)
+	b.add_theme_stylebox_override("pressed", down)
+	b.pressed.connect(action)
+	_talk_buttons.add_child(b)
+
+
+## Walk up to Dale's desk and start the next conversation (or leave).
+func _set_talk(on: bool) -> void:
+	if on == _talking:
+		return
+	if on and _seat:
+		_seat.release()
+		_seat = null
+	_talking = on
+	_glide_from = _camera.global_transform
+	_glide_from_fov = _camera.fov
+	_glide_time = 0.5 + 0.12 * _glide_from.origin.distance_to(_dale.global_position) if on else 0.5
+	_glide = 0.0
+	_touches.clear()
+	_stick = Vector2.ZERO
+	_moved = true
+	if _press_pc:
+		_press_pc.release()
+		_press_pc = null
+	_talk_panel.visible = on
+	_place_stand_button()
+	if on:
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		var fwd := _dale.global_transform.basis.z.normalized()
+		_player.velocity = Vector3.ZERO
+		_player.global_position = Vector3(_dale.global_position.x, 0.0, _dale.global_position.z) + fwd * 1.5
+		_yaw = atan2(fwd.x, fwd.z)
+		_pitch = -0.15
+		_dale_alert.visible = false
+		_talk_stats = DaleStory.read_stats()
+		_talk = _dale_story.next_talk(_talk_stats)
+		_talk_i = 0
+		_show_step()
+	else:
+		_hush()
+
+
+## Where the camera sits while you chat: across his desk, Dale in the top part
+## of the screen so the talk box doesn't cover his face.
+func _talk_view() -> Transform3D:
+	var landscape := _world_vp.size.x > _world_vp.size.y
+	var xf := _dale.global_transform
+	var eye := xf * (Vector3(0, 1.3, 1.55) if landscape else Vector3(0, 1.28, 1.9))
+	var look := xf * (Vector3(0, 1.02, 0) if landscape else Vector3(0, 0.78, 0))
+	return Transform3D(Basis.looking_at(look - eye, Vector3.UP), eye)
+
+
+func _show_step() -> void:
+	for c in _talk_buttons.get_children():
+		c.queue_free()
+	var steps: Array = _talk.steps
+	var title: String = _talk.title
+	_talk_name.text = "DALE" + ("  -  %s: %s" % [_dale_story.file_label(), title] if title != "" else "")
+	if _talk_i >= steps.size():
+		_end_talk()
+		return
+	var step: Dictionary = steps[_talk_i]
+	_talk_last = _talk_i == steps.size() - 1
+	if step.has("choices"):
+		_talk_text.text = "..."
+		_talk_text.visible_characters = -1
+		for c in step.choices:
+			_talk_button(c.text, _choose.bind(c))
+		_talk_pick = 0
+		_show_pick()
+		return
+	_say(step.dale)
+	_talk_button("SEE YA" if _talk_last else "NEXT >>", _advance)
+
+
+func _choose(choice: Dictionary) -> void:
+	_dale_story.add_trust(int(choice.get("trust", 0)))
+	for c in _talk_buttons.get_children():
+		c.queue_free()
+	_talk_last = _talk_i == _talk.steps.size() - 1
+	_say(choice.reply)
+	_talk_button("SEE YA" if _talk_last else "NEXT >>", _advance)
+
+
+## NEXT: finish typing the line first, then move on.
+func _advance() -> void:
+	if _waiting_for_choice():
+		return
+	if _talk_text.visible_characters >= 0 and _talk_text.visible_characters < _talk_text.text.length():
+		_talk_text.visible_characters = -1
+		return
+	_talk_i += 1
+	if _talk_i >= _talk.steps.size():
+		_end_talk()
+	else:
+		_show_step()
+
+
+## Is Dale waiting for you to pick a reply?
+func _waiting_for_choice() -> bool:
+	return _talking and _talk_i < _talk.steps.size() and _talk.steps[_talk_i].has("choices") \
+			and _talk_text.text == "..."
+
+
+func _on_talk_box_input(event: InputEvent) -> void:
+	var pressed: bool = (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT) \
+			or (event is InputEventScreenTouch and event.pressed)
+	# Tapping the line itself works like NEXT (not while a reply is wanted).
+	if pressed:
+		_advance()
+
+
+func _end_talk() -> void:
+	_dale_story.finish(_talk.id, _talk_stats)
+	_dale_alert.visible = false
+	_set_talk(false)
+
+
+func _say(line: String) -> void:
+	_talk_text.text = line
+	_talk_text.visible_characters = 0
+	if _voice != "":
+		# A slower, lower voice for Dale. The phone's own speech voice, so it
+		# works offline on every platform (web uses the browser's).
+		DisplayServer.tts_speak(line, _voice, 80, 0.8, 0.95, 0, true)
+
+
+func _hush() -> void:
+	if _voice != "":
+		DisplayServer.tts_stop()
+
+
+func _pick_voice() -> void:
+	if not ProjectSettings.get_setting("audio/general/text_to_speech", false) or DisplayServer.get_name() == "headless":
+		return
+	var voices := DisplayServer.tts_get_voices_for_language("en")
+	if not voices.is_empty():
+		_voice = voices[0]
+
+
+## Dale's idle life: breathing, blinking, looking at you, a mouth that moves
+## while his line types out, and a "!" when there's a new chapter.
+func _tick_dale(delta: float) -> void:
+	_dale_time += delta
+	_dale_body.scale = Vector3(1.0 + sin(_dale_time * 1.7) * 0.012, 1.0 + sin(_dale_time * 1.7) * 0.018, 1.0)
+	var to_you := _dale.to_local(_camera.global_position)
+	var yaw := clampf(atan2(to_you.x, to_you.z), -0.7, 0.7)
+	_dale_head.rotation.y = lerp_angle(_dale_head.rotation.y, yaw, minf(1.0, delta * 4.0))
+	_dale_head.rotation.x = lerpf(_dale_head.rotation.x, clampf(-atan2(to_you.y - 1.3, Vector2(to_you.x, to_you.z).length()) * 0.5, -0.3, 0.3), minf(1.0, delta * 4.0))
+	_blink_in -= delta
+	var shut := _blink_in < 0.0
+	if _blink_in < -0.12:
+		_blink_in = randf_range(2.0, 5.0)
+	for eye in _dale_eyes:
+		eye.scale.y = 0.15 if shut else 1.0
+	var typing := false
+	if _talking and _talk_text.visible_characters >= 0:
+		var n := _talk_text.text.length()
+		var shown := mini(n, _talk_text.visible_characters + maxi(1, int(TALK_CPS * delta + randf())))
+		_talk_text.visible_characters = -1 if shown >= n else shown
+		typing = shown < n
+	var talking := typing or (_voice != "" and _talking and DisplayServer.tts_is_speaking())
+	var open := 0.6 + 0.6 * absf(sin(_dale_time * 13.0)) if talking else 0.25
+	_dale_mouth.scale.y = lerpf(_dale_mouth.scale.y, open, minf(1.0, delta * 20.0))
+	# Every couple of seconds, see whether the games unlocked a new chapter.
+	_news_check -= delta
+	if _news_check <= 0.0 and not _talking:
+		_news_check = 2.0
+		_dale_alert.visible = _dale_story.has_news(DaleStory.read_stats())
+	if _dale_alert.visible:
+		_dale_alert.position.y = 1.72 + sin(_dale_time * 3.0) * 0.04
+
+
+## Ray from a HUD point to Dale: the distance, or -1 if it misses him.
+func _dale_hit(point: Vector2) -> float:
+	if _dale == null or _hud.size.x <= 0:
+		return -1.0
+	var px := point / _hud.size * Vector2(_world_vp.size)
+	var o := _camera.project_ray_origin(px)
+	var d := _camera.project_ray_normal(px)
+	var c := _dale.global_transform * Vector3(0, 1.05, 0.1)
+	var t := (c - o).dot(d)
+	if t < 0.0 or (o + d * t).distance_to(c) > 0.45:
+		return -1.0
+	return t
+
+
+func _dale_nearer_than_computers() -> bool:
+	var me := _player.global_position
+	var to_dale := me.distance_to(_dale.global_position)
+	for pc in _computers:
+		if me.distance_to(pc.screen.global_position) < to_dale:
+			return false
+	return true
+
+
+func _place_stand_button() -> void:
+	var landscape := _hud.size.x > _hud.size.y
+	_stand_button.text = "BYE" if _talking else "STAND UP"
+	# STAND UP: top-left upright; bottom-left sideways, clear of Pong's music
+	# button and the comedy game's cards. Talking, it stays clear of the talk box.
+	_stand_corner = Control.PRESET_BOTTOM_LEFT if landscape and not _talking else Control.PRESET_TOP_LEFT
+	_place_button(_stand_button, _stand_corner)
+
+
+func _stand_up() -> void:
+	if _talking:
+		_set_talk(false)
+	else:
+		_set_seat(null)
+
+
 func _build_player() -> void:
 	_player = CharacterBody3D.new()
 	_player.position = Vector3(0.3, 0.0, 3.2)
@@ -879,7 +1327,7 @@ func _build_hud() -> void:
 	_sit_button = _hud_button("SIT DOWN", Control.PRESET_BOTTOM_RIGHT)
 	_sit_button.pressed.connect(_sit_nearest)
 	_stand_button = _hud_button("STAND UP", Control.PRESET_TOP_LEFT)
-	_stand_button.pressed.connect(_set_seat.bind(null))
+	_stand_button.pressed.connect(_stand_up)
 	var t := create_tween()
 	t.tween_interval(3.5)
 	t.tween_property(_title, "modulate:a", 0.0, 1.5)
@@ -920,6 +1368,11 @@ func _place_button(b: Button, corner: Control.LayoutPreset) -> void:
 	b.grow_vertical = Control.GROW_DIRECTION_BEGIN if b.anchor_top > 0.5 else Control.GROW_DIRECTION_END
 
 
+func _dale_aimed() -> bool:
+	var t := _dale_hit(_aim_point())
+	return t >= 0.0 and t < DALE_REACH and not _talking and _seat == null
+
+
 func _hud_button_at(point: Vector2) -> bool:
 	for b in [_sit_button, _stand_button]:
 		if b.visible and b.get_global_rect().has_point(point):
@@ -928,6 +1381,9 @@ func _hud_button_at(point: Vector2) -> bool:
 
 
 func _sit_nearest() -> void:
+	if _dale_nearer_than_computers():
+		_set_talk(true)
+		return
 	var best: Computer
 	for pc in _computers:
 		if best == null or _player.global_position.distance_to(pc.screen.global_position) \
@@ -940,6 +1396,10 @@ func _sit_nearest() -> void:
 func _set_seat(pc: Computer) -> void:
 	if pc == _seat:
 		return
+	if pc and _talking:
+		_talking = false
+		_talk_panel.visible = false
+		_hush()
 	var old := _seat
 	_seat = pc
 	_glide_from = _camera.global_transform
@@ -979,9 +1439,6 @@ func _on_resized() -> void:
 	for cam in [_camera, _screen_camera]:
 		cam.keep_aspect = Camera3D.KEEP_HEIGHT if landscape else Camera3D.KEEP_WIDTH
 	_turn_pong(landscape)
-	# STAND UP: top-left upright; bottom-left sideways, clear of Pong's music
-	# button and the comedy game's cards.
-	_stand_corner = Control.PRESET_BOTTOM_LEFT if landscape else Control.PRESET_TOP_LEFT
 	_inset = SafeArea.get_insets(get_viewport().get_visible_rect().size)
 	_apply_insets(true)
 
@@ -993,7 +1450,8 @@ func _apply_insets(force := false) -> void:
 		return
 	_inset = inset
 	_place_button(_sit_button, Control.PRESET_BOTTOM_RIGHT)
-	_place_button(_stand_button, _stand_corner)
+	_place_stand_button()
+	_place_talk_box()
 	_hint.offset_top = -270 - _inset.w
 	_hint.offset_bottom = -150 - _inset.w
 	_hint.offset_left = 30 + _inset.x
@@ -1040,7 +1498,7 @@ func _physics_process(delta: float) -> void:
 		move.x += 1
 	if _pad_move.length() > PAD_DEAD:
 		move += _pad_move
-	move = Vector2.ZERO if _seat else move.limit_length(1.0)
+	move = Vector2.ZERO if _seat or _talking else move.limit_length(1.0)
 	if move.length() > 0.1:
 		_moved = true
 	var speed := RUN_SPEED if Input.is_physical_key_pressed(KEY_SHIFT) or _pad_run else SPEED
@@ -1066,13 +1524,16 @@ func _process(delta: float) -> void:
 	_head.rotation.x = _pitch
 	# Lean in a bit while looking at the monitor up close.
 	var aim = _aim_at(_aim_point())
-	var close: bool = aim != null and aim.dist < REACH and _seat == null
+	var close: bool = aim != null and aim.dist < REACH and _seat == null and not _talking
 	_zoom = move_toward(_zoom, 1.0 if close else 0.0, delta * 2.5)
 	var walk_fov := lerpf(70.0, 52.0, _zoom * _zoom * (3.0 - 2.0 * _zoom))
 	# Glide between the walking view and the seated view.
 	_glide = minf(1.0, _glide + delta / _glide_time)
 	var target := _seat.seat_transform(_camera, Vector2(_world_vp.size), SEAT_FOV, SEAT_FILL) if _seat else _head.global_transform
 	var target_fov := SEAT_FOV if _seat else walk_fov
+	if _talking:
+		target = _talk_view()
+		target_fov = TALK_FOV
 	if _glide < 1.0:
 		var e := _glide * _glide * (3.0 - 2.0 * _glide)
 		_camera.global_transform = _glide_from.interpolate_with(target, e)
@@ -1104,8 +1565,10 @@ func _process(delta: float) -> void:
 		_clock_hands[1].rotation.z = -TAU * time.minute / 60.0
 
 	_tick_link(delta)
-	_sit_button.visible = _touch and _seat == null and not _computers.is_empty()
-	_stand_button.visible = _touch and _seat != null
+	_tick_dale(delta)
+	_sit_button.visible = _touch and _seat == null and not _talking
+	_sit_button.text = "TALK" if _dale_nearer_than_computers() else "SIT DOWN"
+	_stand_button.visible = (_touch and _seat != null) or _talking
 	_update_hint(aim, close)
 	_hud.queue_redraw()
 
@@ -1129,20 +1592,28 @@ func _tick_link(delta: float) -> void:
 
 func _update_hint(aim, close: bool) -> void:
 	var text := ""
-	if _pad:
+	if _talking:
+		text = ""
+	elif _pad:
 		if _seat:
 			text = ""
 		elif close:
 			text = "A: SIT DOWN"
+		elif _dale_aimed():
+			text = "A: TALK TO DALE"
 		elif not _moved:
 			text = "LEFT STICK WALK - RIGHT STICK LOOK\nA: SIT AT A COMPUTER"
 	elif _touch:
 		if not _moved:
 			text = "TAP A COMPUTER\nTO SIT DOWN"
+		elif _dale_alert.visible:
+			text = "DALE WANTS A WORD"
 	elif Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		text = "CLICK TO LOOK AROUND\nWASD WALK - MOUSE LOOK - ESC LETS GO"
 	elif close:
 		text = ""
+	elif _dale_aimed():
+		text = "CLICK TO TALK TO DALE"
 	elif aim != null:
 		text = "GET CLOSER"
 	elif not _moved:
@@ -1155,14 +1626,14 @@ func _draw_hud() -> void:
 	if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or (_pad and _seat == null):
 		var c := size * 0.5
 		var aim = _aim_at(_aim_point())
-		if aim != null and aim.dist < REACH:
+		if (aim != null and aim.dist < REACH) or _dale_aimed():
 			_hud.draw_arc(c, 9, 0, TAU, 16, Color(1, 1, 1, 0.9), 3)
 		else:
 			_hud.draw_rect(Rect2(c - Vector2(3, 3), Vector2(6, 6)), Color(1, 1, 1, 0.85))
 	if _touches.values().has("move"):
 		_hud.draw_arc(_stick_origin, STICK_RADIUS, 0, TAU, 32, Color(1, 1, 1, 0.35), 4)
 		_hud.draw_circle(_stick_origin + _stick * STICK_RADIUS, 34, Color(1, 1, 1, 0.35))
-	elif _touch and _seat == null:
+	elif _touch and _seat == null and not _talking:
 		# Ghost stick so you can see where the walk thumb goes.
 		var rest := _stick_rest()
 		_hud.draw_arc(rest, STICK_RADIUS, 0, TAU, 32, Color(1, 1, 1, 0.18), 4)
@@ -1196,10 +1667,14 @@ func _input(event: InputEvent) -> void:
 	elif event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		_look(event.relative * LOOK_SENS)
 	elif event is InputEventKey and event.pressed and event.physical_keycode == KEY_ESCAPE:
+		if _talking:
+			_set_talk(false)
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 
 func _mouse_button(event: InputEventMouseButton) -> void:
+	if _talking:
+		return
 	if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		if event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -1208,7 +1683,9 @@ func _mouse_button(event: InputEventMouseButton) -> void:
 		return
 	if event.pressed:
 		var aim = _aim_at(_aim_point())
-		if aim != null and aim.dist < REACH:
+		if _dale_aimed() and (aim == null or _dale_hit(_aim_point()) < aim.dist):
+			_set_talk(true)
+		elif aim != null and aim.dist < REACH:
 			_press_pc = aim.pc
 			_press_pc.send_button(aim.uv, true)
 	elif _press_pc:
@@ -1221,6 +1698,9 @@ func _pad_input(event: InputEvent) -> void:
 	if event is InputEventJoypadMotion and absf(event.axis_value) < PAD_DEAD and not _pad:
 		return  # stick drift doesn't count as picking up the pad
 	_pad = true
+	if _talking:
+		_pad_talk(event)
+		return
 	if event is InputEventJoypadButton and event.button_index == JOY_BUTTON_BACK:
 		if event.pressed and _seat:
 			_set_seat(null)
@@ -1250,6 +1730,9 @@ func _pad_input(event: InputEvent) -> void:
 ## A while walking: sit at the computer you're facing, or the nearest one
 ## close by.
 func _pad_sit() -> void:
+	if _dale_aimed() or (_dale_nearer_than_computers() and _player.global_position.distance_to(_dale.global_position) < PAD_SIT_RANGE):
+		_set_talk(true)
+		return
 	var aim = _aim_at(_aim_point())
 	var pc: Computer = aim.pc if aim != null and aim.dist < PAD_SIT_RANGE else null
 	if pc == null:
@@ -1266,6 +1749,38 @@ func _pad_sit() -> void:
 		_pad_told = true
 		_toast.text = "PLAYING WITH THE CONTROLLER\nBACK / SELECT: STAND UP"
 		_toast_time = 3.5
+
+
+## Chatting with a controller: up/down picks a reply, A says it (or NEXT),
+## B or Back says bye.
+func _pad_talk(event: InputEvent) -> void:
+	if not (event is InputEventJoypadButton and event.pressed):
+		return
+	var buttons := _talk_buttons.get_children().filter(func(b): return not b.is_queued_for_deletion())
+	match event.button_index:
+		JOY_BUTTON_B, JOY_BUTTON_BACK:
+			_set_talk(false)
+		JOY_BUTTON_DPAD_UP, JOY_BUTTON_DPAD_DOWN:
+			if buttons.size() > 1:
+				_talk_pick = wrapi(_talk_pick + (1 if event.button_index == JOY_BUTTON_DPAD_DOWN else -1), 0, buttons.size())
+				_show_pick()
+		JOY_BUTTON_A:
+			if _glide < 1.0:
+				return
+			if _waiting_for_choice() and _talk_pick < buttons.size():
+				buttons[_talk_pick].pressed.emit()
+			else:
+				_advance()
+
+
+## Light up the reply the controller is on.
+func _show_pick() -> void:
+	var i := 0
+	for b in _talk_buttons.get_children():
+		if b.is_queued_for_deletion():
+			continue
+		b.modulate = Color(1.0, 0.85, 0.3) if _pad and i == _talk_pick else Color.WHITE
+		i += 1
 
 
 ## Let go of every stick, D-pad and arrow key in a game, so nothing stays
@@ -1294,6 +1809,9 @@ func _stick_rest() -> Vector2:
 
 
 func _touch_input(event: InputEvent) -> void:
+	# Chatting with Dale: the talk box and BYE take the taps.
+	if _talking:
+		return
 	var i: int = event.index
 	if event is InputEventScreenTouch:
 		if event.pressed:
@@ -1307,6 +1825,9 @@ func _touch_input(event: InputEvent) -> void:
 					_touches[i] = "screen"
 					_press_pc = _seat
 					_seat.send_button(uv, true)
+			elif _dale_hit(event.position) >= 0.0 and _glide >= 1.0 \
+					and (aim == null or _dale_hit(event.position) < aim.dist):
+				_set_talk(true)
 			elif aim != null and _glide >= 1.0:
 				# Tap a computer from anywhere to sit down at it.
 				_set_seat(aim.pc)

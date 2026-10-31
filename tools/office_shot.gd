@@ -5,7 +5,8 @@ extends SceneTree
 ## Shots: 0 = by the door, 1 = after tapping the main monitor (seated) and
 ## tapping "Start your set", 2 = standing, facing the Pong desk, 3 = seated at
 ## Pong after tapping PLAY, 4 = after a right-edge thumb drag,
-## 5 = facing the Proof Hand desk, 6 = seated there after tapping two cards. Run tools/fetch_games.sh --autoloads first so
+## 5 = facing the Proof Hand desk, 6 = seated there after tapping two cards,
+## 7 = facing Dale, 8 = chatting with him, 9 = his first question. Run tools/fetch_games.sh --autoloads first so
 ## the other games are there (then `git checkout project.godot`).
 
 var office
@@ -70,6 +71,22 @@ func _init() -> void:
 		_tap(_screen_point(proof, Vector2(0.38, 0.64)))
 		await _frames(30)
 		_shot(6)
+	# Dale: walk over facing him (7), tap him to chat (8), then skip to his
+	# first question (9).
+	office._set_seat(null)
+	await _frames(40)
+	office._player.position = Vector3(-1.2, 0, -0.6)
+	office._yaw = PI / 2
+	office._pitch = -0.1
+	await _frames(60)
+	_shot(7)
+	_tap(office._camera.unproject_position(office._dale.global_transform * Vector3(0, 1.05, 0.1)) / Vector2(office._world_vp.size) * office._hud.size)
+	await _frames(150)
+	_shot(8)
+	for k in 6:
+		office._advance()
+	await _frames(30)
+	_shot(9)
 	quit()
 
 

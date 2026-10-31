@@ -88,7 +88,13 @@ right there, it's right on iPhone, Android and Steam. To keep that true:
   Comp Tokens into the machine for cleared Pong stages and comedy sets. All of
   it lives in one save, `user://office_relics.cfg`. A desk by the door runs **Cube Desk**
   (`humble-house-studios/rubix`, `res://games/cube/`): watch the 2.51 world record,
-  then unscramble levels; its SubViewport keeps 3D on (the cube has its own world). Published at
+  then unscramble levels; its SubViewport keeps 3D on (the cube has its own world).
+  **Dale** (desk under the window) is a coworker you
+  chat with between games: tap him, read his lines (spoken by the device's own
+  text-to-speech), pick replies. His story is a mystery about following your
+  dreams (who writes the sticky notes?), chapters in `data/dale_lines.gd`,
+  unlocked by the shared stats via `engine/dale_story.gd` (memory in
+  `user://dale.cfg`). Next: real voice chat through a free cloud AI. Published at
   https://humble-house-studios.github.io/killin-in-comedy/office/ (second export
   in `deploy.yml`). Screenshots: `tools/office_shot.gd`. `main.gd` must not touch
   the window when it isn't the root (`_owns_window()`).
