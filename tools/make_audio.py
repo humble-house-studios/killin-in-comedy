@@ -323,10 +323,68 @@ def make_music():
     os.remove(wav)
 
 
+# ---------------------------------------------------------------- office
+
+def make_office():
+    """The 3D office: an air-conditioner room tone (seamless OGG loop) and
+    soft footsteps on carpet. Own random generator, so adding these leaves
+    every sound above byte-for-byte the same."""
+    rng = np.random.default_rng(31)
+    loop = 12.0  # every rate below fits a whole number of cycles in 12 s
+    n = int(SR * loop)
+    t = np.arange(n) / SR
+    f = np.fft.rfftfreq(n, 1 / SR)
+
+    def colored(gain_fn):
+        # Noise shaped in one FFT over the whole loop is circular: the end
+        # flows straight back into the start with no click.
+        spec = np.fft.rfft(rng.standard_normal(n)) * gain_fn(np.maximum(f, 1.0))
+        out = np.fft.irfft(spec, n)
+        return out / np.max(np.abs(out))
+
+    # Air rushing through the duct: brown-ish rumble rolling off above ~500 Hz.
+    rumble = colored(lambda x: 1 / np.sqrt(x) / (1 + (x / 500) ** 2) * (x > 25))
+    # Breathy hiss out of the vent grille.
+    hiss = colored(lambda x: np.exp(-0.5 * ((x - 3200) / 1400) ** 2) + 0.4 * np.exp(-0.5 * ((x - 1200) / 500) ** 2))
+    # Fan blades chopping the air (8 Hz) and a slow breathing drift (every 6 s / 12 s).
+    chop = 1 + 0.06 * np.sin(2 * np.pi * 8 * t) + 0.03 * np.sin(2 * np.pi * 16 * t + 1.0)
+    drift = 1 + 0.07 * np.sin(2 * np.pi * t / 6) + 0.05 * np.sin(2 * np.pi * t / 12 + 2.0)
+    # Compressor motor hum: 60 Hz mains and its harmonics, quiet and wavering.
+    wobble = 1 + 0.15 * np.sin(2 * np.pi * 0.25 * t)
+    hum = (np.sin(2 * np.pi * 60 * t) * 0.5 + np.sin(2 * np.pi * 120 * t) * 0.35
+           + np.sin(2 * np.pi * 180 * t) * 0.12 + np.sin(2 * np.pi * 240 * t) * 0.06) * wobble
+    ac = rumble * 0.75 * chop * drift + hiss * 0.18 * drift + hum * 0.09
+    wav = write_wav("office_ac_tmp", ac, 0.7)
+    ogg = os.path.join(OUT, "office_ac.ogg")
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", wav, "-c:a", "libvorbis", "-q:a", "2", ogg], check=True)
+    os.remove(wav)
+
+    # Footsteps on office carpet: a padded heel thud, a fabric scuff, then the
+    # lighter roll onto the toe. Four takes so walking never sounds looped.
+    def burst(dur):
+        return rng.uniform(-1, 1, int(SR * dur))
+
+    for k in range(4):
+        dur = 0.32
+        step = np.zeros(int(SR * dur))
+        f0 = rng.uniform(70, 95)
+        th = t_axis(0.12)
+        heel = np.sin(2 * np.pi * (f0 * th + 20 * np.exp(-th / 0.02))) * decay(0.12, 0.028, 0.004)
+        heel += shape(burst(0.12), [(160, 90, 1.0)], 0.0) * decay(0.12, 0.02, 0.003) * 0.6
+        place(step, heel, 0.0, 1.0)
+        scuff = shape(burst(0.09), [(rng.uniform(1600, 2400), 900, 1.0), (500, 250, 0.4)], 0.0)
+        scuff *= np.sin(np.linspace(0, np.pi, len(scuff))) ** 2
+        place(step, scuff, rng.uniform(0.005, 0.02), rng.uniform(0.18, 0.28))
+        toe = shape(burst(0.08), [(240, 120, 1.0), (1400, 700, 0.3)], 0.0) * decay(0.08, 0.018, 0.004)
+        place(step, toe, rng.uniform(0.065, 0.095), rng.uniform(0.35, 0.5))
+        write_wav("step_%d" % (k + 1), reverb(step, 0.08, 0.25, 0.05), 0.6)
+
+
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
     make_sfx()
     make_music()
+    make_office()
     for f in sorted(os.listdir(OUT)):
         if not f.endswith(".import"):
             print(f"{f:20s} {os.path.getsize(os.path.join(OUT, f)) // 1024} KB")

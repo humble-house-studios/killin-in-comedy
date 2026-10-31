@@ -103,6 +103,12 @@ const CUBE_DESK := Vector3(-1.6, 0.0, 3.62)
 const AUDIO_NEAR := 1.6
 const AUDIO_FAR := 5.0
 const PIXEL_SHRINK := 3
+## Room sound: the air conditioner hums from a ceiling vent (a little louder
+## under it, ducked while you sit and play), and your feet pad on the carpet.
+const AC_VENT := Vector3(1.4, 2.6, 0.6)
+const AC_DB := -17.0
+const AC_SEATED_DUCK := -5.0
+const STEP_DB := -10.0
 const LAYER_WORLD := 1
 const LAYER_SCREEN := 2
 const STICK_RADIUS := 90.0
@@ -309,6 +315,14 @@ var _talk_pick := 0
 var _voice_chat: Node
 var _chatting := false
 var _hold_button: Button
+## Room sound (see AC_VENT): the AC loop, two footstep voices taking turns,
+## and which step of the walk cycle last played.
+var _ac: AudioStreamPlayer
+var _feet: Array[AudioStreamPlayer] = []
+var _step_sounds: Array[AudioStream] = []
+var _step_i := 0
+var _step_phase := 0
+var _walking := false
 
 
 func _ready() -> void:
@@ -321,6 +335,7 @@ func _ready() -> void:
 	_build_views()
 	_build_room()
 	_build_player()
+	_build_room_sound()
 	_build_hud()
 	_build_talk_box()
 	_dale_story = DaleStory.new()
@@ -692,6 +707,7 @@ func _build_room() -> void:
 	_build_loot_cabinet()
 	_build_cube_desk()
 	_build_props()
+	_build_vent()
 	_build_dale()
 	_set_look(_look_i, false)
 
@@ -980,6 +996,76 @@ func _build_loot_cabinet() -> void:
 	else:
 		# Run tools/fetch_games.sh to put the Loot Machine on this screen.
 		_label("OUT OF\nORDER", Vector3(0, 0, 0.002), 12, Color(1.0, 0.4, 0.3), Vector3.ZERO, 0.0, screen)
+
+
+## The AC vent in the ceiling: a grey frame with dark slats, where the hum comes from.
+func _build_vent() -> void:
+	var grey := _mat(Color(0.8, 0.8, 0.77))
+	var slot := _mat(Color(0.22, 0.22, 0.23))
+	_box(Vector3(0.62, 0.03, 0.62), Vector3(AC_VENT.x, 2.585, AC_VENT.z), grey)
+	for i in 5:
+		_box(Vector3(0.5, 0.012, 0.05), Vector3(AC_VENT.x, 2.568, AC_VENT.z - 0.2 + i * 0.1), slot)
+
+
+## AC room tone and footstep players (sounds made by tools/make_audio.py).
+## They play on Master, outside every game's bus, so no desk fades them.
+func _build_room_sound() -> void:
+	var hum := load("res://audio/office_ac.ogg") as AudioStreamOggVorbis
+	hum.loop = true
+	_ac = AudioStreamPlayer.new()
+	_ac.stream = hum
+	_ac.volume_db = AC_DB
+	add_child(_ac)
+	for k in 4:
+		_step_sounds.append(load("res://audio/step_%d.wav" % (k + 1)))
+	for k in 2:
+		var feet := AudioStreamPlayer.new()
+		feet.volume_db = STEP_DB
+		add_child(feet)
+		_feet.append(feet)
+	# Browsers hold sound until the first tap or key; elsewhere start now.
+	if not OS.has_feature("web"):
+		_ac.play()
+
+
+func _start_room_sound() -> void:
+	if _ac and not _ac.playing:
+		_ac.play()
+
+
+## Louder under the vent, quieter across the room, ducked while seated.
+func _tick_room_sound(delta: float) -> void:
+	var dist := _camera.global_position.distance_to(AC_VENT)
+	var want := AC_DB + lerpf(3.0, -3.0, clampf((dist - 1.0) / 4.5, 0.0, 1.0))
+	if _seat or _talking:
+		want += AC_SEATED_DUCK
+	_ac.volume_db = move_toward(_ac.volume_db, want, delta * 12.0)
+
+
+## A footstep each time the head bob dips (so steps match the camera), harder
+## when running, plus a soft last step when you stop.
+func _tick_steps(flat: float) -> void:
+	var moving := flat > 0.4 and _player.is_on_floor()
+	var phase := int(floor((_bob - PI * 0.75) / PI))
+	if moving and phase != _step_phase:
+		var run := clampf((flat - SPEED) / (RUN_SPEED - SPEED), 0.0, 1.0)
+		_play_step(lerpf(-2.0, 2.5, run) + lerpf(-4.0, 0.0, minf(1.0, flat / SPEED)))
+	elif _walking and not moving:
+		_play_step(-6.0)
+	_step_phase = phase
+	_walking = moving
+
+
+func _play_step(db: float) -> void:
+	var feet := _feet[_step_i % _feet.size()]
+	var pick := randi() % _step_sounds.size()
+	if _step_sounds[pick] == feet.stream:
+		pick = (pick + 1) % _step_sounds.size()
+	feet.stream = _step_sounds[pick]
+	feet.volume_db = STEP_DB + db
+	feet.pitch_scale = randf_range(0.9, 1.1)
+	feet.play()
+	_step_i += 1
 
 
 func _build_props() -> void:
@@ -1806,6 +1892,7 @@ func _physics_process(delta: float) -> void:
 	_bob += delta * flat * 3.2
 	_head.position.y = EYE + sin(_bob * 2.0) * 0.022 * minf(1.0, flat)
 	_head.position.x = cos(_bob) * 0.012 * minf(1.0, flat)
+	_tick_steps(flat)
 
 
 func _process(delta: float) -> void:
@@ -1867,6 +1954,7 @@ func _process(delta: float) -> void:
 
 	_tick_link(delta)
 	_tick_dale(delta)
+	_tick_room_sound(delta)
 	_sit_button.visible = _touch and not _pad and _seat == null and not _talking
 	_sit_button.text = "TALK" if _dale_nearer_than_computers() else "SIT DOWN"
 	_stand_button.visible = not _pad and ((_touch and _seat != null) or _talking)
@@ -1989,6 +2077,7 @@ func _draw_pad_hud(size: Vector2) -> void:
 # ---------------------------------------------------------------- input
 
 func _input(event: InputEvent) -> void:
+	_start_room_sound()
 	if event is InputEventJoypadButton or event is InputEventJoypadMotion:
 		_pad_input(event)
 		return
