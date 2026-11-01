@@ -202,5 +202,53 @@ const CALLBACKS := [
 		"reply": "Kid's got sense. The comic who bought this place? Big guy. Big laugh. Same sandwich daily."},
 ]
 
+## Look Busy (docs/look-busy.md): everyone's side project and what they do
+## for you once trust unlocks a role (engine/coworkers.gd role()):
+##   lookout (trust 1+): coughs before the boss comes by, and covers an empty
+##     desk once a day.
+##   collaborator (trust 2+): their side project (and themselves) become
+##     pieces for your own game.
+##   snitch: picking the reply they hate while they don't trust you at all
+##     burns them; twice a day they tip the boss off. A gift or a callback
+##     makes up.
+## side: {name, pitch (their line), pieces: [[kind, piece name], ...]}.
+const BUSY := {
+	"gloria": {
+		"side": {"name": "BUG ZOO", "pitch": "My side project: Bug Zoo. You collect famous bugs. Like pets. They escape.",
+			"pieces": [["mechanic", "GLITCH HUNT"], ["character", "GLORIA"]]},
+		"lookout": "*ahem* Heels on the stairs. Look busy.",
+		"cover": "Gloria told the boss you're testing the bathroom.",
+		"snitch": "Gloria logged a bug report about you. Severity: high.",
+	},
+	"kev": {
+		"side": {"name": "VIBE COIN", "pitch": "Bro. Vibe Coin. The game is just vibes. Neon. Palm trees. You're in.",
+			"pieces": [["art", "VAPORWAVE"], ["character", "KEV"]]},
+		"lookout": "*cough cough* BRO. Boss. Incoming.",
+		"cover": "Kev told the boss you're 'in a sync'. Nobody knows what that means.",
+		"snitch": "Kev told his uncle you never work. His uncle told the boss.",
+	},
+	"bernie": {
+		"side": {"name": "HR: THE RPG", "pitch": "I'm writing an RPG. You level up by filing forms. Final boss: compliance.",
+			"pieces": [["genre", "RPG"], ["character", "BERNIE"]]},
+		"lookout": "*cough* Policy reminder: the boss is on the stairs.",
+		"cover": "Bernie filed your empty desk under 'wellness break'.",
+		"snitch": "Bernie opened a file on you. It's thick already.",
+	},
+	"theo": {
+		"side": {"name": "KNIFE FIGHT KITCHEN", "pitch": "Fine. My secret game: Knife Fight Kitchen. Cooking, but competitive. Very.",
+			"pieces": [["genre", "COOKING"], ["character", "THEO"]]},
+		"lookout": "*cough* Rival courtesy: the boss is coming. Now we're even.",
+		"cover": "Theo said you were helping him. He hated saying it.",
+		"snitch": "Theo mentioned your 'gaming' in standup. Loudly.",
+	},
+	"ray": {
+		"side": {"name": "MOP DROP", "pitch": "I make beats on the mop bucket. Night shift. Call it Mop Drop.",
+			"pieces": [["sound", "MOP BEATS"], ["character", "RAY"]]},
+		"lookout": "*cough* Somebody's coming down the hall. Not me.",
+		"cover": "Ray told the boss he's been mopping round your desk all day.",
+		"snitch": "Ray mentioned you to the boss. Didn't mean to. Probably.",
+	},
+}
+
 ## How the stance tags read on the reply buttons.
 const STANCE_TAG := {"yes_and": "YES, AND", "ask": "ASK", "riff": "RIFF", "push": "PUSH"}

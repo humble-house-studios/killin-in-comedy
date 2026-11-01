@@ -25,6 +25,8 @@ var gifted: Array[String] = []
 var met: Array[String] = []
 ## id -> machine rounds played the last time you talked to them.
 var seen_at := {}
+## Look Busy: coworkers you burned (they snitch until you make up).
+var burned: Array[String] = []
 
 var _path: String
 var _rng := RandomNumberGenerator.new()
@@ -45,6 +47,33 @@ static func person(id: String) -> Dictionary:
 
 func tier(id: String) -> int:
 	return clampi(int(trust.get(id, 0)), 0, MAX_TIER)
+
+
+## Look Busy (docs/look-busy.md): what this coworker does for (or to) you.
+## "snitch" (burned), "collaborator" (trust 2+), "lookout" (trust 1+) or "".
+func role(id: String) -> String:
+	if burned.has(id):
+		return "snitch"
+	var t := tier(id)
+	if t >= 2:
+		return "collaborator"
+	if t >= 1:
+		return "lookout"
+	return ""
+
+
+## Everyone with this role (in CoworkerLines.ORDER). Lookouts include
+## collaborators: anyone who trusts you keeps an eye out.
+func with_role(r: String) -> Array[String]:
+	var out: Array[String] = []
+	for id in CoworkerLines.ORDER:
+		var mine := role(id)
+		if mine == r or (r == "lookout" and mine == "collaborator"):
+			out.append(id)
+	return out
+
+
+const ROLE_NAMES := {"lookout": "LOOKOUT", "collaborator": "COLLABORATOR", "snitch": "SNITCH"}
 
 
 ## Is this coworker in the arcade right now? (Ray comes out after dark.)
@@ -77,6 +106,8 @@ func talk(id: String, ctx: Dictionary) -> Dictionary:
 	var t := tier(id)
 	var steps: Array = []
 	var title := "%s  -  %s" % [p.name, p.title]
+	if ctx.get("busy", false) and role(id) != "":
+		title += "  (%s)" % ROLE_NAMES[role(id)]
 	if not met.has(id):
 		met.append(id)
 	seen_at[id] = int(ctx.get("plays", 0))
@@ -110,11 +141,14 @@ func talk(id: String, ctx: Dictionary) -> Dictionary:
 
 ## Say a reply. Returns {lines: [what they say back, then any payout lines],
 ## rewards: ["tokens:5", "item:x", "consume:plush", ...], delta: trust change,
-## secret: the secret text if one was told, perk: perk text if earned}.
+## secret: the secret text if one was told, perk: perk text if earned,
+## role: the Look Busy role it changed to ("" if unchanged; only when
+## ctx.busy)}.
 func choose(id: String, choice: Dictionary, ctx: Dictionary) -> Dictionary:
 	var p := person(id)
-	var out := {"lines": [], "rewards": [], "delta": 0, "secret": "", "perk": ""}
+	var out := {"lines": [], "rewards": [], "delta": 0, "secret": "", "perk": "", "role": ""}
 	var before := tier(id)
+	var role_before := role(id)
 	match choice.get("kind", "stance"):
 		"stance":
 			var stance: String = choice.stance
@@ -125,6 +159,9 @@ func choose(id: String, choice: Dictionary, ctx: Dictionary) -> Dictionary:
 			elif stance == p.hates:
 				out.delta = -1
 				closed[id] = int(ctx.get("plays", 0))
+				# Look Busy: hated while they don't trust you at all burns them.
+				if ctx.get("busy", false) and before == 0 and not burned.has(id):
+					burned.append(id)
 		"gift":
 			out.lines.append(p.gift_reply)
 			out.delta = 1
@@ -138,6 +175,9 @@ func choose(id: String, choice: Dictionary, ctx: Dictionary) -> Dictionary:
 			used_callbacks.append(choice.callback)
 			out.delta = 1
 	trust[id] = clampi(before + out.delta, 0, MAX_TIER)
+	# Any warm reply (loved, a gift, a callback) makes up for burning them.
+	if out.delta > 0:
+		burned.erase(id)
 	# Every tier newly reached pays out.
 	for t in range(before + 1, tier(id) + 1):
 		var reward: Dictionary = p.rewards[t - 1]
@@ -151,6 +191,16 @@ func choose(id: String, choice: Dictionary, ctx: Dictionary) -> Dictionary:
 			out.secret = reward.secret
 		if reward.has("perk"):
 			out.perk = reward.perk
+	if ctx.get("busy", false) and role(id) != role_before:
+		out.role = role(id)
+		var b: Dictionary = CoworkerLines.BUSY.get(id, {})
+		match out.role:
+			"lookout":
+				out.lines.append("I'll keep an eye out for the boss. If you hear me cough, alt-tab.")
+			"collaborator":
+				out.lines.append(b.get("side", {}).get("pitch", ""))
+			"snitch":
+				out.lines.append(b.get("snitch", ""))
 	save()
 	return out
 
@@ -220,6 +270,9 @@ func load_save() -> void:
 		met.append(str(s))
 	var sa = cfg.get_value("coworkers", "seen_at", {})
 	seen_at = sa if sa is Dictionary else {}
+	burned.clear()
+	for s in cfg.get_value("coworkers", "burned", []):
+		burned.append(str(s))
 
 
 func save() -> void:
@@ -231,4 +284,5 @@ func save() -> void:
 	cfg.set_value("coworkers", "gifted", Array(gifted))
 	cfg.set_value("coworkers", "met", Array(met))
 	cfg.set_value("coworkers", "seen_at", seen_at)
+	cfg.set_value("coworkers", "burned", Array(burned))
 	cfg.save(_path)

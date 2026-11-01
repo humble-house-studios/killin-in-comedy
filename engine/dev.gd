@@ -47,6 +47,23 @@ static func max_coworkers(crew: Coworkers, state: LadderState) -> void:
 	crew.save()
 
 
+## Look Busy: give a coworker a role. "lookout" / "collaborator" set their
+## trust to 1 / 2 (no payouts); "snitch" burns them.
+static func set_role(crew: Coworkers, id: String, role: String) -> void:
+	crew.burned.erase(id)
+	match role:
+		"lookout":
+			crew.trust[id] = maxi(crew.tier(id), 1)
+		"collaborator":
+			crew.trust[id] = maxi(crew.tier(id), 2)
+		"snitch":
+			crew.trust[id] = 0
+			crew.burned.append(id)
+	if not crew.met.has(id):
+		crew.met.append(id)
+	crew.save()
+
+
 ## Every machine's big prize won (two of them bring Ray out).
 static func beat_machines(state: LadderState) -> void:
 	for m in MACHINES:

@@ -148,7 +148,10 @@ right there, it's right on iPhone, Android and Steam. To keep that true:
   button) covers that screen with `scenes/office/spreadsheet.gd` (a
   `Computer.cover`). Pop-ups: `scenes/office/busy_notice.gd`. Rules in
   `engine/workday.gd` (`user://look_busy.cfg`), tested in
-  `tests/test_workday.gd`; `tools/busy_walk.gd` (PASS/FAIL) and
+  `tests/test_workday.gd`. Coworker roles from trust (`Coworkers.role()`:
+  lookout, collaborator, snitch if burned; side projects in
+  `CoworkerLines.BUSY`), tested in `tests/test_busy_crew.gd`.
+  `tools/busy_walk.gd` (PASS/FAIL) and
   `tools/busy_shot.gd` (screenshots). Scripts that drive the office turn it
   off first (`office._busy.set_enabled(false)`).
 - **The ladder** (`scenes/office/ladder.gd`): past the office door, built into

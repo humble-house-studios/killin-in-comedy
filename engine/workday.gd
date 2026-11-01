@@ -27,6 +27,13 @@ const DECAY_AWAY := 6.0
 const EMPTY_DESK := 35.0
 ## Anyone this close is seen, whichever way the boss faces.
 const NEAR := 1.2
+## Coworker roles (engine/coworkers.gd role()): a lookout warns this many
+## game minutes before the boss comes by and covers one empty desk a day; a
+## snitch tips the boss off at these times (an extra visit, plus suspicion).
+const LOOKOUT_LEAD := 8.0
+const COVERS_PER_DAY := 1
+const SNITCH_AT := [150.0, 330.0]
+const SNITCH := 15.0
 
 var week := 1
 var floor_i := 1
@@ -41,6 +48,8 @@ var runs := 1
 ## Spreadsheet cells filled (all time) and today.
 var cells := 0
 var cells_today := 0
+## Empty desks a lookout covered today.
+var covers_today := 0
 
 var _path: String
 var _grace := 0.0
@@ -80,8 +89,10 @@ func next_visit(from := -1.0) -> float:
 	return -1.0
 
 
-## Run the clock. Returns events in order: {"type": "visit"} when the boss is
-## due, {"type": "day_end"} at 5 PM (the clock then waits for next_day()).
+## Run the clock. Returns events in order: {"type": "soon"} LOOKOUT_LEAD
+## before a visit (a lookout's cue), {"type": "visit"} when the boss is due,
+## {"type": "snitch"} at SNITCH_AT (a snitch's cue), {"type": "day_end"} at
+## 5 PM (the clock then waits for next_day()).
 func tick(delta: float) -> Array:
 	var out: Array = []
 	_grace = maxf(0.0, _grace - delta)
@@ -90,8 +101,14 @@ func tick(delta: float) -> Array:
 	var before := minutes
 	minutes = minf(DAY_MINUTES, minutes + delta * DAY_MINUTES / DAY_SECONDS)
 	for t in visits(boss()):
+		var cue: float = t - LOOKOUT_LEAD
+		if cue > before and cue <= minutes:
+			out.append({"type": "soon"})
 		if t > before and t <= minutes:
 			out.append({"type": "visit"})
+	for t in SNITCH_AT:
+		if t > before and t <= minutes:
+			out.append({"type": "snitch"})
 	if minutes >= DAY_MINUTES:
 		out.append({"type": "day_end"})
 	return out
@@ -186,7 +203,17 @@ func start_over() -> void:
 	save()
 
 
+## A lookout covers your empty desk (once a day). True if they did.
+func cover() -> bool:
+	if covers_today >= COVERS_PER_DAY:
+		return false
+	covers_today += 1
+	save()
+	return true
+
+
 func _morning() -> void:
+	covers_today = 0
 	minutes = 0.0
 	suspicion = 0.0
 	cells_today = 0
@@ -293,6 +320,7 @@ func load_save() -> void:
 	runs = int(cfg.get_value("run", "runs", 1))
 	cells = int(cfg.get_value("run", "cells", 0))
 	cells_today = int(cfg.get_value("run", "cells_today", 0))
+	covers_today = int(cfg.get_value("run", "covers_today", 0))
 
 
 func save() -> void:
@@ -309,4 +337,5 @@ func save() -> void:
 	cfg.set_value("run", "runs", runs)
 	cfg.set_value("run", "cells", cells)
 	cfg.set_value("run", "cells_today", cells_today)
+	cfg.set_value("run", "covers_today", covers_today)
 	cfg.save(_path)

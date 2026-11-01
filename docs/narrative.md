@@ -84,6 +84,22 @@ secret, their perk. A prize-counter gift is worth a tier; so is a callback
 | Theo, rival | Prize counter | Push / Yes, And | He wants to be a chef | 150 tickets + his yes vote | Beat any machine |
 | Ray, night janitor | Back corner (after 2 machines beaten) | Yes, And / Push | The building was a comedy club | The archive key | Hot coffee |
 
+### Look Busy roles (docs/look-busy.md)
+With LOOK BUSY on, trust also unlocks a role (`Coworkers.role()`, lines in
+`CoworkerLines.BUSY`): trust 1 = **lookout** (coughs before the boss comes,
+covers one empty desk a day), trust 2 = **collaborator** (their side project
+and their character become pieces for your game), and picking the reply they
+hate while they don't trust you at all **burns** them into a **snitch** (tips
+the boss off twice a day). Any warm reply, gift or callback makes up.
+
+| Who | Side project | Pieces |
+|---|---|---|
+| Gloria | Bug Zoo | GLITCH HUNT (mechanic), GLORIA |
+| Kev | Vibe Coin | VAPORWAVE (art), KEV |
+| Bernie | HR: The RPG | RPG (genre), BERNIE |
+| Theo | Knife Fight Kitchen | COOKING (genre), THEO |
+| Ray | Mop Drop | MOP BEATS (sound), RAY |
+
 ### The mystery
 Dale is the founder. He did stand-up for one week as "Big Deal", bought the
 comedy club (The Brick Wall), turned it into the studio in 2011, built a

@@ -869,6 +869,8 @@ func choose(id: String, choice: Dictionary) -> Array:
 		news.append(out.perk)
 	if out.delta < 0:
 		news.append("%s CLOSED OFF. PLAY A MACHINE, THEN TRY AGAIN." % Coworkers.person(id).name)
+	if out.role != "":
+		news.append(office._busy.role_news(id, out.role))
 	if not news.is_empty():
 		office._toast.text = "\n".join(news)
 		office._toast_time = 4.0
@@ -891,7 +893,8 @@ func end_talk(id: String, finished := true) -> void:
 
 
 func _ctx() -> Dictionary:
-	return {"plays": state.plays, "items": Array(state.items), "beaten": state.beaten.size()}
+	return {"plays": state.plays, "items": Array(state.items), "beaten": state.beaten.size(),
+		"busy": office._busy != null and office._busy.enabled}
 
 
 const MEMO := [

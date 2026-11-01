@@ -16,6 +16,10 @@ extends Node
 ##   - ALT-TAB (Tab, Y on a pad, or the button while seated) covers the game
 ##     you're at with a fake spreadsheet (scenes/office/spreadsheet.gd); the
 ##     game keeps running behind it. Working while watched cools suspicion.
+##   - Coworkers (engine/coworkers.gd role(), data/coworker_lines.gd BUSY):
+##     lookouts cough before the boss comes and cover one empty desk a day;
+##     snitches tip the boss off (an extra visit); collaborators bring their
+##     side project to your game.
 ##   - 5 PM: clock out. Friday 5 PM ends the week.
 ## Rules: engine/workday.gd. The pop-ups: scenes/office/busy_notice.gd.
 
@@ -143,6 +147,10 @@ func tick(delta: float) -> void:
 		match ev.type:
 			"visit":
 				_start_visit()
+			"soon":
+				_lookout_warns()
+			"snitch":
+				_snitch()
 			"day_end":
 				_day_end()
 				return
@@ -287,6 +295,13 @@ func _tick_call(delta: float) -> void:
 
 func _empty_desk() -> void:
 	var b := wd.boss()
+	# A lookout covers for you, once a day.
+	var lookouts := crew().with_role("lookout")
+	if not lookouts.is_empty() and wd.cover():
+		var who: String = lookouts[wd.day % lookouts.size()]
+		office._toast.text = "EMPTY DESK... COVERED.\n" + str(CoworkerLines.BUSY[who].cover).to_upper()
+		office._toast_time = 4.5
+		return
 	var lines: Array = b.desk
 	office._toast.text = "%s: \"%s\"\n+SUSPICION (EMPTY DESK)" % [b.name, lines[randi() % lines.size()]]
 	office._toast_time = 4.0
@@ -294,6 +309,67 @@ func _empty_desk() -> void:
 	var level := wd.add(Workday.EMPTY_DESK)
 	if level != "":
 		_caught(level)
+
+
+# ---------------------------------------------------------------- coworkers
+
+func crew() -> Coworkers:
+	return office._ladder.crew
+
+
+## A lookout coughs a little before the boss comes by.
+func _lookout_warns() -> void:
+	var lookouts := crew().with_role("lookout")
+	if lookouts.is_empty():
+		return
+	var who: String = lookouts[(wd.day + int(wd.minutes / 60.0)) % lookouts.size()]
+	_play(COUGH, -1.0)
+	var b := wd.boss()
+	var what := "%s IS ON THE WAY" % b.name if b.kind == "walk" else "%s IS ABOUT TO CALL" % b.name
+	office._toast.text = "%s: \"%s\"\n(%s)" % [Coworkers.person(who).name, CoworkerLines.BUSY[who].lookout, what]
+	office._toast_time = 4.5
+
+
+## A snitch tips the boss off: suspicion, and the boss comes to look.
+func _snitch() -> void:
+	var snitches := crew().with_role("snitch")
+	if snitches.is_empty():
+		return
+	var who: String = snitches[wd.day % snitches.size()]
+	office._toast.text = "SNITCH! " + str(CoworkerLines.BUSY[who].snitch).to_upper()
+	office._toast_time = 4.5
+	_flash = 1.0
+	var level := wd.add(Workday.SNITCH)
+	if level != "":
+		_caught(level)
+		return
+	if _visit_t < 0.0 and _call_t < 0.0:
+		_start_visit()
+
+
+## The toast when a talk changes someone's role.
+func role_news(id: String, r: String) -> String:
+	var n: String = Coworkers.person(id).name
+	match r:
+		"lookout":
+			return "%s IS YOUR LOOKOUT: A COUGH = THE BOSS IS COMING" % n
+		"collaborator":
+			return "%s WILL COLLABORATE: %s JOINS YOUR GAME" % [n, CoworkerLines.BUSY[id].side.name]
+		"snitch":
+			return "YOU BURNED %s. NOW THEY SNITCH. (A GIFT OR A CALLBACK MAKES UP)" % n
+	return ""
+
+
+## "Lookouts: KEV, GLORIA. Snitches: BERNIE." for the morning card.
+func crew_text() -> String:
+	var parts: Array[String] = []
+	for r in ["lookout", "snitch"]:
+		var names: Array[String] = []
+		for id in crew().with_role(r):
+			names.append(Coworkers.person(id).name)
+		if not names.is_empty():
+			parts.append("%s: %s." % ["Lookouts" if r == "lookout" else "Snitches", ", ".join(names)])
+	return " ".join(parts) if not parts.is_empty() else "No lookouts yet. Make friends in the break room (past the door)."
 
 
 func _swing_door(open: bool) -> void:
@@ -404,8 +480,8 @@ func _morning() -> void:
 	_morning_shown = true
 	var b := wd.boss()
 	var day: String = BusyLines.DAYS[wd.day]
-	var body := "Floor %d, week %d. %s\n\nBoss: %s\n%s\n\nPlay the desk games, but if the boss sees you playing, suspicion climbs. Full meter = a strike. Three strikes = fired. ALT-TAB (Tab / Y / the button) to a spreadsheet." % [
-		wd.floor_i, wd.week, BusyLines.MORNING[wd.day], b.hello, b.habit]
+	var body := "Floor %d, week %d. %s\n\nBoss: %s\n%s\n\nPlay the desk games, but if the boss sees you playing, suspicion climbs. Full meter = a strike. Three strikes = fired. ALT-TAB (Tab / Y / the button) to a spreadsheet.\n\nCrew: %s" % [
+		wd.floor_i, wd.week, BusyLines.MORNING[wd.day], b.hello, b.habit, crew_text()]
 	notice.show_notice("MONDAY.EXE" if wd.day == 0 else day + ".EXE", "%s, 9:00 AM" % day, body, [["CLOCK IN", func(): pass]], Color(0.06, 0.14, 0.6))
 
 

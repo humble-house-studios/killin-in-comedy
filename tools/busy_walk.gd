@@ -81,6 +81,23 @@ func _init() -> void:
 			press_first()
 	check(busy._visit_t < 0.0 and not busy._boss_node.visible, "the boss leaves")
 
+	# Coworkers: a lookout coughs and covers an empty desk; a snitch tips off the boss.
+	var crew: Coworkers = office._ladder.crew
+	Dev.set_role(crew, "kev", "lookout")
+	busy._lookout_warns()
+	check(office._toast.text.begins_with("KEV"), "the lookout coughs (%s)" % office._toast.text.replace("\n", " / "))
+	busy.wd.suspicion = 0.0
+	busy._empty_desk()
+	check(busy.wd.suspicion == 0.0 and office._toast.text.contains("COVERED"), "the lookout covers an empty desk")
+	Dev.set_role(crew, "bernie", "snitch")
+	busy._snitch()
+	check(busy.wd.suspicion >= Workday.SNITCH - 0.1 and busy._visit_t >= 0.0, "a snitch brings the boss")
+	busy._end_visit()
+	Dev.set_role(crew, "kev", "")
+	Dev.set_role(crew, "bernie", "")
+	crew.trust.erase("kev")
+	crew.save()
+
 	# Empty desk: out of the office when the boss checks.
 	busy.wd.suspicion = 0.0
 	busy.wd.strikes = 1

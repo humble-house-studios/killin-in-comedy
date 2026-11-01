@@ -75,6 +75,11 @@ func setup(o: Node) -> void:
 		["SKIP TO\nFRIDAY 4:50", _skip_week],
 		["+1 STRIKE", _strike],
 		["CLEAR STRIKES\n+ SUSPICION", _clear_strikes],
+		["KEV IS A\nLOOKOUT", _role.bind("kev", "lookout")],
+		["GLORIA\nCOLLABORATES", _role.bind("gloria", "collaborator")],
+		["BURN BERNIE\n(SNITCH)", _role.bind("bernie", "snitch")],
+		["LOOKOUT\nCOUGHS NOW", _cough],
+		["SNITCH\nTELLS NOW", _snitch],
 	])
 	_section(list, "COMEDY (YOUR DESK)", [
 		["WIN THIS SET", _win_set],
@@ -292,6 +297,30 @@ func _strike() -> void:
 	if _busy_on():
 		close()
 		office._busy.dev_strike()
+
+
+func _role(id: String, role: String) -> void:
+	Dev.set_role(office._ladder.crew, id, role)
+	office._ladder.dev_refresh()
+	_say("%s IS NOW A %s." % [Coworkers.person(id).name, role.to_upper()])
+
+
+func _cough() -> void:
+	if _busy_on():
+		if office._ladder.crew.with_role("lookout").is_empty():
+			_say("NO LOOKOUTS YET. MAKE KEV ONE FIRST.")
+			return
+		close()
+		office._busy._lookout_warns()
+
+
+func _snitch() -> void:
+	if _busy_on():
+		if office._ladder.crew.with_role("snitch").is_empty():
+			_say("NO SNITCHES. BURN BERNIE FIRST.")
+			return
+		close()
+		office._busy._snitch()
 
 
 func _clear_strikes() -> void:
