@@ -37,7 +37,8 @@ func _ready() -> void:
 	add_child(_world)
 	var walls := StaticBody2D.new()
 	_world.add_child(walls)
-	for s in [[Vector2(TABLE.position.x, 150), Vector2(TABLE.position.x, EDGE_Y)], [Vector2(TABLE.end.x, 150), Vector2(TABLE.end.x, EDGE_Y)]]:
+	# Side walls, and a back wall behind the shelf so nothing squirts out the top.
+	for s in [[Vector2(TABLE.position.x, 150), Vector2(TABLE.position.x, EDGE_Y)], [Vector2(TABLE.end.x, 150), Vector2(TABLE.end.x, EDGE_Y)], [Vector2(TABLE.position.x, 150), Vector2(TABLE.end.x, 150)]]:
 		var shape := CollisionShape2D.new()
 		var seg := SegmentShape2D.new()
 		seg.a = s[0]
@@ -125,9 +126,15 @@ func _on_drop() -> void:
 		_hand += ArcadeRules.PUSHER_COINS_PER_TOKEN
 	_hand -= 1
 	# Lands in the strip the shelf sweeps, so its next stroke shoves it in.
-	_spawn("coin", Vector2(_chute_x, SHELF_BACK + 40))
+	_spawn("coin", Vector2(_chute_x, _drop_y()))
 	sfx("click", -4.0, _rng.randf_range(0.9, 1.1))
 	_update_info()
+
+
+## Just in front of the shelf wherever it is now, so a new coin never
+## spawns inside it (the next stroke shoves it into the pile).
+func _drop_y() -> float:
+	return _shelf.position.y + 90.0 + COIN_R + 4.0
 
 
 func _physics_process(delta: float) -> void:
@@ -159,13 +166,13 @@ func _process(delta: float) -> void:
 				sfx("jackpot" if kind == "jackpot" else "ding")
 				banner("JACKPOT!\n+%d TICKETS" % t if kind == "jackpot" else "BUNDLE!\n+%d TICKETS" % t, 2.4)
 				# Bury a fresh one at the back so there's always something to chase.
-				_spawn(kind, Vector2(_rng.randf_range(200, 520), SHELF_BACK + 40))
-		elif b.position.x < 0 or b.position.x > W or b.position.y < 0:
+				_spawn(kind, Vector2(_rng.randf_range(200, 520), _drop_y() + 20))
+		elif b.position.x < TABLE.position.x - 10 or b.position.x > TABLE.end.x + 10 or b.position.y < 140:
 			_bodies.erase(b)
 			b.queue_free()
 	# Keep the table stocked: a few coins rain in at the back if it runs thin.
 	if _bodies.size() < KEEP:
-		_spawn("coin", Vector2(_rng.randf_range(120, 600), SHELF_BACK + 40))
+		_spawn("coin", Vector2(_rng.randf_range(120, 600), _drop_y()))
 	queue_redraw()
 
 

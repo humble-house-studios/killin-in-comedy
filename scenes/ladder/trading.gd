@@ -83,6 +83,11 @@ func _ready() -> void:
 	_refresh()
 
 
+func set_active(on: bool) -> void:
+	super.set_active(on)
+	_refresh()
+
+
 func _open() -> void:
 	var start: int = hub.state.market_start() if hub else LadderState.MARKET_BASE_CASH
 	market = Market.new(float(start), -1, hub != null and hub.state.has("insider_tip"))
@@ -165,6 +170,8 @@ func _refresh() -> void:
 		b.add_theme_stylebox_override("normal", box(Color(0.1, 0.32, 0.14) if sel else Color(0.04, 0.14, 0.07), Color(0.35, 1.0, 0.45, 1.0 if sel else 0.4), 4, 6))
 	if m:
 		_status.text = "DAY %d/%d  %02ds   CASH $%d" % [m.day, Market.DAYS, int(Market.DAY_SECONDS - m.clock), int(m.cash)]
+		if not active and not m.over:
+			_status.text = "PAUSED. SIT DOWN TO TRADE."
 		_goal.text = "WORTH $%d / GOAL $%d" % [int(m.net_worth()), int(m.target)]
 		_ticker.text = "%s     %s  ...  " % [m.headline, Market.stock(_sel).name]
 	else:

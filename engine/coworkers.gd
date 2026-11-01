@@ -21,6 +21,10 @@ var closed := {}
 var secrets: Array[String] = []
 var used_callbacks: Array[String] = []
 var gifted: Array[String] = []
+## Coworkers you've talked to at least once.
+var met: Array[String] = []
+## id -> machine rounds played the last time you talked to them.
+var seen_at := {}
 
 var _path: String
 var _rng := RandomNumberGenerator.new()
@@ -52,12 +56,16 @@ func is_closed(id: String, plays: int) -> bool:
 	return closed.has(id) and plays <= int(closed[id])
 
 
-## Is there something new to say to them (a tier to earn, a gift or a callback)?
+## Is there something new to say to them? Never met, a gift to give, a
+## callback to bring up, or more to learn since you last played a machine.
 ## Drives the "!" over their head.
 func has_news(id: String, ctx: Dictionary) -> bool:
 	if is_closed(id, int(ctx.get("plays", 0))):
 		return false
-	return tier(id) < MAX_TIER or not _callbacks_for(id).is_empty()
+	if not met.has(id) or not _gift_choice(id, ctx).is_empty() or not _callbacks_for(id).is_empty():
+		return true
+	# Still more to learn, and you've played since you last talked.
+	return tier(id) < MAX_TIER and int(ctx.get("plays", 0)) > int(seen_at.get(id, -1))
 
 
 ## The next conversation with a coworker, in the talk box's shape:
@@ -69,6 +77,10 @@ func talk(id: String, ctx: Dictionary) -> Dictionary:
 	var t := tier(id)
 	var steps: Array = []
 	var title := "%s  -  %s" % [p.name, p.title]
+	if not met.has(id):
+		met.append(id)
+	seen_at[id] = int(ctx.get("plays", 0))
+	save()
 	if is_closed(id, int(ctx.get("plays", 0))):
 		steps.append({"line": p.closed})
 		return {"id": id, "title": title, "steps": steps}
@@ -203,6 +215,11 @@ func load_save() -> void:
 	gifted.clear()
 	for s in cfg.get_value("coworkers", "gifted", []):
 		gifted.append(str(s))
+	met.clear()
+	for s in cfg.get_value("coworkers", "met", []):
+		met.append(str(s))
+	var sa = cfg.get_value("coworkers", "seen_at", {})
+	seen_at = sa if sa is Dictionary else {}
 
 
 func save() -> void:
@@ -212,4 +229,6 @@ func save() -> void:
 	cfg.set_value("coworkers", "secrets", Array(secrets))
 	cfg.set_value("coworkers", "callbacks", Array(used_callbacks))
 	cfg.set_value("coworkers", "gifted", Array(gifted))
+	cfg.set_value("coworkers", "met", Array(met))
+	cfg.set_value("coworkers", "seen_at", seen_at)
 	cfg.save(_path)

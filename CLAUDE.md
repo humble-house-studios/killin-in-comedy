@@ -128,7 +128,9 @@ right there, it's right on iPhone, Android and Steam. To keep that true:
   (`user://coworkers.cfg`), `arcade_rules.gd`, `market.gd`, `pitch.gd`,
   `final_set.gd`, tested in `tests/test_ladder.gd`. Rooms get their own lights
   through `ps1.gdshader`'s `room_*` uniforms. Rooms out of reach hide and their
-  machines pause. Screenshots: `tools/ladder_shot.gd` (wipes the ladder saves).
+  machines pause. Screenshots: `tools/ladder_shot.gd`; a scripted walkthrough of
+  every door, screen and coworker: `godot --headless -s res://tools/ladder_walk.gd`
+  (prints PASS/FAIL; both wipe the ladder saves).
   Design: `docs/narrative.md` (The Ladder).
 - The club look is drawn in code: `scenes/club.gdshader`, `scenes/stage.gdshader`
   and `scenes/stage_view.gd` (mic and crowd). Jokes live in `data/jokes.gd`.

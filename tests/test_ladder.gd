@@ -211,6 +211,16 @@ func test_callbacks_need_the_other_secret() -> void:
 	assert_true(_pick(c.talk("kev", _ctx()), "callback").is_empty(), "used up")
 
 
+func test_alert_shows_when_theres_something_new() -> void:
+	var c := Coworkers.new(CREW, 3)
+	assert_true(c.has_news("gloria", _ctx(0)), "never met")
+	c.talk("gloria", _ctx(0))
+	assert_false(c.has_news("gloria", _ctx(0)), "nothing new right after talking")
+	assert_true(c.has_news("gloria", _ctx(1)), "something new after a machine round")
+	c.talk("bernie", _ctx(0))
+	assert_true(c.has_news("bernie", _ctx(0, ["stress_ball"])), "a gift to give")
+
+
 func test_ray_comes_out_after_two_machines() -> void:
 	assert_false(Coworkers.present("ray", 1))
 	assert_true(Coworkers.present("ray", 2))

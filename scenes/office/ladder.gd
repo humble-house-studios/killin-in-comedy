@@ -931,6 +931,9 @@ func _update_rooms(force: bool) -> void:
 	for k in range(maxi(0, i - 1), mini(ORDER.size(), i + 2)):
 		show[ORDER[k]] = true
 	show["archive"] = _room in ["arcade", "archive"]
+	# Nothing to see behind a shut office door (saves drawing the arcade).
+	if _room == "office" and not _doors.get("office", {}).get("open", false):
+		show["arcade"] = false
 	for r in _rooms:
 		var on: bool = show.get(r, false)
 		if force or _visible_rooms.get(r, null) != on:
@@ -950,6 +953,8 @@ func _update_doors(instant: bool) -> void:
 		var want := state.door_open(id, office_done)
 		if want and not d.open:
 			d.open = true
+			if id == "office":
+				_update_rooms(true)
 			for l in d.locks:
 				l.visible = false
 			var body := d.panel.get_child(0) as StaticBody3D

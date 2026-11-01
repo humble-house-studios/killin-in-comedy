@@ -1437,12 +1437,26 @@ func _show_step() -> void:
 		_talk_text.visible_characters = -1
 		for c in step.choices:
 			var tag: String = c.get("tag", "")
-			_talk_button(("%s: %s" % [tag, c.text]) if tag != "" else c.text, _choose.bind(c))
+			_talk_button(_two_lines(("%s: %s" % [tag, c.text]) if tag != "" else c.text), _choose.bind(c))
 		_talk_pick = 0
 		_show_pick()
 		return
 	_say(step.get("dale", step.get("line", "")))
 	_end_buttons()
+
+
+## A long reply (a coworker's stance tag + line) breaks onto two lines at the
+## space nearest the middle, so it never runs off the talk box. (Button
+## autowrap blows up the box's height, so the break is done by hand.)
+func _two_lines(text: String) -> String:
+	if text.length() <= 30:
+		return text
+	var mid := text.length() / 2
+	var best := -1
+	for i in text.length():
+		if text[i] == " " and (best < 0 or absi(i - mid) < absi(best - mid)):
+			best = i
+	return text if best < 0 else text.left(best) + "\n" + text.substr(best + 1)
 
 
 func _choose(choice: Dictionary) -> void:
@@ -1916,6 +1930,9 @@ func _set_seat(pc: Computer) -> void:
 		_talking = false
 		_talk_panel.visible = false
 		_hush()
+		if not _speaker.is_empty():
+			_ladder.end_talk(_speaker.id, false)
+		_speaker = {}
 	var old := _seat
 	_seat = pc
 	_glide_from = _camera.global_transform
