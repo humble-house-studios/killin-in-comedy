@@ -173,6 +173,9 @@ func tap_screen(id: String) -> void:
 	var hud: Vector2 = px / Vector2(office._world_vp.size) * office._hud.size
 	var aim = office._aim_at(hud)
 	check(aim != null and aim.pc == pc, "can tap the %s screen" % id)
+	var hit: float = office._dale_hit(hud)
+	check(aim != null and (hit < 0.0 or hit > aim.dist), "a coworker doesn't catch the tap on the %s" % id)
+	check(not office._dale_nearer_than_computers(), "the button says SIT DOWN (not TALK) at the %s" % id)
 	office._set_seat(pc)
 	await frames(50)
 	check(office._seat == pc and ladder._machines[id].active, "%s runs while seated" % id)

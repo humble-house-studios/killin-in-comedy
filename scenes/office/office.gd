@@ -2055,7 +2055,8 @@ func _nearest_talker() -> Dictionary:
 	var best := {}
 	var bd := INF
 	for who in _talkers():
-		var dist := me.distance_to(who.node.global_position)
+		var at: Vector3 = who.node.global_position
+		var dist := Vector2(at.x - me.x, at.z - me.z).length()
 		if dist < bd:
 			bd = dist
 			best = {} if who.id == "" else who
@@ -2063,12 +2064,19 @@ func _nearest_talker() -> Dictionary:
 
 
 func _dale_nearer_than_computers() -> bool:
+	# Facing a screen close by: that's what the button is for.
+	var aim = _aim_at(_aim_point())
+	if aim != null and aim.dist < PAD_SIT_RANGE:
+		return false
 	var me := _player.global_position
 	var to_dale: float = _nearest_talker().dist
 	if to_dale == INF:
 		return false
+	# Floor distances: screens sit at chest height, people are measured at
+	# their feet, so a 3D distance always made the person look nearer.
 	for pc in _computers:
-		if pc.screen.is_visible_in_tree() and me.distance_to(pc.screen.global_position) < to_dale:
+		var at: Vector3 = pc.screen.global_position
+		if pc.screen.is_visible_in_tree() and Vector2(at.x - me.x, at.z - me.z).length() < to_dale:
 			return false
 	return true
 
