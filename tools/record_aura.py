@@ -51,7 +51,9 @@ def main():
             continue
         if out_of_allowance:
             continue
-        req = urllib.request.Request(url, json.dumps({"text": text, "engine": "aura"}).encode(), {"Content-Type": "application/json"})
+        req = urllib.request.Request(url, json.dumps({"text": text, "engine": "aura"}).encode(), {"Content-Type": "application/json",
+                                     # Cloudflare turns away Python's default user agent.
+                                     "User-Agent": "humble-house-build/1.0"})
         try:
             d = json.load(urllib.request.urlopen(req, timeout=60))
         except Exception as e:
