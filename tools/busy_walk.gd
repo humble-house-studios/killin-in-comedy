@@ -16,7 +16,7 @@ var fails := 0
 
 
 func _init() -> void:
-	for f in ["user://dale.cfg", "user://ladder.cfg", "user://coworkers.cfg", "user://look_busy.cfg"]:
+	for f in ["user://dale.cfg", "user://ladder.cfg", "user://coworkers.cfg", "user://look_busy.cfg", "user://office_relics.cfg"]:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(f))
 	# Real-time pace, so the clock and the boss move like they do in the game.
 	Engine.max_fps = 60
@@ -98,6 +98,32 @@ func _init() -> void:
 	crew.trust.erase("kev")
 	crew.save()
 
+	# Your own game: a desk win becomes a piece; the DEV KIT builds and scores it.
+	await frames(70)
+	bump("comedy_sets")
+	await frames(80)
+	check(busy.gm.has("COMEDY"), "a comedy set won = the COMEDY piece")
+	busy.dev_piece("loot")
+	check(busy.gm.has("SLOT REELS"), "a Loot Machine piece")
+	var kit_pc = busy._kit_pc
+	check(kit_pc.screen.is_visible_in_tree(), "the DEV KIT desk is there")
+	office._set_seat(kit_pc)
+	await frames(10)
+	var kit = busy._kit
+	check(kit._title.text.begins_with("LAUGH SLOTS"), "COMEDY + SLOT REELS = %s" % kit._title.text)
+	check(busy.gm.score().score == 40, "scored with the combo (%d)" % busy.gm.score().score)
+	kit._rows["mechanic"].pressed.emit()
+	check(not busy.gm.build.has("mechanic"), "tapping a row cycles its piece")
+	kit._rows["mechanic"].pressed.emit()
+	kit.play_trailer()
+	await frames(5)
+	check(kit._trailer.visible and kit._trailer_label.text == "HUMBLE HOUSE GAMES PRESENTS", "the trailer plays")
+	for i in 12:
+		kit._next_card()
+	check(not kit._trailer.visible, "the trailer ends")
+	office._set_seat(null)
+	await frames(5)
+
 	# Empty desk: out of the office when the boss checks.
 	busy.wd.suspicion = 0.0
 	busy.wd.strikes = 1
@@ -145,9 +171,20 @@ func _init() -> void:
 	var m1: float = busy.wd.minutes
 	await frames(60)
 	check(busy.wd.minutes == m1 and not busy._hud.visible, "off: the clock stops and the HUD hides")
+	check(not busy._kit_pc.screen.is_visible_in_tree(), "off: no DEV KIT desk")
 
 	print("\n%s: %d failed" % ["ALL PASS" if fails == 0 else "FAILURES", fails])
 	quit(1 if fails else 0)
+
+
+## A desk win, the way the games record it (the shared office stats).
+func bump(stat: String) -> void:
+	var cfg := ConfigFile.new()
+	cfg.load(DaleStory.RELICS_PATH)
+	var st = cfg.get_value("stats", "all", {})
+	st[stat] = int(st.get(stat, 0)) + 1
+	cfg.set_value("stats", "all", st)
+	cfg.save(DaleStory.RELICS_PATH)
 
 
 func press_first() -> void:

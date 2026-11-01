@@ -20,6 +20,10 @@ extends Node
 ##     lookouts cough before the boss comes and cover one empty desk a day;
 ##     snitches tip the boss off (an extra visit); collaborators bring their
 ##     side project to your game.
+##   - Your own game (engine/game_maker.gd): beating desks (the shared stats,
+##     arcade machines, every 20 spreadsheet cells) and collaborators hand you
+##     pieces; the DEV KIT desk by the door (scenes/office/dev_kit.gd) combines
+##     them into a scored game with a generated trailer.
 ##   - 5 PM: clock out. Friday 5 PM ends the week.
 ## Rules: engine/workday.gd. The pop-ups: scenes/office/busy_notice.gd.
 
@@ -39,6 +43,7 @@ const BELL := preload("res://audio/bell.wav")
 
 var office: Node
 var wd: Workday
+var gm: GameMaker
 var enabled := false
 var notice: Control
 
@@ -66,11 +71,19 @@ var _reflect := 0.0
 var _boss_pos := Vector2(99, 99)
 var _boss_yaw := 0.0
 var _morning_shown := false
+var _kit_rig: Node3D
+var _kit_vp: SubViewport
+var _kit: Control
+var _kit_pc
+var _piece_t := 0.0
+## Desk the DEV KIT sits on: right wall, by the door, facing into the room.
+const KIT_DESK := Vector3(3.05, 0.0, 2.95)
 
 
 func setup(o: Node) -> void:
 	office = o
 	wd = Workday.new()
+	gm = GameMaker.new()
 	_sheet_vp = SubViewport.new()
 	_sheet_vp.size = Vector2i(720, 1280)
 	_sheet_vp.disable_3d = true
@@ -111,6 +124,46 @@ func build() -> void:
 	notice = Notice.new()
 	notice.office = office
 	office.add_child(notice)
+	_build_kit()
+
+
+## The DEV KIT desk: GAMEMAKER 95 on a CRT by the door (scenes/office/dev_kit.gd).
+func _build_kit() -> void:
+	_kit_rig = Node3D.new()
+	_kit_rig.position = KIT_DESK
+	_kit_rig.rotation.y = -PI / 2
+	office._world_vp.add_child(_kit_rig)
+	var wood: Material = office._mat(Color(0.55, 0.42, 0.6), 3, Color(0.48, 0.36, 0.52), 60.0)
+	var screen: Node3D = office._side_desk(_kit_rig, wood, office._beige(), "DEV KIT", Color(1.0, 0.4, 0.75), Color(0.35, 0.1, 0.4), office._charcoal())
+	office._label("YOUR GAME", Vector3(0.15, 1.82, -0.32), 22, Color(1.0, 0.45, 0.8), Vector3.ZERO, 0.0, _kit_rig)
+	_kit_vp = SubViewport.new()
+	_kit_vp.size = Vector2i(720, 1280)
+	_kit_vp.disable_3d = true
+	_kit_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	office.add_child(_kit_vp)
+	office._view_bus[_kit_vp] = office._make_bus("Ladder")
+	_kit = preload("res://scenes/office/dev_kit.gd").new()
+	_kit.busy = self
+	_kit_vp.add_child(_kit)
+	office._window_frame(office._side_a, screen.position, office.CUBE_SCREEN, "GAMEMAKER.EXE")
+	_kit_pc = office._add_computer(screen, office.CUBE_SCREEN, _kit_vp, Vector2i(720, 1280))
+	# Built after the room: put its shells in the current look.
+	office._set_look(office._look_i, false)
+	_show_kit(false)
+
+
+## The desk only exists with Look Busy on (and doesn't block you without it).
+func _show_kit(on: bool) -> void:
+	if _kit_rig == null:
+		return
+	_kit_rig.visible = on
+	_kit_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS if on else SubViewport.UPDATE_DISABLED
+	var stack: Array = [_kit_rig]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		if n is StaticBody3D:
+			n.collision_layer = 1 if on else 0
+		stack.append_array(n.get_children())
 
 
 func set_enabled(on: bool) -> void:
@@ -126,6 +179,9 @@ func set_enabled(on: bool) -> void:
 		_ring.stop()
 	if _hud:
 		_hud.visible = on
+	_show_kit(on)
+	if not on and office and office._seat == _kit_pc and _kit_pc != null:
+		office._set_seat(null)
 
 
 # ---------------------------------------------------------------- every frame
@@ -160,6 +216,10 @@ func tick(delta: float) -> void:
 	if level != "":
 		_caught(level)
 	_flash = maxf(0.0, _flash - delta)
+	_piece_t -= delta
+	if _piece_t <= 0.0:
+		_piece_t = 1.0
+		_tick_pieces()
 	_save_t -= delta
 	if _save_t <= 0.0:
 		_save_t = 5.0
@@ -180,9 +240,34 @@ func tick(delta: float) -> void:
 	_tick_wall_clock()
 
 
+## Desk wins, fake work and collaborators turn into pieces for your game.
+func _tick_pieces() -> void:
+	var got: Array = []
+	for src in gm.desk_wins(DaleStory.read_stats(), Array(office._ladder.state.beaten)):
+		var p := gm.earn(src)
+		if not p.is_empty():
+			got.append(p)
+	for i in gm.cell_wins(wd.cells_today):
+		var p := gm.earn("spreadsheet")
+		if not p.is_empty():
+			got.append(p)
+	got.append_array(gm.collaborate(crew().with_role("collaborator")))
+	if got.is_empty():
+		return
+	var names: Array[String] = []
+	for p in got:
+		names.append("%s (%s)" % [p.name, GameMaker.KIND_NAMES[p.kind]])
+	office._toast.text = "NEW PIECE%s: %s\nBUILD YOUR GAME AT THE DEV KIT" % ["S" if got.size() > 1 else "", ", ".join(names)]
+	office._toast_time = 4.5
+	_play(preload("res://audio/coin.wav"), -2.0)
+	if _kit:
+		_kit.refresh()
+
+
 ## What you're doing, as the boss would put it.
 func _activity() -> String:
 	if office._seat:
+		# Building your game at the DEV KIT is also not your job.
 		return "working" if is_covered() else "slacking"
 	if office._talking:
 		return "chatting"
@@ -434,6 +519,7 @@ func _fired(quote := "") -> void:
 
 func _start_over() -> void:
 	wd.start_over()
+	gm.reset()
 	_go_home()
 
 
@@ -453,8 +539,11 @@ func _day_end() -> void:
 
 
 func _next_day() -> void:
-	if not wd.next_day():
+	if wd.next_day():
+		gm.new_day()
+	else:
 		wd.new_week(false)
+		gm.new_week()
 	_go_home()
 
 
@@ -523,6 +612,17 @@ func uncover() -> void:
 func on_seat_changed() -> void:
 	if _covered and office._seat != _covered:
 		uncover()
+	if _kit:
+		_kit.set_active(office._seat == _kit_pc and _kit_pc != null)
+
+
+## SHIP IT on Friday: the week ends now.
+func ship_now() -> void:
+	if not wd.is_friday():
+		return
+	wd.minutes = Workday.DAY_MINUTES
+	wd.save()
+	_day_end()
 
 
 func _on_cell() -> void:
@@ -620,6 +720,23 @@ func dev_friday() -> void:
 func dev_strike() -> void:
 	var level := wd.strike()
 	_caught.call_deferred(level)
+
+
+func dev_all_pieces() -> void:
+	for src in GameMaker.SOURCES:
+		for p in GameMaker.SOURCES[src]:
+			gm.add(p[0], p[1], src)
+	gm.collaborate(CoworkerLines.ORDER)
+	if _kit:
+		_kit.refresh()
+
+
+func dev_piece(src: String) -> void:
+	var p := gm.earn(src)
+	office._toast.text = "NEW PIECE: %s" % p.get("name", "(NONE LEFT)")
+	office._toast_time = 3.0
+	if _kit:
+		_kit.refresh()
 
 
 func dev_clear() -> void:

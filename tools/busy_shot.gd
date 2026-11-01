@@ -5,7 +5,8 @@ extends SceneTree
 ##     godot --rendering-driver opengl3 --resolution 720x1280 -s res://tools/busy_shot.gd
 ## Shots: morning = the morning card, boss = the boss walking the floor with
 ## the clock HUD, seated = sitting at your desk with the boss behind you (the
-## reflection), sheet = alt-tabbed to the spreadsheet, caught = the warning.
+## reflection), sheet = alt-tabbed to the spreadsheet, caught = the warning,
+## kit_desk / kit / trailer = the DEV KIT desk, seated at it, its trailer.
 ## Wipes user://look_busy.cfg.
 
 var office
@@ -42,6 +43,23 @@ func _init() -> void:
 	busy.wd.suspicion = 99.0
 	await _frames(60)
 	_shot("caught")
+	_press()
+	office._set_seat(null)
+	busy._end_visit()
+	busy.wd.suspicion = 0.0
+	busy.dev_all_pieces()
+	busy.gm.build = {"genre": "COMEDY", "mechanic": "SLOT REELS", "art": "CASINO NEON", "sound": "DING DING", "character": "KEV"}
+	office._player.global_position = Vector3(1.0, 0, 2.6)
+	office._yaw = -PI / 2
+	office._pitch = -0.12
+	await _frames(60)
+	_shot("kit_desk")
+	office._set_seat(busy._kit_pc)
+	await _frames(90)
+	_shot("kit")
+	busy._kit.play_trailer()
+	await _frames(40)
+	_shot("trailer")
 	quit()
 
 

@@ -2651,7 +2651,9 @@ func _update_hint(aim, close: bool) -> void:
 		elif not _moved and _pad_card <= 0.0:
 			text = "WALK UP TO A COMPUTER"
 	elif _touch:
-		if not _moved:
+		if _seat:
+			text = ""
+		elif not _moved:
 			text = "TAP A COMPUTER\nTO SIT DOWN"
 		elif _dale_news and _player.global_position.z < 4.0:
 			text = "DALE WANTS A WORD"

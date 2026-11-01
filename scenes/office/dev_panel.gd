@@ -80,6 +80,9 @@ func setup(o: Node) -> void:
 		["BURN BERNIE\n(SNITCH)", _role.bind("bernie", "snitch")],
 		["LOOKOUT\nCOUGHS NOW", _cough],
 		["SNITCH\nTELLS NOW", _snitch],
+		["+1 COMEDY\nPIECE", _piece.bind("comedy")],
+		["+1 LOOT\nPIECE", _piece.bind("loot")],
+		["ALL PIECES", _all_pieces],
 	])
 	_section(list, "COMEDY (YOUR DESK)", [
 		["WIN THIS SET", _win_set],
@@ -321,6 +324,18 @@ func _snitch() -> void:
 			return
 		close()
 		office._busy._snitch()
+
+
+func _piece(src: String) -> void:
+	if _busy_on():
+		office._busy.dev_piece(src)
+		_say("A %s PIECE. BUILD AT THE DEV KIT (RIGHT WALL, BY THE DOOR)." % src.to_upper())
+
+
+func _all_pieces() -> void:
+	if _busy_on():
+		office._busy.dev_all_pieces()
+		_say("EVERY PIECE THIS WEEK. TRY COMEDY + SLOT REELS.")
 
 
 func _clear_strikes() -> void:

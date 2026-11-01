@@ -148,7 +148,11 @@ right there, it's right on iPhone, Android and Steam. To keep that true:
   button) covers that screen with `scenes/office/spreadsheet.gd` (a
   `Computer.cover`). Pop-ups: `scenes/office/busy_notice.gd`. Rules in
   `engine/workday.gd` (`user://look_busy.cfg`), tested in
-  `tests/test_workday.gd`. Coworker roles from trust (`Coworkers.role()`:
+  `tests/test_workday.gd`. Your own game: `engine/game_maker.gd` (pieces
+  from desk wins / arcade machines / spreadsheet cells / collaborators, per
+  week; combos; title; trailer; `tests/test_game_maker.gd`), built at the
+  DEV KIT desk by the door (`scenes/office/dev_kit.gd`, only with Look Busy
+  on). Coworker roles from trust (`Coworkers.role()`:
   lookout, collaborator, snitch if burned; side projects in
   `CoworkerLines.BUSY`), tested in `tests/test_busy_crew.gd`.
   `tools/busy_walk.gd` (PASS/FAIL) and
