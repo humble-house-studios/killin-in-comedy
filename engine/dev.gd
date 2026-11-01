@@ -10,7 +10,7 @@ const ON := true
 ## Story saves the WIPE button deletes (the office look choice stays).
 const SAVES := [
 	"user://dale.cfg", "user://ladder.cfg", "user://coworkers.cfg",
-	"user://office_relics.cfg", "user://tips.cfg",
+	"user://office_relics.cfg", "user://tips.cfg", "user://look_busy.cfg",
 ]
 const MACHINES := ["claw", "pusher", "ragdoll"]
 

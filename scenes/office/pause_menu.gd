@@ -4,7 +4,8 @@ extends Control
 ## pause button top right. Everything is a Button (88 px tall or more) so
 ## touch, mouse and the pad cursor all work.
 ##   RESUME, MUSIC -/+, EFFECTS -/+, LOOK SPEED -/+, INVERT Y, SCREENS (look
-##   A/B), CONTROLS (the controls card), NEW GAME (asks first).
+##   A/B), LOOK BUSY (the workday, the boss and alt-tab: docs/look-busy.md),
+##   CONTROLS (the controls card), NEW GAME (asks first).
 ## Settings live in user://settings.cfg (scenes/sound.gd), section "office".
 ## The office (office.gd) owns pausing, applying settings and the restart;
 ## this only builds the window and calls back.
@@ -94,6 +95,7 @@ func _build_main(parent: Node) -> void:
 	_stepper(_grid, "look_speed", "LOOK SPEED")
 	_labels["invert_y"] = _button(_grid, "", func(): office.set_setting("invert_y", not office.setting("invert_y")))
 	_labels["screens"] = _button(_grid, "", func(): office.toggle_look())
+	_labels["look_busy"] = _button(_grid, "", func(): office.set_setting("look_busy", not office.setting("look_busy")))
 	_button(_grid, "CONTROLS", func(): _show("controls"))
 	var wipe := _button(_grid, "NEW GAME", func(): _show("confirm"))
 	wipe.add_theme_color_override("font_color", Color(0.6, 0.08, 0.06))
@@ -195,6 +197,7 @@ func refresh() -> void:
 	_labels.look_speed.text = "LOOK SPEED\nx%.2f" % float(office.setting("look_speed"))
 	_labels.invert_y.text = "INVERT Y: " + ("ON" if office.setting("invert_y") else "OFF")
 	_labels.screens.text = "SCREENS: LOOK " + ("A" if office.look_index() == 0 else "B")
+	_labels.look_busy.text = "LOOK BUSY: " + ("ON" if office.setting("look_busy") else "OFF")
 
 
 func _input(event: InputEvent) -> void:

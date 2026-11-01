@@ -53,6 +53,8 @@ var _talk_id := ""
 var _time := 0.0
 var _locked_hint := ""
 var _doors_ready := false
+## Look Busy's boss is coming through the shut office door: show the arcade.
+var _peek := false
 ## What the office's goal marker is over: its "!" (if any) hides.
 var goal_id := ""
 
@@ -419,7 +421,7 @@ func _machine(id: String, script: String, room: String, screen: Node3D, size: Ve
 
 ## A standing (or seated) coworker built from PS1 boxes. Returns their root.
 func _person(room: String, id: String, at: Vector3, yaw: float, look: Dictionary, seated := false) -> Node3D:
-	var p: Node3D = _rooms[room]
+	var p: Node = _rooms[room] if _rooms.has(room) else office._world_vp
 	var root := Node3D.new()
 	root.position = at
 	root.rotation.y = yaw
@@ -821,7 +823,7 @@ func people() -> Array:
 	var out: Array = []
 	for id in _people:
 		var p: Dictionary = _people[id]
-		if id.begins_with("board_") or id.begins_with("crowd_"):
+		if id.begins_with("board_") or id.begins_with("crowd_") or id.begins_with("boss_"):
 			continue
 		var node: Node3D = p.root
 		if not node.is_visible_in_tree() or p.room != _room:
@@ -1150,7 +1152,7 @@ func _update_rooms(force: bool) -> void:
 		show[ORDER[k]] = true
 	show["archive"] = _room in ["arcade", "archive"]
 	# Nothing to see behind a shut office door (saves drawing the arcade).
-	if _room == "office" and not _doors.get("office", {}).get("open", false):
+	if _room == "office" and not _doors.get("office", {}).get("open", false) and not _peek:
 		show["arcade"] = false
 	for r in _rooms:
 		var on: bool = show.get(r, false)
@@ -1162,6 +1164,14 @@ func _update_rooms(force: bool) -> void:
 		var here: bool = m.room == _room or (m.room == "archive" and _room == "arcade") or (m.room == "arcade" and _room == "archive")
 		m.vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS if here else (SubViewport.UPDATE_ONCE if force else SubViewport.UPDATE_DISABLED)
 		m.node.process_mode = Node.PROCESS_MODE_INHERIT if here else Node.PROCESS_MODE_DISABLED
+
+
+## Look Busy: the boss walks in through the office door even while it's
+## locked to you, so the arcade behind it shows for the moment it's open.
+func peek_arcade(on: bool) -> void:
+	if on != _peek:
+		_peek = on
+		_update_rooms(false)
 
 
 func _update_doors(instant: bool) -> void:

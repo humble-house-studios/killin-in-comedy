@@ -18,6 +18,8 @@ func _init() -> void:
 	for i in 3: await process_frame
 	office = load("res://scenes/office/office.tscn").instantiate()
 	root.add_child(office)
+	# Look Busy off: no morning card or boss in the way of the script.
+	office._busy.set_enabled(false)
 	for i in 5: await process_frame
 	office._touch = true
 	await _frames(90)

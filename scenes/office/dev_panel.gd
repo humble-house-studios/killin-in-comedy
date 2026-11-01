@@ -69,6 +69,13 @@ func setup(o: Node) -> void:
 		["SKIP CHAPTER", _skip_chapter],
 		["FINISH STORY\n(OPENS THE DOOR)", _finish_story],
 	])
+	_section(list, "LOOK BUSY (WORKDAY)", [
+		["BOSS COMES\nBY NOW", _boss_now],
+		["SKIP TO\n4:55 PM", _skip_day],
+		["SKIP TO\nFRIDAY 4:50", _skip_week],
+		["+1 STRIKE", _strike],
+		["CLEAR STRIKES\n+ SUSPICION", _clear_strikes],
+	])
 	_section(list, "COMEDY (YOUR DESK)", [
 		["WIN THIS SET", _win_set],
 		["SKIP TO THE\nHEADLINE SHOW", _skip_to_boss],
@@ -252,6 +259,45 @@ func _finish_story() -> void:
 		n += 1
 	office._ladder.dev_refresh()
 	_say("DALE'S STORY DONE (%d SKIPPED). THE DOOR BEHIND YOU IS OPEN." % n)
+
+
+# ---------------------------------------------------------------- Look Busy
+
+func _busy_on() -> bool:
+	if office._busy and office._busy.enabled:
+		return true
+	_say("TURN LOOK BUSY ON IN THE PAUSE MENU FIRST.")
+	return false
+
+
+func _boss_now() -> void:
+	if _busy_on():
+		close()
+		office._busy.dev_boss_now()
+
+
+func _skip_day() -> void:
+	if _busy_on():
+		office._busy.dev_skip_to(Workday.DAY_MINUTES - 5.0)
+		_say("4:55 PM. THE BELL RINGS IN A FEW SECONDS.")
+
+
+func _skip_week() -> void:
+	if _busy_on():
+		office._busy.dev_friday()
+		_say("FRIDAY, ALMOST 5. THE WEEK ENDS IN A FEW SECONDS.")
+
+
+func _strike() -> void:
+	if _busy_on():
+		close()
+		office._busy.dev_strike()
+
+
+func _clear_strikes() -> void:
+	if _busy_on():
+		office._busy.dev_clear()
+		_say("STRIKES 0/3, SUSPICION 0.")
 
 
 # ---------------------------------------------------------------- comedy

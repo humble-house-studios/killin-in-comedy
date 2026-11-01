@@ -142,6 +142,7 @@ const PAD_CARD := [
 	["R", "Look around"],
 	["A", "Sit at a computer / talk to Dale"],
 	["BACK", "Leave a desk  (or hold B)"],
+	["Y", "Seated: alt-tab (Look Busy)"],
 ]
 const PadUI := preload("res://scenes/pad_cursor.gd")
 ## The goal marker: warm yellow like the TO-DO, gone within ~1.5 m of what it
@@ -156,6 +157,7 @@ const MARKER_CEIL := 2.35
 const SETTINGS := {
 	"music": [0.8, 0.1, 0.0, 1.0], "effects": [1.0, 0.1, 0.0, 1.0],
 	"look_speed": [1.0, 0.25, 0.25, 3.0], "invert_y": [false],
+	"look_busy": [true],
 }
 ## New Game wipes these (settings.cfg and office_look.cfg stay): Dale, the
 ## ladder, the coworkers, the shared relics/stats, the comedy tips, and the
@@ -164,6 +166,7 @@ const SETTINGS := {
 const WIPE := [
 	"user://dale.cfg", "user://ladder.cfg", "user://coworkers.cfg", "user://office_relics.cfg",
 	"user://tips.cfg", "user://save.cfg", "user://cube_desk.cfg", "user://notebook.json",
+	"user://look_busy.cfg",
 ]
 
 
@@ -183,6 +186,23 @@ class Computer:
 	## Where the pointer sits on the game (game pixels), or null.
 	var pointer = null
 	var held := false
+	## The screen's world material and what it shows normally.
+	var lo_mat: ShaderMaterial
+	var texture: Texture2D
+	## Look Busy's alt-tab: another viewport (the spreadsheet) shown on this
+	## screen and taking its input instead of the game.
+	var cover: Viewport
+
+	## Where input goes: the cover while there is one, else the game.
+	func target() -> Viewport:
+		return cover if cover else view
+
+	func set_cover(v: Viewport) -> void:
+		cover = v
+		pointer = null
+		var tex: Texture2D = v.get_texture() if v else texture
+		lo_mat.set_shader_parameter("game", tex)
+		hi_mat.set_shader_parameter("game", tex)
 
 	func last_uv() -> Vector2:
 		return pointer / pixels if pointer != null else Vector2(-1, -1)
@@ -198,8 +218,8 @@ class Computer:
 		ev.global_position = pos
 		ev.relative = rel
 		ev.button_mask = MOUSE_BUTTON_MASK_LEFT if held else 0
-		view.push_input(ev, true)
-		if touch_events and held:
+		target().push_input(ev, true)
+		if touch_events and held and cover == null:
 			var drag := InputEventScreenDrag.new()
 			drag.position = pos
 			drag.relative = rel
@@ -209,7 +229,7 @@ class Computer:
 		send_motion(uv)
 		held = pressed
 		var pos := uv * pixels
-		if touch_events:
+		if touch_events and cover == null:
 			var touch := InputEventScreenTouch.new()
 			touch.position = pos
 			touch.pressed = pressed
@@ -221,7 +241,7 @@ class Computer:
 		ev.position = pos
 		ev.global_position = pos
 		ev.button_mask = MOUSE_BUTTON_MASK_LEFT if pressed else 0
-		view.push_input(ev, true)
+		target().push_input(ev, true)
 
 	func release() -> void:
 		if held:
@@ -366,6 +386,8 @@ var _music_bus := {}
 var _was_captured := false
 var _touch_last := false
 var _dale_news := false
+## Look Busy (scenes/office/look_busy.gd): the workday, the boss, alt-tab.
+var _busy: Node
 var _talking := false
 ## The conversation in progress: {id, title, steps}, and where we are in it.
 var _talk := {}
@@ -411,6 +433,11 @@ func _ready() -> void:
 	_build_room_sound()
 	_load_settings()
 	_build_hud()
+	_busy = preload("res://scenes/office/look_busy.gd").new()
+	add_child(_busy)
+	_busy.setup(self)
+	_busy.build()
+	_busy.set_enabled(bool(setting("look_busy")))
 	_build_marker()
 	_build_talk_box()
 	_dale_story = DaleStory.new()
@@ -570,6 +597,8 @@ func _add_computer(screen: Node3D, size: Vector2, view: Viewport, pixels: Vector
 	# The world copy looks like a tube; the crisp up-close copy stays clean.
 	lo.set_shader_parameter("crt", 1.0)
 	pc.hi_mat.set_shader_parameter("crt", 0.0)
+	pc.lo_mat = lo
+	pc.texture = texture
 	var hi_mi := MeshInstance3D.new()
 	hi_mi.mesh = quad
 	hi_mi.material_override = pc.hi_mat
@@ -1786,6 +1815,22 @@ func _open_menu(by_pad: bool) -> void:
 	_menu.open(by_pad)
 
 
+## A Look Busy pop-up is opening: let go of the mouse, the sticks and any press.
+func release_for_overlay() -> void:
+	if _press_pc:
+		_press_pc.release()
+		_press_pc = null
+	_touches.clear()
+	_stick = Vector2.ZERO
+	_pad_move = Vector2.ZERO
+	_pad_look = Vector2.ZERO
+	_pad_run = false
+	_pad_leave = -1.0
+	_hint.text = ""
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	_was_captured = false
+
+
 ## capture: take the mouse back for looking (not on touch or a pad).
 func close_menu(capture: bool) -> void:
 	_menu.close()
@@ -1823,7 +1868,7 @@ func look_index() -> int:
 func _load_settings() -> void:
 	for key in SETTINGS:
 		var v = Sound.read_setting("office", key, SETTINGS[key][0])
-		_settings[key] = bool(v) if key == "invert_y" else clampf(float(v), SETTINGS[key][2], SETTINGS[key][3])
+		_settings[key] = bool(v) if SETTINGS[key].size() == 1 else clampf(float(v), SETTINGS[key][2], SETTINGS[key][3])
 	_apply_settings()
 
 
@@ -1834,6 +1879,8 @@ func _apply_settings() -> void:
 			var v := float(_settings[pair[1]])
 			AudioServer.set_bus_volume_db(bus, linear_to_db(maxf(v, 0.0001)))
 			AudioServer.set_bus_mute(bus, v <= 0.001)
+	if _busy:
+		_busy.set_enabled(bool(_settings.get("look_busy", true)))
 
 
 ## Wipe every progress save and start the office over (next frame, so no
@@ -2294,7 +2341,7 @@ func _dale_aimed() -> bool:
 
 
 func _hud_button_at(point: Vector2) -> bool:
-	for b in [_sit_button, _stand_button, _pause_button, _dev_button]:
+	for b in [_sit_button, _stand_button, _pause_button, _dev_button, _busy._alt_button if _busy else null]:
 		if b and b.visible and b.get_global_rect().has_point(point):
 			return true
 	return false
@@ -2352,6 +2399,8 @@ func _set_seat(pc: Computer) -> void:
 		old.release()
 	if old:
 		_let_go_keys(old)
+	if _busy:
+		_busy.on_seat_changed()
 
 
 func _on_resized() -> void:
@@ -2525,6 +2574,7 @@ func _process(delta: float) -> void:
 		_clock_hands[1].rotation.z = -TAU * time.minute / 60.0
 
 	_tick_link(delta)
+	_busy.tick(delta)
 	_tick_dale(delta)
 	_ladder.tick(delta)
 	_tick_goal(delta)
@@ -2716,11 +2766,16 @@ func _input(event: InputEvent) -> void:
 		else:
 			_release_talk()
 		return
+	# Look Busy: Tab swaps the screen you're at to the spreadsheet and back.
+	if event is InputEventKey and event.physical_keycode == KEY_TAB and _seat and _busy.enabled:
+		if event.pressed and not event.echo:
+			_busy.alt_tab()
+		return
 	if event is InputEventKey and event.physical_keycode != KEY_ESCAPE:
 		# Keys belong to the game you sit at or point at (Pong's arrows).
 		var pc := _seat if _seat else _hover_pc
 		if pc:
-			pc.view.push_input(event)
+			pc.target().push_input(event)
 	# Touch and mouse each emulate the other; only handle the real one.
 	if event is InputEventScreenTouch or event is InputEventScreenDrag:
 		if event.device == InputEvent.DEVICE_ID_EMULATION:
@@ -2788,9 +2843,14 @@ func _pad_input(event: InputEvent) -> void:
 			_open_menu(true)
 		return
 	if _seat:
+		# Look Busy: Y alt-tabs (it never reaches the game).
+		if event is InputEventJoypadButton and event.button_index == JOY_BUTTON_Y and _busy.enabled:
+			if event.pressed:
+				_busy.alt_tab()
+			return
 		if event is InputEventJoypadButton and event.button_index == JOY_BUTTON_B:
 			_pad_leave = 0.0 if event.pressed else -1.0
-		_seat.view.push_input(event)
+		_seat.target().push_input(event)
 		return
 	if event is InputEventJoypadMotion:
 		match event.axis:

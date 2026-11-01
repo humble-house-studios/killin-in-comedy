@@ -380,11 +380,63 @@ def make_office():
         write_wav("step_%d" % (k + 1), reverb(step, 0.08, 0.25, 0.05), 0.6)
 
 
+def make_look_busy():
+    """Look Busy (the office's boss): the door creak, a coworker's warning
+    cough, the busted sting, a video call ringing and the 5 PM bell. Own
+    random generator, so every sound above stays byte-for-byte the same."""
+    rng = np.random.default_rng(57)
+
+    def burst(dur):
+        return rng.uniform(-1, 1, int(SR * dur))
+
+    # Door creak: a slow, stuttering hinge squeal sliding down in pitch.
+    dur = 1.1
+    t = t_axis(dur)
+    f = 520 * np.exp(-t * 0.6) + 40 * np.sin(2 * np.pi * 3 * t)
+    stutter = 0.6 + 0.4 * (np.sin(2 * np.pi * 23 * t) > -0.2)
+    creak = harmonics(f, 8, 0.8) * stutter * np.sin(np.linspace(0, np.pi, len(t))) ** 0.6
+    creak = shape(creak, [(900, 400, 1.0), (2200, 700, 0.5)], 0.05)
+    creak += shape(burst(dur), [(3000, 1500, 1.0)], 0.0) * 0.06
+    write_wav("creak", reverb(creak, 0.15, 0.3, 0.08), 0.6)
+
+    # Cough: two breathy bursts with a voiced edge.
+    cough = np.zeros(int(SR * 0.7))
+    for start, f0 in ((0.0, 190), (0.28, 170)):
+        d = 0.2
+        voiced = harmonics(np.full(int(SR * d), f0), 10, 1.2)
+        air = shape(burst(d), [(700, 300, 1.0), (1700, 500, 0.6), (2600, 600, 0.3)], 0.02)
+        place(cough, (air * 0.9 + voiced * 0.25) * decay(d, 0.06, 0.004), start)
+    write_wav("cough", reverb(cough, 0.1, 0.2, 0.05), 0.7)
+
+    # Busted: a stabbing brass "dun dun DUN".
+    busted = np.zeros(int(SR * 1.6))
+    for i, (m, d) in enumerate([(55, 0.16), (54, 0.16), (49, 1.0)]):
+        place(busted, brass(m, d, vibrato=0.02 if i == 2 else 0.0, wah=(500, 1400)) + 0.6 * brass(m - 12, d), i * 0.2)
+    write_wav("busted", reverb(busted, 0.2), 0.8)
+
+    # A 90s office phone ring (one ring; the game repeats it).
+    t = t_axis(0.9)
+    tone = np.sin(2 * np.pi * 440 * t) + np.sin(2 * np.pi * 480 * t)
+    trill = (np.sin(2 * np.pi * 20 * t) > 0).astype(float)
+    ring = tone * trill * np.where(t < 0.8, 1.0, 0.0)
+    ring[-200:] *= np.linspace(1, 0, 200)
+    write_wav("ring", ring, 0.4)
+
+    # The 5 PM bell: two warm strikes.
+    t = t_axis(1.6)
+    def strike(f0):
+        return sum(np.sin(2 * np.pi * f0 * k * t) * a for k, a in ((1, 1.0), (2.76, 0.4), (5.4, 0.15))) * decay(1.6, 0.5)
+    bell = strike(note(76))
+    place(bell, strike(note(72))[: int(SR * 1.2)], 0.4, 0.8)
+    write_wav("bell", bell, 0.55)
+
+
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
     make_sfx()
     make_music()
     make_office()
+    make_look_busy()
     for f in sorted(os.listdir(OUT)):
         if not f.endswith(".import"):
             print(f"{f:20s} {os.path.getsize(os.path.join(OUT, f)) // 1024} KB")

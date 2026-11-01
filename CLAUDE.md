@@ -138,6 +138,19 @@ right there, it's right on iPhone, Android and Steam. To keep that true:
   https://humble-house-studios.github.io/killin-in-comedy/office/ (second export
   in `deploy.yml`). Screenshots: `tools/office_shot.gd`. `main.gd` must not touch
   the window when it isn't the root (`_owns_window()`).
+- Office design direction lives in docs/look-busy.md; read it before any office change.
+- **Look Busy** (`scenes/office/look_busy.gd`, on/off as LOOK BUSY in the pause
+  menu, setting `look_busy`; off = the office exactly as before): a 9-to-5
+  workday (`Workday.DAY_SECONDS` real seconds) and a work week per run, one
+  boss per floor (`data/busy_lines.gd`: Marge walks a route, Chad video-calls,
+  the CEO walks silent) on a fixed schedule, a suspicion meter, strikes
+  (warning, write-up, fired = run over). Seated, ALT-TAB (Tab / pad Y / the
+  button) covers that screen with `scenes/office/spreadsheet.gd` (a
+  `Computer.cover`). Pop-ups: `scenes/office/busy_notice.gd`. Rules in
+  `engine/workday.gd` (`user://look_busy.cfg`), tested in
+  `tests/test_workday.gd`; `tools/busy_walk.gd` (PASS/FAIL) and
+  `tools/busy_shot.gd` (screenshots). Scripts that drive the office turn it
+  off first (`office._busy.set_enabled(false)`).
 - **The ladder** (`scenes/office/ladder.gd`): past the office door, built into
   the same 3D world (same walking, sitting, talking): the arcade (claw, coin
   pusher, Fall Guy ragdoll, prize counter, five coworkers), the basement
