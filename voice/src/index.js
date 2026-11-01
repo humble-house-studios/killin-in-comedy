@@ -79,6 +79,21 @@ async function geminiSpeak(env, text, models) {
   return "";
 }
 
+// Dale's recorded story voice (Aura "zeus"), used by the build to record his
+// scripted lines (tools/record_aura.py).
+async function auraSpeak(env, text, models) {
+  try {
+    const b64 = await audioToBase64(await env.AI.run("@cf/deepgram/aura-2-en", { text, speaker: "zeus" }));
+    if (b64 && b64.length > 200) {
+      models.speak = "@cf/deepgram/aura-2-en/zeus";
+      return b64;
+    }
+  } catch (e) {
+    models.speak_error_aura = String(e).slice(0, 160);
+  }
+  return "";
+}
+
 // Gemini sends raw 16-bit mono PCM; wrap it so the game can play it.
 function wavFromPcm16(pcm, rate) {
   const out = new Uint8Array(44 + pcm.length);
@@ -131,7 +146,8 @@ export default {
       const text = clip(body.text, 400).trim();
       if (!text) return json({ error: "no text" }, 400);
       const audio = body.engine === "groq" ? await groqSpeak(env, text, models)
-        : body.engine === "gemini" ? await geminiSpeak(env, text, models) : await speak(env, text, models);
+        : body.engine === "gemini" ? await geminiSpeak(env, text, models)
+        : body.engine === "aura" ? await auraSpeak(env, text, models) : await speak(env, text, models);
       return json({ audio, models });
     }
     try {

@@ -108,6 +108,39 @@ jobs:
           echo "$reply" | python3 -c "import sys,json; d=json.load(sys.stdin); print('::notice title=Dale says::' + d.get('reply', d.get('error','?'))[:200]); print('::notice title=Dale models::' + json.dumps(d.get('models',{}))[:900]); print('::notice title=Dale audio::%d base64 chars' % len(d.get('audio','')))" || echo "::warning title=Dale voice::Smoke test failed: ${reply:0:300}"
 
 
+      # Dale's scripted lines in his Aura voice (Cloudflare "zeus"), as many as
+      # the free daily allowance allows; Piper covers the rest until a later
+      # build. The first day's clips (old cache) are reused where lines match.
+      - uses: actions/cache/restore@v4
+        if: steps.deploy.outputs.url != ''
+        continue-on-error: true
+        with:
+          path: audio/dale
+          key: dale-lines-none
+          restore-keys: dale-lines-
+      - uses: actions/cache@v4
+        if: steps.deploy.outputs.url != ''
+        with:
+          path: audio/aura
+          key: aura-lines-v1-${{ hashFiles('data/dale_lines.gd') }}-${{ github.run_id }}
+          restore-keys: |
+            aura-lines-v1-${{ hashFiles('data/dale_lines.gd') }}-
+            aura-lines-v1-
+      - name: Record Dale's lines in his Aura voice
+        if: steps.deploy.outputs.url != ''
+        continue-on-error: true
+        run: |
+          python3 tools/record_aura.py "${{ steps.deploy.outputs.url }}" audio/dale | tee aura.log
+          echo "::notice title=Aura lines::$(tail -1 aura.log)"
+      - uses: actions/upload-artifact@v4
+        if: steps.deploy.outputs.url != ''
+        continue-on-error: true
+        with:
+          name: aura-lines
+          path: audio/aura
+          if-no-files-found: ignore
+          retention-days: 3
+
   # Every scripted line in the office (Dale and the arcade crew), recorded
   # with Piper, a free voice that runs right here: no AI service, no daily
   # limit, so the AI allowance is left for Dale's live replies. Cached per
@@ -157,6 +190,20 @@ jobs:
         with:
           name: dale-lines
           path: audio/dale
+      # Dale's Aura clips replace his Piper ones wherever they exist.
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: aura-lines
+          path: audio/aura
+      - name: Use Dale's Aura voice where recorded
+        shell: bash
+        run: |
+          if [ -d audio/aura ]; then
+            n=$(ls audio/aura | wc -l)
+            mkdir -p audio/dale && cp -f audio/aura/* audio/dale/ 2>/dev/null; rm -rf audio/aura
+            echo "::notice title=Aura lines::$n of Dale's lines in his Aura voice"
+          fi
 
       - name: Install export templates
         run: |
