@@ -57,8 +57,14 @@ var _taste_label: Label
 var _bit_label: Label
 var _clock_label: Label
 var _bubble_area: Control
-var _bubble: PanelContainer
-var _bubble_label: Label
+## The speech stack: the last few lines said, newest at the bottom, so a
+## Setup is still up there while you fire the Punchline and Tags after it.
+var _bubble: VBoxContainer
+## What the stack shows: [text, bubble color], oldest first.
+var _script: Array = []
+const SCRIPT_LINES := 2
+## This set's landed bits, {lines, score}, for the tape on the results screen.
+var _set_bits: Array = []
 var _laugh_label: Label
 var _laugh_bar: ProgressBar
 var _energy_label: Label
@@ -253,20 +259,12 @@ func _build_stage() -> Control:
 	_bubble_area.size_flags_stretch_ratio = 1.0
 	_bubble_area.custom_minimum_size = Vector2(0, 110)
 	box.add_child(_bubble_area)
-	var bubble_center := CenterContainer.new()
-	bubble_center.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_bubble_area.add_child(bubble_center)
-	_bubble = PanelContainer.new()
-	var bubble_style := _box_style(COLOR_PAPER, 16, OUTLINE)
-	_hard_shadow(bubble_style, 6)
-	_bubble.add_theme_stylebox_override("panel", bubble_style)
-	bubble_center.add_child(_bubble)
-	_bubble_label = _label("", 25, COLOR_INK)
-	_bubble_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_bubble_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_bubble_label.custom_minimum_size = Vector2(400, 0)
-	_bubble.add_child(_bubble_label)
-	_bubble.modulate.a = 0.0
+	# Hangs from the top of its area and may spill over the crowd below.
+	_bubble = VBoxContainer.new()
+	_bubble.add_theme_constant_override("separation", 4)
+	_bubble.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	_bubble.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_bubble_area.add_child(_bubble)
 	# Room for the mic and the crowd below the bubble.
 	var floor_space := Control.new()
 	floor_space.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -461,6 +459,7 @@ func _start_set() -> void:
 	_battle = _run.start_set()
 	_hand_shown = []
 	_bit_lines = []
+	_set_bits = []
 	_mic_whole = -1
 	_shown_laughs = 0.0
 	_in_flight = 0
@@ -470,7 +469,7 @@ func _start_set() -> void:
 	var crowd: int = CROWD_SIZES.get(_battle.audience.id, 9)
 	_stage_view.set_crowd(crowd, _battle.audience.is_boss)
 	_sound.play("thump")
-	_say(_patter.opener(), COLOR_PAPER)
+	_say(_patter.opener(), COLOR_PAPER, true)
 	_laugh_bar.value = 0
 	_refresh()
 
@@ -597,10 +596,12 @@ func _cascade() -> void:
 	var score := b.last_landed
 	var lines := _bit_lines.duplicate()
 	_bit_lines = []
+	if not lines.is_empty():
+		_set_bits.append({"lines": lines.map(func(l): return l.line), "score": score})
 	# Hold the counter back until the coins arrive.
 	_in_flight += score
 	_refresh()
-	_bubble.modulate.a = 0.0
+	_say("", COLOR_PAPER, true)
 	_sound.play("thump", -4.0)
 	var area := _fx_layer.get_global_rect()
 
@@ -683,7 +684,7 @@ func _cascade() -> void:
 		if hero.is_empty() or l.laughs > hero.laughs:
 			hero = l
 	if not hero.is_empty() and _battle.result == Battle.Result.ONGOING:
-		_say(hero.line, COLOR_GOLD.lightened(0.5))
+		_say(hero.line, COLOR_GOLD.lightened(0.5), true)
 
 
 ## One-word tags for a joke's reasons, small enough to sit under its number.
@@ -748,6 +749,9 @@ func _set_paused(on: bool) -> void:
 func _show_reward() -> void:
 	_open_overlay()
 	_overlay_box.add_child(_neon("YOU KILLED!", 48, COLOR_GOLD))
+	var tape := _tape()
+	if tape:
+		_overlay_box.add_child(tape)
 	_overlay_box.add_child(_centered(_label("%s laughs. Add a new bit to your act:" % _num(_battle.laughs), 26)))
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 12)
@@ -837,6 +841,9 @@ func _show_lost() -> void:
 	_overlay_box.add_child(_neon(why, 40, COLOR_HOT))
 	_overlay_box.add_child(_centered(_label("%s.  Set %d of %d.  Laughs %s / %s" % [
 		_battle.audience.title, _run.set_index + 1, _run.lineup.size(), _num(_battle.laughs), _num(_battle.laughs_needed)], 24)))
+	var tape := _tape()
+	if tape:
+		_overlay_box.add_child(tape)
 	var again := _button("Try again", COLOR_PUNCHLINE)
 	again.pressed.connect(_new_run)
 	_overlay_box.add_child(again)
@@ -846,6 +853,9 @@ func _show_run_won() -> void:
 	_open_overlay()
 	_overlay_box.add_child(_neon("STANDING OVATION!", 40, COLOR_GOLD))
 	_overlay_box.add_child(_centered(_label("Even The Critic laughed. You're a headliner.", 26)))
+	var tape := _tape()
+	if tape:
+		_overlay_box.add_child(tape)
 	var again := _button("Play again", COLOR_PUNCHLINE)
 	again.pressed.connect(_new_run)
 	_overlay_box.add_child(again)
@@ -1170,17 +1180,76 @@ func _card_color(card: CardData) -> Color:
 	return COLOR_LAUGHS
 
 
-func _say(text: String, color: Color) -> void:
-	_bubble.get_theme_stylebox("panel").bg_color = color
-	_bubble_label.text = text
-	_bubble.visible = text != ""
-	_bubble.modulate.a = 0.0
-	_bubble.scale = Vector2(0.85, 0.85)
+## Adds a line to the speech stack (fresh = start a new stack). Older lines
+## stay up, smaller and faded, so fast play never wipes a joke unread.
+func _say(text: String, color: Color, fresh := false) -> void:
+	if fresh:
+		_script.clear()
+	if text != "":
+		_script.append([text, color])
+	while _script.size() > SCRIPT_LINES:
+		_script.pop_front()
+	for c in _bubble.get_children():
+		c.queue_free()
+	var newest: PanelContainer = null
+	for i in _script.size():
+		var last := i == _script.size() - 1
+		var panel := PanelContainer.new()
+		var style := _box_style(_script[i][1], 14 if last else 8, OUTLINE if last else 2)
+		if last:
+			_hard_shadow(style, 6)
+		panel.add_theme_stylebox_override("panel", style)
+		var label := _label(_script[i][0], 24 if last else 18, COLOR_INK)
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		label.custom_minimum_size = Vector2(460 if last else 420, 0)
+		if not last:
+			label.max_lines_visible = 2
+		panel.add_child(label)
+		panel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		panel.modulate.a = 1.0 if last else 0.7
+		_bubble.add_child(panel)
+		if last:
+			newest = panel
+	_bubble.modulate.a = 1.0
+	if newest == null:
+		return
+	newest.modulate.a = 0.0
+	newest.scale = Vector2(0.85, 0.85)
 	await get_tree().process_frame
-	_bubble.pivot_offset = _bubble.size / 2
+	if not is_instance_valid(newest):
+		return
+	newest.pivot_offset = newest.size / 2
 	var t := create_tween().set_parallel()
-	t.tween_property(_bubble, "modulate:a", 1.0, 0.15)
-	t.tween_property(_bubble, "scale", Vector2.ONE, 0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	t.tween_property(newest, "modulate:a", 1.0, 0.15)
+	t.tween_property(newest, "scale", Vector2.ONE, 0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
+
+## The set's best bit, written out, to read in peace after the set.
+func _tape() -> Control:
+	var best: Dictionary = {}
+	for b in _set_bits:
+		if best.is_empty() or b.score > best.score:
+			best = b
+	if best.is_empty():
+		return null
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", _box_style(COLOR_PAPER, 12, OUTLINE))
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 2)
+	panel.add_child(box)
+	var head := _label("BEST BIT  +%s" % _num(best.score), 18, COLOR_INK)
+	head.add_theme_font_override("font", _pixel_font)
+	head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(head)
+	var lines: Array = best.lines
+	var keep := 3 if is_landscape() else 4
+	for line in lines.slice(maxi(0, lines.size() - keep)):
+		var l := _label(line, 19, COLOR_INK)
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		box.add_child(l)
+	return panel
 
 
 func _play_reaction(card: CardData, gained: int, energy: int) -> void:
@@ -1355,7 +1424,9 @@ func _ambient(delta: float) -> void:
 	if _ha_clock <= 0.0 and heat > 0.35:
 		_ha_clock = lerpf(0.9, 0.12, (heat - 0.35) / 0.65)
 		var area := _fx_layer.get_global_rect()
-		var at := Vector2(randf_range(area.position.x + 40, area.end.x - 40), area.end.y - randf_range(30, 90))
+		# Out at the sides, so they never cover the joke being told.
+		var side := randf_range(0.04, 0.16) if randi() % 2 == 0 else randf_range(0.84, 0.96)
+		var at := Vector2(area.position.x + area.size.x * side, area.end.y - randf_range(30, 120))
 		var ha := _fx_label(["HA!", "HA", "HAHA", "LOL"][randi() % 4], COLOR_GOLD.lightened(randf() * 0.4), 14 + int(heat * 10))
 		_top_fx.add_child(ha)
 		ha.position = at - ha.size / 2
