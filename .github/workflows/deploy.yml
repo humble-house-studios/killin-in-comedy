@@ -8,7 +8,7 @@ on:
     paths-ignore: ["**.md"]
   workflow_dispatch:
   # Daily, after the free AI allowances reset, so lines keep getting recorded
-  # in Groq's voice even on days nobody pushes.
+  # in their best voice even on days nobody pushes.
   schedule:
     - cron: "17 0 * * *"
 
@@ -112,11 +112,11 @@ jobs:
           echo "$reply" | python3 -c "import sys,json; d=json.load(sys.stdin); print('::notice title=Dale says::' + d.get('reply', d.get('error','?'))[:200]); print('::notice title=Dale models::' + json.dumps(d.get('models',{}))[:900]); print('::notice title=Dale audio::%d base64 chars' % len(d.get('audio','')))" || echo "::warning title=Dale voice::Smoke test failed: ${reply:0:300}"
 
 
-      # The best voice for every scripted line: Groq's Orpheus (Dale "troy",
-      # each coworker their own). Its free allowance is small and shared with
-      # Dale's live replies, so only the daily run (and manual runs) record,
-      # up to 35 lines, Dale first; pushes reuse what's done. Piper covers
-      # the rest until then, and a line is never saved in a lesser voice.
+      # Every scripted line, recorded in the best voice per speaker: Dale in
+      # Groq's Orpheus "troy" (Gemini stands in until Groq gets to a line), the
+      # arcade crew in Gemini, each their own voice. Only the daily run (and
+      # manual runs) record, to spare the free allowances for live replies;
+      # pushes reuse what's done (cached per line).
       - uses: actions/cache@v4
         if: steps.deploy.outputs.url != ''
         with:
@@ -125,17 +125,17 @@ jobs:
           restore-keys: |
             best-lines-v1-${{ hashFiles('data/dale_lines.gd', 'data/coworker_lines.gd') }}-
             best-lines-v1-
-      - name: Record lines in Groq's voice
+      - name: Record the office's lines
         if: steps.deploy.outputs.url != ''
         continue-on-error: true
         env:
           RUN_EVENT: ${{ github.event_name }}
         run: |
           command -v ffmpeg >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg)
-          max=0
-          [ "$RUN_EVENT" = "schedule" ] || [ "$RUN_EVENT" = "workflow_dispatch" ] && max=35
-          python3 tools/record_best.py "${{ steps.deploy.outputs.url }}" $max | tee best.log
-          echo "::notice title=Groq voice lines::$(tail -1 best.log)"
+          caps="0 0"
+          [ "$RUN_EVENT" = "schedule" ] || [ "$RUN_EVENT" = "workflow_dispatch" ] && caps="35 120"
+          python3 tools/record_best.py "${{ steps.deploy.outputs.url }}" $caps | tee best.log
+          echo "::notice title=Office voice lines::$(tail -1 best.log)"
       - uses: actions/upload-artifact@v4
         if: steps.deploy.outputs.url != ''
         continue-on-error: true
@@ -145,68 +145,27 @@ jobs:
           if-no-files-found: ignore
           retention-days: 3
 
-  # Every scripted line in the office (Dale and the arcade crew), recorded
-  # with Piper, a free voice that runs right here: no AI service, no daily
-  # limit, so the AI allowance is left for Dale's live replies. Cached per
-  # line: only new or changed lines get recorded.
-  lines:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - uses: actions/cache@v4
-        with:
-          path: |
-            audio/dale
-            ~/.cache/piper
-          key: office-lines-v1-${{ hashFiles('data/dale_lines.gd', 'data/coworker_lines.gd', 'tools/record_lines.py') }}-${{ github.run_id }}
-          restore-keys: |
-            office-lines-v1-${{ hashFiles('data/dale_lines.gd', 'data/coworker_lines.gd', 'tools/record_lines.py') }}-
-            office-lines-v1-
-      - name: Record the office's lines
-        continue-on-error: true
-        run: |
-          command -v ffmpeg >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg)
-          pip install -q piper-tts
-          python3 tools/record_lines.py | tee lines.log
-          echo "::notice title=Office lines::$(tail -1 lines.log)"
-      - uses: actions/upload-artifact@v4
-        continue-on-error: true
-        with:
-          name: dale-lines
-          path: audio/dale
-          if-no-files-found: ignore
-          retention-days: 3
-
   build:
-    needs: [voice, lines]
+    needs: voice
     runs-on: ubuntu-latest
     container:
       image: barichello/godot-ci:4.3
     steps:
       - uses: actions/checkout@v4
 
-      # Dale's pre-recorded lines from the voice job (if it made any).
-      - uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          name: dale-lines
-          path: audio/dale
-      # Lines recorded in Groq's voice replace their Piper placeholders.
+      # The recorded lines, where the game looks them up.
       - uses: actions/download-artifact@v4
         continue-on-error: true
         with:
           name: best-lines
           path: audio/best
-      - name: Use the best voice where recorded
+      - name: Put the recorded lines in place
         shell: bash
         run: |
           if [ -d audio/best ]; then
             n=$(ls audio/best | wc -l)
-            mkdir -p audio/dale && cp -f audio/best/* audio/dale/ 2>/dev/null; rm -rf audio/best
-            echo "::notice title=Groq voice lines::$n lines in Groq's voice"
+            mkdir -p audio/dale && cp -f audio/best/*.mp3 audio/dale/ 2>/dev/null; rm -rf audio/best
+            echo "::notice title=Office voice lines::$(ls audio/dale | wc -l) lines recorded"
           fi
 
       - name: Install export templates

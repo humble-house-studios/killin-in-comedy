@@ -40,7 +40,7 @@ async function geminiModels(env) {
   return names;
 }
 
-async function geminiSpeak(env, text, models) {
+async function geminiSpeak(env, text, models, only = "") {
   let names;
   try {
     names = await geminiModels(env);
@@ -49,7 +49,7 @@ async function geminiSpeak(env, text, models) {
     return "";
   }
   for (const model of names.slice(0, 3)) {
-    for (const voice of GEMINI_VOICES) {
+    for (const voice of only ? [only] : GEMINI_VOICES) {
       const r = await fetch(GEMINI + "/models/" + model + ":generateContent?key=" + env.GEMINI_API_KEY, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -130,9 +130,11 @@ export default {
     if (new URL(req.url).pathname === "/say") {
       const text = clip(body.text, 400).trim();
       if (!text) return json({ error: "no text" }, 400);
-      const voice = GROQ_VOICES.includes(body.voice) ? body.voice : "";
-      const audio = body.engine === "groq" ? await groqSpeak(env, text, models, voice)
-        : body.engine === "gemini" ? await geminiSpeak(env, text, models) : await speak(env, text, models);
+      // A named voice: Groq's from its list, Gemini's any capitalised name.
+      const voice = typeof body.voice === "string" ? body.voice : "";
+      const audio = body.engine === "groq" ? await groqSpeak(env, text, models, GROQ_VOICES.includes(voice) ? voice : "")
+        : body.engine === "gemini" ? await geminiSpeak(env, text, models, /^[A-Z][a-z]+$/.test(voice) ? voice : "")
+        : await speak(env, text, models);
       return json({ audio, models });
     }
     try {

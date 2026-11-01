@@ -128,14 +128,13 @@ right there, it's right on iPhone, Android and Steam. To keep that true:
   notes get read out loud), then Cloudflare MeloTTS/Aura).
   `deploy.yml`'s `voice` job deploys it when the repo has
   `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` secrets and writes its URL
-  into `data/voice_server.gd` for the office build (empty = no TALK). Every scripted line
-  (Dale and the arcade crew, one Piper voice each) is pre-recorded by the
-  `lines` job with `tools/record_lines.py` (free Piper TTS, no daily limit) into
-  `audio/dale/<md5[:12]>.mp3`; `_say()` plays it, so the AI allowance is only
-  spent on live replies. Piper is only the placeholder: the daily build
-  re-records up to 35 lines in Groq's Orpheus (`tools/record_best.py`, Dale
-  "troy" first, each coworker their own voice) and lays them over Piper; a line
-  is only ever saved in that best voice. Add lines freely. Published at
+  into `data/voice_server.gd` for the office build (empty = no TALK). Every scripted line is
+  recorded through the voice server by `tools/record_best.py` (lines read by
+  `tools/office_lines.py`) into `audio/dale/<md5[:12]>.mp3`, which `_say()`
+  plays: Dale in Groq Orpheus "troy" (up to 35 a day; Gemini stands in until
+  then), the arcade crew in Gemini, one voice each. No Piper. Only the daily
+  scheduled run and manual runs record; pushes reuse the cache. Add lines
+  freely: the next daily run records them. Published at
   https://humble-house-studios.github.io/killin-in-comedy/office/ (second export
   in `deploy.yml`). Screenshots: `tools/office_shot.gd`. `main.gd` must not touch
   the window when it isn't the root (`_owns_window()`).
