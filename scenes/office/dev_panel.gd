@@ -83,6 +83,8 @@ func setup(o: Node) -> void:
 		["+1 COMEDY\nPIECE", _piece.bind("comedy")],
 		["+1 LOOT\nPIECE", _piece.bind("loot")],
 		["ALL PIECES", _all_pieces],
+		["SHIP NOW\n(FRIDAY 5 PM)", _ship_now],
+		["PROMOTE\n(NEXT FLOOR)", _promote],
 	])
 	_section(list, "COMEDY (YOUR DESK)", [
 		["WIN THIS SET", _win_set],
@@ -336,6 +338,18 @@ func _all_pieces() -> void:
 	if _busy_on():
 		office._busy.dev_all_pieces()
 		_say("EVERY PIECE THIS WEEK. TRY COMEDY + SLOT REELS.")
+
+
+func _ship_now() -> void:
+	if _busy_on():
+		close()
+		office._busy.dev_ship_now()
+
+
+func _promote() -> void:
+	if _busy_on():
+		close()
+		office._busy.dev_promote()
 
 
 func _clear_strikes() -> void:

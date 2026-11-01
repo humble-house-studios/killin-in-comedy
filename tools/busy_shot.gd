@@ -6,7 +6,8 @@ extends SceneTree
 ## Shots: morning = the morning card, boss = the boss walking the floor with
 ## the clock HUD, seated = sitting at your desk with the boss behind you (the
 ## reflection), sheet = alt-tabbed to the spreadsheet, caught = the warning,
-## kit_desk / kit / trailer = the DEV KIT desk, seated at it, its trailer.
+## kit_desk / kit / trailer = the DEV KIT desk, seated at it, its trailer,
+## ship / theo / promoted = Friday's reviews, the rival, the promotion.
 ## Wipes user://look_busy.cfg.
 
 var office
@@ -60,6 +61,18 @@ func _init() -> void:
 	busy._kit.play_trailer()
 	await _frames(40)
 	_shot("trailer")
+	office._set_seat(null)
+	busy.dev_ship_now()
+	await _frames(20)
+	_shot("ship")
+	_press()
+	await _frames(10)
+	_press()
+	await _frames(10)
+	_shot("theo")
+	_press()
+	await _frames(10)
+	_shot("promoted")
 	quit()
 
 

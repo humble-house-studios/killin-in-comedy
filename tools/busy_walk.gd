@@ -156,13 +156,43 @@ func _init() -> void:
 	check(busy.wd.day == 1 and busy.wd.minutes <= 1.0, "the next morning (%s)" % busy.wd.clock_text())
 	press_first()
 	await frames(5)
+	# Friday 5 PM: ship day. A strong build beats Theo and gets you promoted.
+	busy.dev_all_pieces()
+	busy.gm.build = {"genre": "COMEDY", "mechanic": "SLOT REELS", "art": "CASINO NEON", "sound": "DING DING", "character": "KEV"}
+	var tokens_before: int = office._ladder.state.tokens
 	busy.dev_friday()
 	busy.wd.minutes = Workday.DAY_MINUTES - 1.0
 	await frames(90)
-	check(busy.notice.visible and busy.notice._head.text.begins_with("FRIDAY"), "Friday 5 PM ends the week")
+	check(busy.notice.visible and busy.notice._head.text.begins_with("YOU SHIPPED"), "Friday 5 PM: you ship (%s)" % busy.notice._head.text.replace("\n", " "))
+	var pages: Array = []
+	for i in 6:
+		if busy.wd.week == 2:
+			break
+		pages.append(busy.notice._head.text.replace("\n", " "))
+		press_first()
+		await frames(5)
+	check(pages.has("THEO SHIPPED TOO") and pages.has("PROMOTED!"), "reviews, Theo, promotion (%s)" % ", ".join(pages))
+	check(office._ladder.state.tokens > tokens_before, "the reviews paid out tokens")
+	check(busy.wd.week == 2 and busy.wd.day == 0 and busy.wd.floor_i == 2, "week 2, Monday, floor 2")
+	check(busy.gm.pieces.is_empty(), "a new week starts with an empty kit")
+	check(busy.notice._body.text.contains("CHAD"), "the morning card names the new boss")
 	press_first()
 	await frames(5)
-	check(busy.wd.week == 2 and busy.wd.day == 0, "week 2, Monday")
+	# Floor 2's boss works from home: he video-calls instead of walking in.
+	busy.dev_boss_now()
+	await frames(5)
+	check(busy._call_t >= 0.0 and busy._boss_node == null or not busy._boss_node.visible, "Chad rings instead of walking in")
+	office._set_seat(office._computers[0])
+	for i in 600:
+		await process_frame
+		if busy._connected:
+			break
+	check(busy._connected and busy._seen, "on the call he sees your screen")
+	busy.alt_tab()
+	await frames(5)
+	check(busy._activity() == "working", "alt-tabbed on the call: working")
+	office._set_seat(null)
+	busy._call_t = -1.0
 	press_first()
 	await frames(5)
 

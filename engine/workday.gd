@@ -50,6 +50,8 @@ var cells := 0
 var cells_today := 0
 ## Empty desks a lookout covered today.
 var covers_today := 0
+## Every Friday so far: [{week, floor, title, score, avg, promoted}, ...].
+var shipped: Array = []
 
 var _path: String
 var _grace := 0.0
@@ -203,6 +205,13 @@ func start_over() -> void:
 	save()
 
 
+## Friday's result (engine/ship_day.gd review()), remembered.
+func record_ship(r: Dictionary) -> void:
+	shipped.append({"week": week, "floor": floor_i, "title": r.title, "score": r.score,
+		"avg": r.press_avg, "promoted": r.promoted})
+	save()
+
+
 ## A lookout covers your empty desk (once a day). True if they did.
 func cover() -> bool:
 	if covers_today >= COVERS_PER_DAY:
@@ -321,6 +330,8 @@ func load_save() -> void:
 	cells = int(cfg.get_value("run", "cells", 0))
 	cells_today = int(cfg.get_value("run", "cells_today", 0))
 	covers_today = int(cfg.get_value("run", "covers_today", 0))
+	var sh = cfg.get_value("run", "shipped", [])
+	shipped = sh if sh is Array else []
 
 
 func save() -> void:
@@ -338,4 +349,5 @@ func save() -> void:
 	cfg.set_value("run", "cells", cells)
 	cfg.set_value("run", "cells_today", cells_today)
 	cfg.set_value("run", "covers_today", covers_today)
+	cfg.set_value("run", "shipped", shipped)
 	cfg.save(_path)

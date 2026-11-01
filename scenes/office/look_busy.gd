@@ -24,7 +24,10 @@ extends Node
 ##     arcade machines, every 20 spreadsheet cells) and collaborators hand you
 ##     pieces; the DEV KIT desk by the door (scenes/office/dev_kit.gd) combines
 ##     them into a scored game with a generated trailer.
-##   - 5 PM: clock out. Friday 5 PM ends the week.
+##   - 5 PM: clock out. Friday 5 PM is ship day (engine/ship_day.gd): press
+##     and coworker reviews, Theo ships his game, the reviews pay out (arcade
+##     tokens and tickets), and a good week promotes you to the next floor and
+##     its boss.
 ## Rules: engine/workday.gd. The pop-ups: scenes/office/busy_notice.gd.
 
 const Notice := preload("res://scenes/office/busy_notice.gd")
@@ -531,11 +534,76 @@ func _day_end() -> void:
 	_call_t = -1.0
 	_play(BELL, -4.0)
 	var friday := wd.is_friday()
-	var body := "Clocked out. Today: %d spreadsheet cells. Strikes: %d/3." % [wd.cells_today, wd.strikes]
 	if friday:
-		body += "\n\nThat's the week. Have a weekend."
-	notice.show_notice("CLOCK.EXE", "5:00 PM" if not friday else "FRIDAY, 5:00 PM", body,
-			[["GO HOME" if not friday else "NEXT WEEK", _next_day]], Color(0.06, 0.14, 0.6))
+		_ship_day()
+		return
+	var body := "Clocked out. Today: %d spreadsheet cells. Strikes: %d/3.\n\nYour game: %s (%d pieces). It ships Friday at 5." % [
+		wd.cells_today, wd.strikes, gm.title() if not gm.build.is_empty() else "nothing yet", gm.pieces.size()]
+	notice.show_notice("CLOCK.EXE", "5:00 PM", body, [["GO HOME", _next_day]], Color(0.06, 0.14, 0.6))
+
+
+# ---------------------------------------------------------------- Friday
+
+## Ship day: your game ships, the press and the crew review it, Theo ships
+## his, the reviews pay out, and a good week promotes you.
+func _ship_day() -> void:
+	var met := {}
+	for id in crew().met:
+		met[id] = crew().role(id)
+	var r := ShipDay.review(gm.build, met, wd.floor_i, wd.week)
+	wd.record_ship(r)
+	var lines: Array[String] = []
+	for p in r.press:
+		lines.append("%s  %s/10\n%s" % [p.who, ShipDay.fmt(p.score), p.quote])
+	var head := "YOU SHIPPED\n%s" % r.title if r.shipped else "YOU SHIPPED NOTHING"
+	var body := ("Score %d. Press average %s/10.\n\n" % [r.score, ShipDay.fmt(r.press_avg)]) + "\n\n".join(lines)
+	notice.show_notice("SHIP.EXE", head, body, [["NEXT: THE OFFICE", _ship_crew.bind(r)]], Color(0.75, 0.2, 0.55))
+
+
+func _ship_crew(r: Dictionary) -> void:
+	if r.crew.is_empty():
+		_ship_theo(r)
+		return
+	var lines: Array[String] = []
+	for c in r.crew:
+		lines.append("%s  %s/10\n\"%s\"" % [c.who, ShipDay.fmt(c.score), c.quote])
+	notice.show_notice("SHIP.EXE", "THE OFFICE PLAYED IT", "\n\n".join(lines), [["NEXT: THEO", _ship_theo.bind(r)]], Color(0.75, 0.2, 0.55))
+
+
+func _ship_theo(r: Dictionary) -> void:
+	var body := "Theo shipped %s.\nPress average: %s/10.\n\nYours: %s/10.\n\n%s" % [
+		r.theo.title, ShipDay.fmt(r.theo.score), ShipDay.fmt(r.press_avg),
+		"You beat him. He's furious. He's making risotto about it." if r.beat_theo else "He beat you. He made sure everyone saw."]
+	notice.show_notice("RIVAL.EXE", "THEO SHIPPED TOO", body, [["NEXT: PAYDAY", _ship_pay.bind(r)]], Color(0.12, 0.15, 0.4))
+
+
+func _ship_pay(r: Dictionary) -> void:
+	var state: LadderState = office._ladder.state
+	state.apply_reward("tokens:%d" % r.tokens)
+	state.apply_reward("tickets:%d" % r.tickets)
+	office._ladder.dev_refresh()
+	var body := "Reviews paid out: +%d tokens, +%d tickets (for the break room arcade).\n\n" % [r.tokens, r.tickets]
+	var head := "NO PROMOTION"
+	var button := "NEXT WEEK (FLOOR %d)" % wd.floor_i
+	if r.promoted and wd.floor_i >= BusyLines.FLOORS:
+		head = "TOP OF THE BUILDING"
+		body += "A great week, and there's no floor left above this one. Just a door at the very top that nobody has a key to. Yet."
+	elif r.promoted:
+		var next := Workday.boss_for(wd.floor_i + 1)
+		head = "PROMOTED!"
+		body += "Floor %d. New desk, new boss: %s (%s)." % [wd.floor_i + 1, next.name, next.title]
+		button = "MOVE UP TO FLOOR %d" % (wd.floor_i + 1)
+	else:
+		body += "You need a press average of %s and to beat Theo. Another week on floor %d." % [ShipDay.fmt(ShipDay.PROMOTE_AT), wd.floor_i]
+	notice.show_notice("PAYROLL.EXE", head, body, [[button, _new_week.bind(r.promoted)]], Color(0.1, 0.5, 0.2) if r.promoted else Color(0.4, 0.3, 0.1))
+	if r.promoted:
+		_play(preload("res://audio/fanfare.wav"), -2.0)
+
+
+func _new_week(promote: bool) -> void:
+	wd.new_week(promote)
+	gm.new_week()
+	_go_home()
 
 
 func _next_day() -> void:
@@ -720,6 +788,20 @@ func dev_friday() -> void:
 func dev_strike() -> void:
 	var level := wd.strike()
 	_caught.call_deferred(level)
+
+
+func dev_ship_now() -> void:
+	wd.day = BusyLines.DAYS.size() - 1
+	wd.minutes = Workday.DAY_MINUTES
+	wd.save()
+	uncover()
+	_ship_day()
+
+
+func dev_promote() -> void:
+	wd.new_week(true)
+	gm.new_week()
+	_go_home()
 
 
 func dev_all_pieces() -> void:
