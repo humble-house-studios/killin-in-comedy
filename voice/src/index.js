@@ -21,14 +21,11 @@ const SPEAK = [
   ["@cf/deepgram/aura-2-en", (text) => ({ text, speaker: "zeus" })],
 ];
 
-// Google Gemini's free tier speaks Dale's live replies first when
-// GEMINI_API_KEY is set: natural voices, steered by a short style note.
+// Google Gemini's free tier is the last-resort voice for live replies when
+// GEMINI_API_KEY is set. It gets the line and nothing else: any style note
+// ("Say warmly: ...") can end up read out loud.
 const GEMINI = "https://generativelanguage.googleapis.com/v1beta";
 const GEMINI_VOICES = ["Achird", "Umbriel", "Puck"];
-// A short style cue in Gemini's documented "Say ...: text" form; a long one
-// can get read out loud. If a clip still runs far longer than the line could,
-// it's retried with no cue at all.
-const GEMINI_STYLE = "Say warmly, with a nervous chuckle:";
 let geminiTts = null;
 
 async function geminiModels(env) {
@@ -53,12 +50,11 @@ async function geminiSpeak(env, text, models) {
   }
   for (const model of names.slice(0, 3)) {
     for (const voice of GEMINI_VOICES) {
-      for (const styled of [true, false]) {
       const r = await fetch(GEMINI + "/models/" + model + ":generateContent?key=" + env.GEMINI_API_KEY, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: styled ? GEMINI_STYLE + " " + text : text }] }],
+          contents: [{ parts: [{ text }] }],
           generationConfig: {
             responseModalities: ["AUDIO"],
             speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } },
@@ -71,15 +67,11 @@ async function geminiSpeak(env, text, models) {
         const mime = part.inlineData.mimeType || "";
         const rate = parseInt((mime.match(/rate=(\d+)/) || [])[1] || "24000", 10);
         const pcm = base64ToBytes(part.inlineData.data);
-        const secs = pcm.length / 2 / rate;
-        models.speak_seconds = Math.round(secs * 10) / 10;
-        if (styled && !/wav/i.test(mime) && secs > text.length * 0.09 + 2.5) continue;
-        models.speak = "gemini/" + model + "/" + voice + (styled ? "" : "/plain");
+        models.speak_seconds = Math.round((pcm.length / 2 / rate) * 10) / 10;
+        models.speak = "gemini/" + model + "/" + voice;
         return /wav/i.test(mime) ? part.inlineData.data : bytesToBase64(wavFromPcm16(pcm, rate));
       }
       models["speak_error_gemini_" + model + "_" + voice] = r.status + " " + JSON.stringify(j).slice(0, 200);
-      break;
-      }
       // Over the limit or a bad model: other voices won't help.
       if (/^(429|404)/.test(models["speak_error_gemini_" + model + "_" + voice] || "")) break;
     }
@@ -291,7 +283,8 @@ async function hear(env, b64, models, mime) {
 async function think(env, body, heard, models) {
   const persona = clip(body.persona, 8000) || FALLBACK_PERSONA;
   const history = Array.isArray(body.history) ? body.history.slice(-12) : [];
-  const messages = [{ role: "system", content: persona }];
+  // The reply is read straight out loud, so: words only.
+  const messages = [{ role: "system", content: persona + "\n\nWrite only the words Dale says out loud. No stage directions, no brackets, no emotion or tone labels." }];
   for (const m of history) {
     if (m && (m.role === "user" || m.role === "assistant")) messages.push({ role: m.role, content: clip(m.content, 600) });
   }
@@ -321,9 +314,11 @@ async function think(env, body, heard, models) {
   return "Sorry, I zoned out. Spreadsheet brain. Say that again?";
 }
 
+// Dale's live-reply voice: Groq's Orpheus first (the one Samuel likes), then
+// Cloudflare, then Gemini once both of those are out for the day.
 async function speak(env, text, models) {
-  if (env.GEMINI_API_KEY) {
-    const b64 = await geminiSpeak(env, text, models);
+  if (env.GROQ_API_KEY) {
+    const b64 = await groqSpeak(env, text, models);
     if (b64) return b64;
   }
   for (const [model, input] of SPEAK) {
@@ -338,7 +333,7 @@ async function speak(env, text, models) {
       models["speak_error_" + model] = String(e).slice(0, 120);
     }
   }
-  return env.GROQ_API_KEY ? await groqSpeak(env, text, models) : "";
+  return env.GEMINI_API_KEY ? await geminiSpeak(env, text, models) : "";
 }
 
 // Workers AI hands back audio in a few shapes, depending on the model.
@@ -360,8 +355,11 @@ async function audioToBase64(r) {
 function cleanReply(text) {
   if (typeof text !== "string") return "";
   return text
+    .replace(/<think>[\s\S]*?<\/think>/gi, "")
     .replace(/\*[^*]*\*/g, "")
     .replace(/\([^)]*\)/g, "")
+    .replace(/\[[^\]]*\]/g, "")
+    .replace(/^\s*(say|said|speaking|in a)\b[^:]{0,60}:\s*/i, "")
     .replace(/^\s*(Dale\s*:)\s*/i, "")
     .replace(/^["']|["']$/g, "")
     .replace(/\s+/g, " ")
