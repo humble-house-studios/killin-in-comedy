@@ -739,6 +739,8 @@ func _set_paused(on: bool) -> void:
 		resume.pressed.connect(_set_paused.bind(false))
 		resume.set_meta("pad_button", JOY_BUTTON_START)
 		_overlay_box.add_child(resume)
+		if Dev.ON:
+			_overlay_box.add_child(_dev_tools())
 	else:
 		_close_overlay()
 
@@ -817,7 +819,16 @@ func _show_next_up() -> void:
 	go.pressed.connect(_start_set)
 	go.pressed.connect(_sound.play.bind("click"))
 	go.set_meta("pad_button", JOY_BUTTON_START)
-	_overlay_box.add_child(go)
+	if Dev.ON and not next.is_boss:
+		# Side by side, so the screen doesn't grow taller in landscape.
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 12)
+		go.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(go)
+		row.add_child(_dev_button("DEV:\nSKIP TO BOSS", dev_skip_to_headline))
+		_overlay_box.add_child(row)
+	else:
+		_overlay_box.add_child(go)
 
 
 func _show_lost() -> void:
@@ -838,6 +849,76 @@ func _show_run_won() -> void:
 	var again := _button("Play again", COLOR_PUNCHLINE)
 	again.pressed.connect(_new_run)
 	_overlay_box.add_child(again)
+
+
+# ---------------------------------------------------------------- dev tools
+
+## DEV TOOLS (Dev.ON) under the pause menu: shortcuts for testing later sets.
+## The office's DEV panel calls dev_win_set() and dev_skip_to_headline() too.
+func _dev_tools() -> Control:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 10)
+	var head := _centered(_label("DEV TOOLS", 20, Color(1.0, 0.65, 0.3)))
+	head.add_theme_font_override("font", _pixel_font)
+	head.add_theme_color_override("font_outline_color", COLOR_OUTLINE)
+	head.add_theme_constant_override("outline_size", 8)
+	box.add_child(head)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	box.add_child(row)
+	var buttons := [_dev_button("WIN\nTHIS SET", dev_win_set), _dev_button("MAX MIC\n+HEAT +30S", dev_boost)]
+	if not _run.is_final_set():
+		buttons.append(_dev_button("SKIP TO\nHEADLINE", dev_skip_to_headline))
+	for b in buttons:
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(b)
+	return box
+
+
+func _dev_button(text: String, action: Callable) -> Button:
+	var b := _button(text, Color(0.28, 0.3, 0.36))
+	b.add_theme_font_size_override("font_size", 16)
+	b.add_theme_constant_override("outline_size", 6)
+	b.pressed.connect(func():
+		_sound.play("click")
+		action.call())
+	return b
+
+
+## Win the set being played right now. False if no set is live.
+func dev_win_set() -> bool:
+	if _battle == null or _battle.result != Battle.Result.ONGOING:
+		return false
+	_paused = false
+	_close_overlay()
+	_battle.dev_win()
+	_battle.pop_events()
+	_refresh()
+	_check_result()
+	return true
+
+
+## Full mic, the hottest room and 30 more seconds, then back to the set.
+func dev_boost() -> bool:
+	if _battle == null or _battle.result != Battle.Result.ONGOING:
+		return false
+	_battle.dev_boost(30.0)
+	_set_paused(false)
+	_refresh()
+	return true
+
+
+## Jump to the headline show, picking up one new card per set skipped (as
+## if you'd played them). False before a run starts or at the boss already.
+func dev_skip_to_headline() -> bool:
+	if _run == null or _run.is_final_set():
+		return false
+	while not _run.is_final_set():
+		var picks := _run.reward_choices()
+		_run.finish_set(picks[0] if not picks.is_empty() else null)
+	_paused = false
+	_show_next_up()
+	return true
 
 
 # ---------------------------------------------------------------- drawing

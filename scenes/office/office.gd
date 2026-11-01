@@ -229,6 +229,10 @@ var _look_i := 0
 var _looks: Array = [[], []]
 var _screen_spots: Array = []
 var _look_button: Button
+## DEV button (under LOOK) and its panel (scenes/office/dev_panel.gd), only
+## when Dev.ON.
+var _dev_button: Button
+var _dev: Control
 var _side_a: Node3D
 var _side_b: Node3D
 var _computers: Array[Computer] = []
@@ -362,6 +366,10 @@ func _ready() -> void:
 	add_child(_voice_chat)
 	_voice_chat.replied.connect(_on_dale_replied)
 	_voice_chat.failed.connect(_on_dale_failed)
+	if Dev.ON:
+		_dev = preload("res://scenes/office/dev_panel.gd").new()
+		add_child(_dev)
+		_dev.setup(self)
 	get_viewport().size_changed.connect(_on_resized)
 	_on_resized()
 	# The phone reports its safe area a moment after it turns; re-check twice a second.
@@ -1860,6 +1868,13 @@ func _build_hud() -> void:
 	_look_button.custom_minimum_size = Vector2(200, 88)
 	_place_button(_look_button, Control.PRESET_TOP_RIGHT)
 	_look_button.pressed.connect(func(): _set_look(1 - _look_i))
+	# Testing shortcuts (` or F1 on keys).
+	if Dev.ON:
+		_dev_button = _hud_button("DEV", Control.PRESET_TOP_RIGHT)
+		_dev_button.custom_minimum_size = Vector2(200, 88)
+		_dev_button.add_theme_color_override("font_color", Color(1.0, 0.6, 0.25))
+		_place_dev_button()
+		_dev_button.pressed.connect(_toggle_dev)
 	var t := create_tween()
 	t.tween_interval(3.5)
 	t.tween_property(_title, "modulate:a", 0.0, 1.5)
@@ -1900,14 +1915,45 @@ func _place_button(b: Button, corner: Control.LayoutPreset) -> void:
 	b.grow_vertical = Control.GROW_DIRECTION_BEGIN if b.anchor_top > 0.5 else Control.GROW_DIRECTION_END
 
 
+## Just under LOOK, top right.
+func _place_dev_button() -> void:
+	if _dev_button == null:
+		return
+	_place_button(_dev_button, Control.PRESET_TOP_RIGHT)
+	_dev_button.offset_top += 100
+	_dev_button.offset_bottom += 100
+
+
+func _dev_open() -> bool:
+	return _dev != null and _dev.visible
+
+
+func _toggle_dev() -> void:
+	if _dev_open():
+		_dev.close()
+		return
+	if _seat or _talking:
+		return
+	# Stop walking and let go of the mouse so the panel's buttons can be clicked.
+	_touches.clear()
+	_stick = Vector2.ZERO
+	_pad_move = Vector2.ZERO
+	_pad_look = Vector2.ZERO
+	if _press_pc:
+		_press_pc.release()
+		_press_pc = null
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	_dev.open()
+
+
 func _dale_aimed() -> bool:
 	var t := _dale_hit(_aim_point())
 	return t >= 0.0 and t < DALE_REACH and not _talking and _seat == null
 
 
 func _hud_button_at(point: Vector2) -> bool:
-	for b in [_sit_button, _stand_button, _look_button]:
-		if b.visible and b.get_global_rect().has_point(point):
+	for b in [_sit_button, _stand_button, _look_button, _dev_button]:
+		if b and b.visible and b.get_global_rect().has_point(point):
 			return true
 	return false
 
@@ -1988,6 +2034,7 @@ func _apply_insets(force := false) -> void:
 	_inset = inset
 	_place_button(_sit_button, Control.PRESET_BOTTOM_RIGHT)
 	_place_button(_look_button, Control.PRESET_TOP_RIGHT)
+	_place_dev_button()
 	_place_stand_button()
 	_place_talk_box()
 	_hint.offset_top = -270 - _inset.w
@@ -1998,7 +2045,7 @@ func _apply_insets(force := false) -> void:
 	# Sideways the toast fits between the corner buttons; upright it drops
 	# below them and runs the full width, so longer news still reads.
 	var wide := _hud.size.x > _hud.size.y
-	_toast.offset_top = (24 if wide else 140) + _inset.y
+	_toast.offset_top = (24 if wide else (240 if _dev_button else 140)) + _inset.y
 	_toast.offset_left = 300 if wide else 30 + _inset.x
 	_toast.offset_right = -300 if wide else -30 - _inset.z
 	_todo.offset_top = 24 + _inset.y
@@ -2046,7 +2093,7 @@ func _physics_process(delta: float) -> void:
 		move.x += 1
 	if _pad_move.length() > PAD_DEAD:
 		move += _pad_move
-	move = Vector2.ZERO if _seat or _talking else move.limit_length(1.0)
+	move = Vector2.ZERO if _seat or _talking or _dev_open() else move.limit_length(1.0)
 	if move.length() > 0.1:
 		_moved = true
 	var speed := RUN_SPEED if Input.is_physical_key_pressed(KEY_SHIFT) or _pad_run else SPEED
@@ -2137,7 +2184,9 @@ func _process(delta: float) -> void:
 	_sit_button.text = "TALK" if _dale_nearer_than_computers() else "SIT DOWN"
 	_stand_button.visible = not _pad and ((_touch and _seat != null) or _talking)
 	_look_button.visible = not _pad and _seat == null and not _talking
-	_todo.visible = _seat == null and not _talking
+	if _dev_button:
+		_dev_button.visible = _look_button.visible and not _dev_open()
+	_todo.visible = _seat == null and not _talking and not _dev_open()
 	_update_hint(aim, close)
 	_hud.queue_redraw()
 
@@ -2285,6 +2334,17 @@ func _draw_pad_hud(size: Vector2) -> void:
 
 func _input(event: InputEvent) -> void:
 	_start_room_sound()
+	# The DEV panel takes taps and clicks itself; ` / F1 / Esc close it.
+	if _dev_open():
+		if event is InputEventKey and event.pressed and not event.echo \
+				and event.physical_keycode in [KEY_ESCAPE, KEY_F1, KEY_QUOTELEFT]:
+			_dev.close()
+			get_viewport().set_input_as_handled()
+		return
+	if _dev and event is InputEventKey and event.pressed and not event.echo \
+			and event.physical_keycode in [KEY_F1, KEY_QUOTELEFT] and _seat == null and not _talking:
+		_toggle_dev()
+		return
 	if event is InputEventJoypadButton or event is InputEventJoypadMotion:
 		_pad_input(event)
 		return

@@ -347,6 +347,24 @@ func tick(delta: float) -> void:
 			_lose(Loss.LIGHT)
 
 
+## Dev tools: fill the meter and win the set right now.
+func dev_win() -> void:
+	if result != Result.ONGOING:
+		return
+	laughs = maxi(laughs, laughs_needed)
+	result = Result.WON
+	history.append("The room is roaring. You killed!")
+	_events.append("won")
+
+
+## Dev tools: full mic, the hottest room, and extra seconds on the clock.
+func dev_boost(seconds: float) -> void:
+	mic = Balance.MIC_MAX
+	_change_energy(Balance.MAX_CROWD_ENERGY)
+	time_left += seconds
+	set_length += seconds
+
+
 ## Things that happened since the last call, oldest first.
 func pop_events() -> Array[String]:
 	var out := _events.duplicate()

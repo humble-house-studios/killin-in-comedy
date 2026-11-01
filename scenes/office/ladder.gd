@@ -874,6 +874,47 @@ func tick(delta: float) -> void:
 			_locked_hint = _lock_text(id)
 
 
+# ---------------------------------------------------------------- dev tools
+
+## Where the DEV panel's teleports land: just inside each room's door, facing
+## in (the same clear spots tools/ladder_walk.gd walks through).
+const SPOTS := {
+	"office": {"name": "OFFICE", "pos": Vector3(0.3, 0, 3.2), "yaw": 0.0},
+	"arcade": {"name": "ARCADE", "pos": Vector3(1.8, 0, 5.0), "yaw": PI},
+	"archive": {"name": "BASEMENT", "pos": Vector3(-5.0, 0, 7.4), "yaw": PI / 2},
+	"trading": {"name": "TRADING FLOOR", "pos": Vector3(0, 0, 13.2), "yaw": PI},
+	"boardroom": {"name": "BOARDROOM", "pos": Vector3(0, 0, 21.2), "yaw": PI},
+	"corner": {"name": "CORNER OFFICE", "pos": Vector3(2.5, 0, 27.4), "yaw": PI},
+	"stage": {"name": "THE STAGE", "pos": Vector3(2.5, 0, 33.4), "yaw": PI},
+}
+
+
+func dev_spots() -> Dictionary:
+	return SPOTS
+
+
+## After a dev shortcut changed the saves: doors, people and machine screens
+## catch up right away.
+func dev_refresh() -> void:
+	_update_doors(false)
+	_refresh_people()
+	_refresh_machines()
+
+
+func dev_teleport(room: String) -> void:
+	var spot: Dictionary = SPOTS.get(room, {})
+	if spot.is_empty():
+		return
+	if office._talking:
+		office._set_talk(false)
+	office._set_seat(null)
+	office._player.global_position = spot.pos
+	office._player.velocity = Vector3.ZERO
+	office._yaw = spot.yaw
+	office._pitch = -0.08
+	office._glide = 1.0
+
+
 func _lock_text(id: String) -> String:
 	match id:
 		"office":

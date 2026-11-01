@@ -138,6 +138,16 @@ right there, it's right on iPhone, Android and Steam. To keep that true:
   every door, screen and coworker: `godot --headless -s res://tools/ladder_walk.gd`
   (prints PASS/FAIL; both wipe the ladder saves).
   Design: `docs/narrative.md` (The Ladder).
+- **Dev tools** (`engine/dev.gd`, `Dev.ON`; set it to false before shipping):
+  skip ahead for testing. The office has a DEV button under LOOK (or ` / F1)
+  opening `scenes/office/dev_panel.gd`: meet/skip Dale's goals or finish his
+  story, win the comedy set or jump to the headline show, ladder tokens,
+  tickets, machines, coworkers and doors, Loot Machine tokens/shards/relics,
+  teleport to any room (`ladder.gd` `SPOTS`), wipe all saves. The comedy game
+  has DEV TOOLS in its pause menu (win set, max mic + heat +30 s, skip to the
+  headline) and a skip-to-boss button on the next-set screen. Shortcuts write
+  the same saves playing would; tested in `tests/test_dev.gd`. New progress
+  gates should get a dev shortcut here too.
 - The club look is drawn in code: `scenes/club.gdshader`, `scenes/stage.gdshader`
   and `scenes/stage_view.gd` (mic and crowd). Jokes live in `data/jokes.gd`.
 
