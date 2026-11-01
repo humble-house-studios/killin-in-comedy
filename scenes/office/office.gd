@@ -34,6 +34,10 @@ extends Node
 ## - Goal marker: a spinning yellow diamond over whatever the to-do wants next
 ##   (engine/goal_target.gd picks it), or over the next door on the way; off
 ##   screen, a chevron on the screen edge points at it with the distance.
+## - Pause menu (scenes/office/pause_menu.gd): Esc, Start while walking, or the
+##   II button. Pauses the world; volumes (the Music / Effects buses), look
+##   speed, invert Y, the LOOK A/B screens, the controls card, and NEW GAME
+##   (wipes every progress save in WIPE and reloads the office).
 ## Mouse: click to look around, WASD walk, click the monitor to play, Esc lets go.
 ## Touch: tap the computer (or SIT DOWN) and the camera glides to the desk and
 ## frames the screen; then every tap goes into the game. STAND UP to walk again
@@ -147,6 +151,20 @@ const MARKER_NEAR := 1.0
 const MARKER_FAR := 2.0
 const MARKER_GLIDE := 0.8
 const MARKER_CEIL := 2.35
+## Pause menu settings (user://settings.cfg, section "office"; sound.gd owns
+## the file): [default, step, min, max]. invert_y is on/off.
+const SETTINGS := {
+	"music": [0.8, 0.1, 0.0, 1.0], "effects": [1.0, 0.1, 0.0, 1.0],
+	"look_speed": [1.0, 0.25, 0.25, 3.0], "invert_y": [false],
+}
+## New Game wipes these (settings.cfg and office_look.cfg stay): Dale, the
+## ladder, the coworkers, the shared relics/stats, the comedy tips, and the
+## desk games' own progress (Pong's best, the Cube Desk's levels, Proof
+## Hand's notebook).
+const WIPE := [
+	"user://dale.cfg", "user://ladder.cfg", "user://coworkers.cfg", "user://office_relics.cfg",
+	"user://tips.cfg", "user://save.cfg", "user://cube_desk.cfg", "user://notebook.json",
+]
 
 
 ## One playable computer: a game running in its own viewport, shown on a screen.
@@ -238,9 +256,8 @@ var _pong_frames: Array[Node3D] = []
 var _look_i := 0
 var _looks: Array = [[], []]
 var _screen_spots: Array = []
-var _look_button: Button
-## DEV button (under LOOK) and its panel (scenes/office/dev_panel.gd), only
-## when Dev.ON.
+## DEV button (under the pause button) and its panel
+## (scenes/office/dev_panel.gd), only when Dev.ON.
 var _dev_button: Button
 var _dev: Control
 var _side_a: Node3D
@@ -342,6 +359,12 @@ var _marker_from := Vector3.ZERO
 var _marker_glide := 1.0
 var _marker_time := 0.0
 var _ding: AudioStreamPlayer
+var _menu: Control
+var _pause_button: Button
+var _settings := {}
+var _music_bus := {}
+var _was_captured := false
+var _touch_last := false
 var _dale_news := false
 var _talking := false
 ## The conversation in progress: {id, title, steps}, and where we are in it.
@@ -386,6 +409,7 @@ func _ready() -> void:
 	_build_room()
 	_build_player()
 	_build_room_sound()
+	_load_settings()
 	_build_hud()
 	_build_marker()
 	_build_talk_box()
@@ -395,6 +419,9 @@ func _ready() -> void:
 	add_child(_voice_chat)
 	_voice_chat.replied.connect(_on_dale_replied)
 	_voice_chat.failed.connect(_on_dale_failed)
+	_menu = preload("res://scenes/office/pause_menu.gd").new()
+	_menu.office = self
+	add_child(_menu)
 	if Dev.ON:
 		_dev = preload("res://scenes/office/dev_panel.gd").new()
 		add_child(_dev)
@@ -480,7 +507,7 @@ func _make_bus(bus_name: String) -> int:
 	var i := AudioServer.bus_count
 	AudioServer.add_bus(i)
 	AudioServer.set_bus_name(i, bus_name)
-	AudioServer.set_bus_send(i, "Master")
+	AudioServer.set_bus_send(i, "Effects")
 	return i
 
 
@@ -491,6 +518,10 @@ func _on_node_added(node: Node) -> void:
 	for view in _view_bus:
 		if view.is_ancestor_of(node):
 			node.bus = AudioServer.get_bus_name(_view_bus[view])
+			# A game's looping music goes to its "<game> Music" twin bus (same
+			# distance fade, under the menu's MUSIC volume).
+			if node is AudioStreamPlayer and _is_music(node) and AudioServer.get_bus_index(node.bus + " Music") >= 0:
+				node.bus = node.bus + " Music"
 			# Video players (the Cube Desk's record footage) mix through Godot
 			# already; they only need the bus.
 			if node is VideoStreamPlayer:
@@ -500,6 +531,15 @@ func _on_node_added(node: Node) -> void:
 			# mixer (stream playback) plays them through the per-game buses.
 			node.playback_type = AudioServer.PLAYBACK_TYPE_STREAM
 			return
+
+
+func _is_music(player: AudioStreamPlayer) -> bool:
+	var st := player.stream
+	if st is AudioStreamOggVorbis and st.loop:
+		return true
+	if st is AudioStreamWAV and st.loop_mode != AudioStreamWAV.LOOP_DISABLED:
+		return true
+	return String(player.name).to_lower().contains("music")
 
 
 ## A screen showing a game's viewport, plus its crisp copy for the screen pass.
@@ -791,8 +831,6 @@ func _set_look(i: int, save := true) -> void:
 		var wide := _pong_view.size.x > _pong_view.size.y
 		_pong_pc.size = _pong_wide_size() if wide else PONG_SCREEN
 		_pong_pc.quad.size = _pong_pc.size
-	if _look_button:
-		_look_button.text = "LOOK A" if i == 0 else "LOOK B"
 	if save:
 		var cfg := ConfigFile.new()
 		cfg.set_value("office", "look", i)
@@ -1079,12 +1117,14 @@ func _build_room_sound() -> void:
 	_ac = AudioStreamPlayer.new()
 	_ac.stream = hum
 	_ac.volume_db = AC_DB
+	_ac.bus = "Effects"
 	add_child(_ac)
 	for k in 4:
 		_step_sounds.append(load("res://audio/step_%d.wav" % (k + 1)))
 	for k in 2:
 		var feet := AudioStreamPlayer.new()
 		feet.volume_db = STEP_DB
+		feet.bus = "Effects"
 		add_child(feet)
 		_feet.append(feet)
 	# Browsers hold sound until the first tap or key; elsewhere start now.
@@ -1715,6 +1755,115 @@ func _tick_dale(delta: float) -> void:
 		_dale_alert.position.y = 1.72 + sin(_dale_time * 3.0) * 0.04
 
 
+# ---------------------------------------------------------------- pause menu
+
+## Pause the world (walking, Dale, coworkers, every game) under the menu.
+func _open_menu(by_pad: bool) -> void:
+	if _menu == null or _menu.visible or _dev_open():
+		return
+	if _talking:
+		_set_talk(false)
+	if _voice_chat.busy or _voice_chat.listening():
+		_voice_chat.cancel()
+	if _press_pc:
+		_press_pc.release()
+		_press_pc = null
+	_touches.clear()
+	_stick = Vector2.ZERO
+	_pad_move = Vector2.ZERO
+	_pad_look = Vector2.ZERO
+	_pad_run = false
+	_pad_leave = -1.0
+	_goal_live = false
+	_marker.visible = false
+	_hint.text = ""
+	_hud.queue_redraw()
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	_was_captured = false
+	if _voice != "":
+		DisplayServer.tts_pause()
+	get_tree().paused = true
+	_menu.open(by_pad)
+
+
+## capture: take the mouse back for looking (not on touch or a pad).
+func close_menu(capture: bool) -> void:
+	_menu.close()
+	get_tree().paused = false
+	if _voice != "":
+		DisplayServer.tts_resume()
+	if capture and not _touch_last and not _pad:
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		_was_captured = true
+
+
+func setting(key: String):
+	return _settings.get(key, SETTINGS[key][0])
+
+
+func set_setting(key: String, value) -> void:
+	_settings[key] = value
+	_apply_settings()
+	Sound.write_settings("office", {key: value})
+
+
+func step_setting(key: String, dir: int) -> void:
+	var s: Array = SETTINGS[key]
+	set_setting(key, clampf(snappedf(float(setting(key)) + s[1] * dir, 0.01), s[2], s[3]))
+
+
+func toggle_look() -> void:
+	_set_look(1 - _look_i)
+
+
+func look_index() -> int:
+	return _look_i
+
+
+func _load_settings() -> void:
+	for key in SETTINGS:
+		var v = Sound.read_setting("office", key, SETTINGS[key][0])
+		_settings[key] = bool(v) if key == "invert_y" else clampf(float(v), SETTINGS[key][2], SETTINGS[key][3])
+	_apply_settings()
+
+
+func _apply_settings() -> void:
+	for pair in [["Music", "music"], ["Effects", "effects"]]:
+		var bus := AudioServer.get_bus_index(pair[0])
+		if bus >= 0:
+			var v := float(_settings[pair[1]])
+			AudioServer.set_bus_volume_db(bus, linear_to_db(maxf(v, 0.0001)))
+			AudioServer.set_bus_mute(bus, v <= 0.001)
+
+
+## Wipe every progress save and start the office over (next frame, so no
+## button is mid-press when the old office goes).
+func new_game() -> void:
+	_restart.call_deferred()
+
+
+func _restart() -> void:
+	var tree := get_tree()
+	var parent := get_parent()
+	var current := tree.current_scene == self
+	tree.paused = false
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	parent.remove_child(self)
+	for f in WIPE:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(f))
+	# Proof Hand's notebook lives in its Save autoload too: blank it.
+	var save := tree.root.get_node_or_null("Save")
+	if save and save.get_script() and "notebook" in save:
+		var blank: Node = save.get_script().new()
+		save.set("notebook", blank.get("notebook"))
+		blank.free()
+	var fresh: Node = load(scene_file_path).instantiate()
+	parent.add_child(fresh)
+	if current:
+		tree.current_scene = fresh
+	queue_free()
+
+
 # ---------------------------------------------------------------- goal marker
 
 ## A small low-poly diamond (two four-sided pyramids) that spins and bobs over
@@ -1732,6 +1881,7 @@ func _build_marker() -> void:
 	_ding = AudioStreamPlayer.new()
 	_ding.stream = load("res://audio/ding.wav")
 	_ding.volume_db = -6.0
+	_ding.bus = "Effects"
 	add_child(_ding)
 
 
@@ -2046,11 +2196,11 @@ func _build_hud() -> void:
 	_sit_button.pressed.connect(_sit_nearest)
 	_stand_button = _hud_button("STAND UP", Control.PRESET_TOP_LEFT)
 	_stand_button.pressed.connect(_stand_up)
-	# A/B test the screens: beige CRT monitors (A) or CRT TVs (B). L on keys.
-	_look_button = _hud_button("LOOK A" if _look_i == 0 else "LOOK B", Control.PRESET_TOP_RIGHT)
-	_look_button.custom_minimum_size = Vector2(200, 88)
-	_place_button(_look_button, Control.PRESET_TOP_RIGHT)
-	_look_button.pressed.connect(func(): _set_look(1 - _look_i))
+	# Pause menu (settings, the LOOK A/B screens, controls, new game).
+	_pause_button = _hud_button("II", Control.PRESET_TOP_RIGHT)
+	_pause_button.custom_minimum_size = Vector2(96, 88)
+	_place_button(_pause_button, Control.PRESET_TOP_RIGHT)
+	_pause_button.pressed.connect(func(): _open_menu(false))
 	# Testing shortcuts (` or F1 on keys).
 	if Dev.ON:
 		_dev_button = _hud_button("DEV", Control.PRESET_TOP_RIGHT)
@@ -2098,7 +2248,7 @@ func _place_button(b: Button, corner: Control.LayoutPreset) -> void:
 	b.grow_vertical = Control.GROW_DIRECTION_BEGIN if b.anchor_top > 0.5 else Control.GROW_DIRECTION_END
 
 
-## Just under LOOK, top right.
+## Just under the pause button, top right.
 func _place_dev_button() -> void:
 	if _dev_button == null:
 		return
@@ -2126,6 +2276,7 @@ func _toggle_dev() -> void:
 		_press_pc.release()
 		_press_pc = null
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	_was_captured = false
 	_dev.open()
 
 
@@ -2135,7 +2286,7 @@ func _dale_aimed() -> bool:
 
 
 func _hud_button_at(point: Vector2) -> bool:
-	for b in [_sit_button, _stand_button, _look_button, _dev_button]:
+	for b in [_sit_button, _stand_button, _pause_button, _dev_button]:
 		if b and b.visible and b.get_global_rect().has_point(point):
 			return true
 	return false
@@ -2216,9 +2367,11 @@ func _apply_insets(force := false) -> void:
 		return
 	_inset = inset
 	_place_button(_sit_button, Control.PRESET_BOTTOM_RIGHT)
-	_place_button(_look_button, Control.PRESET_TOP_RIGHT)
+	_place_button(_pause_button, Control.PRESET_TOP_RIGHT)
 	_place_dev_button()
 	_place_stand_button()
+	if _menu:
+		_menu._layout()
 	_place_talk_box()
 	_hint.offset_top = -270 - _inset.w
 	_hint.offset_bottom = -150 - _inset.w
@@ -2343,6 +2496,10 @@ func _process(delta: float) -> void:
 		bus_vol[pc.bus] = maxf(bus_vol.get(pc.bus, 0.0), vol)
 	for bus in bus_vol:
 		AudioServer.set_bus_volume_db(bus, linear_to_db(maxf(bus_vol[bus], 0.0001)))
+		if not _music_bus.has(bus):
+			_music_bus[bus] = AudioServer.get_bus_index(AudioServer.get_bus_name(bus) + " Music")
+		if _music_bus[bus] >= 0:
+			AudioServer.set_bus_volume_db(_music_bus[bus], linear_to_db(maxf(bus_vol[bus], 0.0001)))
 
 	# Hover the game under the crosshair (mouse) so buttons light up.
 	if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and _press_pc == null:
@@ -2367,9 +2524,15 @@ func _process(delta: float) -> void:
 	_sit_button.visible = _touch and not _pad and _seat == null and not _talking
 	_sit_button.text = "TALK" if _dale_nearer_than_computers() else "SIT DOWN"
 	_stand_button.visible = not _pad and ((_touch and _seat != null) or _talking)
-	_look_button.visible = not _pad and _seat == null and not _talking
+	_pause_button.visible = not _pad and _seat == null and not _talking
 	if _dev_button:
-		_dev_button.visible = _look_button.visible and not _dev_open()
+		_dev_button.visible = _pause_button.visible and not _dev_open()
+	# The browser lets go of the mouse on Esc itself (the key may never
+	# arrive): losing it while walking opens the menu too.
+	var captured := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
+	if _was_captured and not captured and not _talking and not _dev_open() and OS.has_feature("web"):
+		_open_menu(false)
+	_was_captured = captured
 	_todo.visible = _seat == null and not _talking and not _dev_open()
 	_update_hint(aim, close)
 	_hud.queue_redraw()
@@ -2555,6 +2718,7 @@ func _input(event: InputEvent) -> void:
 		if event.device == InputEvent.DEVICE_ID_EMULATION:
 			return
 		_touch = true
+		_touch_last = true
 		_pad = false
 		_touch_input(event)
 		return
@@ -2562,6 +2726,7 @@ func _input(event: InputEvent) -> void:
 		return
 	if event is InputEventMouseButton:
 		_pad = false
+		_touch_last = false
 		_mouse_button(event)
 	elif event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		_look(event.relative * LOOK_SENS)
@@ -2569,6 +2734,7 @@ func _input(event: InputEvent) -> void:
 		if _talking:
 			_set_talk(false)
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		_open_menu(false)
 
 
 func _mouse_button(event: InputEventMouseButton) -> void:
@@ -2607,6 +2773,11 @@ func _pad_input(event: InputEvent) -> void:
 	if event is InputEventJoypadButton and event.button_index in [JOY_BUTTON_BACK, JOY_BUTTON_GUIDE]:
 		if event.pressed and _seat:
 			_set_seat(null)
+		return
+	# Start while walking: the pause menu (seated, Start belongs to the game).
+	if event is InputEventJoypadButton and event.button_index == JOY_BUTTON_START and _seat == null:
+		if event.pressed:
+			_open_menu(true)
 		return
 	if _seat:
 		if event is InputEventJoypadButton and event.button_index == JOY_BUTTON_B:
@@ -2772,6 +2943,9 @@ func _touch_input(event: InputEvent) -> void:
 
 
 func _look(delta: Vector2) -> void:
+	delta *= float(_settings.look_speed)
+	if _settings.invert_y:
+		delta.y = -delta.y
 	_yaw -= delta.x
 	_pitch = clampf(_pitch - delta.y, -1.4, 1.4)
 

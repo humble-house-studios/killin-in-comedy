@@ -69,7 +69,7 @@ right there, it's right on iPhone, Android and Steam. To keep that true:
   game on the desk monitor, first person. Every computer is a chunky beige 90s
   CRT (4:3); each game runs in a 90s desktop window on it (wallpaper, title bar,
   taskbar), built by `_crt()`, `_desktop()` and `_window_frame()` in office.gd.
-  A/B test: the LOOK button (top right, or L) flips to look B, slim charcoal
+  A/B test: SCREENS in the pause menu (or L) flips to look B, slim charcoal
   CRT TVs with rabbit ears (`_tv()`), the game straight on the glass; each
   look's shells live in `_style()` groups, screens move to that look's spot,
   and the choice is remembered in `user://office_look.cfg`. The Loot Machine
@@ -105,7 +105,17 @@ right there, it's right on iPhone, Android and Steam. To keep that true:
   TO-DO top left, plus a goal marker (a spinning yellow diamond over the next
   thing to do, or the next door on the way; an edge chevron with the distance
   when it's off screen), picked by `engine/goal_target.gd` from the same
-  chain. Design and future floors: `docs/narrative.md`. Chapters in
+  chain. Design and future floors: `docs/narrative.md`.
+  **Pause menu** (`scenes/office/pause_menu.gd`, a 90s OPTIONS.EXE window): Esc,
+  Start while walking, or the II button top right. It pauses the whole tree
+  (the menu runs `PROCESS_MODE_ALWAYS`) and holds MUSIC / EFFECTS volume, LOOK
+  SPEED, INVERT Y (saved in `user://settings.cfg`, section `office`; `Sound`
+  owns the file and keeps other keys), SCREENS (LOOK A/B, also L), CONTROLS and
+  NEW GAME (wipes office.gd's `WIPE` list, keeps settings and the look, reloads
+  the office). Every game bus sends to `Effects`; a game's looping music goes
+  to its `<Game> Music` twin, which sends to `Music` (all declared in
+  `default_bus_layout.tres`, since web only plays on buses that exist at start).
+  `tools/menu_shot.gd` renders the menu and checks New Game. Chapters in
   `data/dale_lines.gd`, unlocked by the shared stats via
   `engine/dale_story.gd` (memory in `user://dale.cfg`); the office counts
   `pong_bosses`/`cube_records`/`proof_wins` with `engine/office_goals.gd`. After each story bit, HOLD TO TALK records the mic

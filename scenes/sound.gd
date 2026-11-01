@@ -61,9 +61,25 @@ func start_music() -> void:
 func toggle_mute() -> void:
 	muted = not muted
 	AudioServer.set_bus_mute(0, muted)
+	write_settings("audio", {"muted": muted})
+
+
+## One value from user://settings.cfg (the office's pause menu keeps its
+## volumes and look settings here too, in section "office").
+static func read_setting(section: String, key: String, default: Variant) -> Variant:
 	var cfg := ConfigFile.new()
+	if cfg.load(SETTINGS_PATH) != OK:
+		return default
+	return cfg.get_value(section, key, default)
+
+
+## Saves values into user://settings.cfg, keeping everything else in it.
+static func write_settings(section: String, values: Dictionary) -> void:
+	var cfg := ConfigFile.new()
+	cfg.load(SETTINGS_PATH)
 	cfg.set_value("meta", "save_version", SAVE_VERSION)
-	cfg.set_value("audio", "muted", muted)
+	for key in values:
+		cfg.set_value(section, key, values[key])
 	cfg.save(SETTINGS_PATH)
 
 
