@@ -83,8 +83,6 @@ jobs:
             curl -s -m 30 -X POST "$url/groq" -d '{}' | python3 -c "import sys,json; d=json.load(sys.stdin); print('::notice title=Groq models::hear=%s think=%s all=%s %s' % (d.get('hear'), d.get('think'), ','.join(d.get('ids',[]))[:500], d.get('error','')))" || true
             curl -s -m 60 -X POST "$url/talk" -H 'Content-Type: application/json' -d '{"text":"Hey Dale, quick one: favourite snack?","voice":false}' \
               | python3 -c "import sys,json; d=json.load(sys.stdin); print('::notice title=Groq Dale says::%s | %s' % (d.get('reply', d.get('error')), json.dumps(d.get('models',{}))[:400]))" || true
-            curl -s -m 60 -X POST "$url/say" -H 'Content-Type: application/json' -d '{"text":"Testing, testing.","engine":"groq"}' \
-              | python3 -c "import sys,json; d=json.load(sys.stdin); import base64,struct; a=base64.b64decode(d.get('audio','') or b''); print('::notice title=Groq voice::%d bytes head=%s fmt=%s %s' % (len(a), a[:4], (struct.unpack('<HHIIHH', a[20:36]) if a[:4]==b'RIFF' else '-'), json.dumps(d.get('models',{}))[:900]))" || true
           fi
           # Smoke test: one typed line (no voice, to save the free daily allowance).
           for i in 1 2 3; do
@@ -95,22 +93,35 @@ jobs:
           done
           echo "$reply" | python3 -c "import sys,json; d=json.load(sys.stdin); print('::notice title=Dale says::' + d.get('reply', d.get('error','?'))[:200]); print('::notice title=Dale models::' + json.dumps(d.get('models',{}))[:900]); print('::notice title=Dale audio::%d base64 chars' % len(d.get('audio','')))" || echo "::warning title=Dale voice::Smoke test failed: ${reply:0:300}"
 
-      # Dale's story lines, pre-recorded in his voice so the game plays them
-      # like any other sound. Cached: only new or changed lines get recorded.
-      - uses: actions/cache@v4
-        if: steps.deploy.outputs.url != ''
+
+  # Every scripted line in the office (Dale and the arcade crew), recorded
+  # with Piper, a free voice that runs right here: no AI service, no daily
+  # limit, so the AI allowance is left for Dale's live replies. Cached per
+  # line: only new or changed lines get recorded.
+  lines:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          path: audio/dale
-          key: dale-lines-${{ hashFiles('data/dale_lines.gd', 'voice/src/index.js') }}
-          restore-keys: dale-lines-
-      - name: Record Dale's lines
-        if: steps.deploy.outputs.url != ''
+          python-version: "3.12"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            audio/dale
+            ~/.cache/piper
+          key: office-lines-v1-${{ hashFiles('data/dale_lines.gd', 'data/coworker_lines.gd', 'tools/record_lines.py') }}-${{ github.run_id }}
+          restore-keys: |
+            office-lines-v1-${{ hashFiles('data/dale_lines.gd', 'data/coworker_lines.gd', 'tools/record_lines.py') }}-
+            office-lines-v1-
+      - name: Record the office's lines
         continue-on-error: true
         run: |
-          node tools/dale_voice_lines.mjs "${{ steps.deploy.outputs.url }}" | tee lines.log
-          echo "::notice title=Dale lines::$(tail -1 lines.log)"
+          command -v ffmpeg >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg)
+          pip install -q piper-tts
+          python3 tools/record_lines.py | tee lines.log
+          echo "::notice title=Office lines::$(tail -1 lines.log)"
       - uses: actions/upload-artifact@v4
-        if: steps.deploy.outputs.url != ''
         continue-on-error: true
         with:
           name: dale-lines
@@ -119,7 +130,7 @@ jobs:
           retention-days: 3
 
   build:
-    needs: voice
+    needs: [voice, lines]
     runs-on: ubuntu-latest
     container:
       image: barichello/godot-ci:4.3
@@ -128,7 +139,6 @@ jobs:
 
       # Dale's pre-recorded lines from the voice job (if it made any).
       - uses: actions/download-artifact@v4
-        if: needs.voice.outputs.url != ''
         continue-on-error: true
         with:
           name: dale-lines
