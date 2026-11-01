@@ -26,6 +26,8 @@ const SFX := {
 
 var hub: Node
 var active := false
+## The controller frame for this screen (scenes/pad_cursor.gd).
+var pad: Node
 var accent := Color(1.0, 0.35, 0.7)
 var _players: Array[AudioStreamPlayer] = []
 var _sfx_i := 0
@@ -45,7 +47,7 @@ func _ready() -> void:
 		var p := AudioStreamPlayer.new()
 		add_child(p)
 		_players.append(p)
-	var pad := preload("res://scenes/pad_cursor.gd").new()
+	pad = preload("res://scenes/pad_cursor.gd").new()
 	add_child(pad)
 
 

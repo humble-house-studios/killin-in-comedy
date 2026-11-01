@@ -13,7 +13,7 @@ const VIEW := Vector2(720, 820)
 const COURSE := 44.0
 const HALF_Z := 2.0
 const CEIL := 6.0
-const START := Vector3(0, 1.45, 0)
+const START := Vector3(0, 1.8, 0)
 const SPEED_MIN := 6.0
 const SPEED_MAX := 23.0
 const TUBES := 6
@@ -61,6 +61,8 @@ func _ready() -> void:
 		"grain": 0.07, "vignette": 0.75, "scan": 0.05, "tint": Color(0.55, 0.6, 0.2, 0.04), "flicker": 1.0,
 	})
 	_view.add_post(self)
+	# More solver passes in this little world: joints stay tighter on big hits.
+	PhysicsServer3D.space_set_param(_view.vp.find_world_3d().space, PhysicsServer3D.SPACE_PARAM_SOLVER_ITERATIONS, 32)
 	_view.cam.fov = 58.0
 	_build_course()
 	_build_aim()
@@ -203,26 +205,39 @@ func _build_aim() -> void:
 
 # ---------------------------------------------------------------- the dummy
 
-func _part(at: Vector3, dims: Vector3, m: ShaderMaterial, round_part := false) -> RigidBody3D:
+## Dummy materials, made once (every throw rebuilds the body, not these).
+var _dm := {}
+## Joint anchors, parent before child: {a, b, la, lb} (local on each body).
+var _links: Array[Dictionary] = []
+
+
+func _dummy_mats() -> void:
+	var v = _view
+	_dm = {
+		"shirt": v.mat(Color(0.82, 0.8, 0.62), {"shine": 0.2}),
+		"skin": v.mat(Color(0.86, 0.66, 0.52), {"shine": 0.3}),
+		"pants": v.mat(Color(0.22, 0.24, 0.3)),
+		"shoe": v.mat(Color(0.12, 0.08, 0.06), {"shine": 0.6}),
+		"dark": v.mat(Color(0.04, 0.04, 0.04)),
+		"hair": v.mat(Color(0.32, 0.22, 0.13)),
+		"tie": v.mat(Color(0.5, 0.1, 0.36), {"shine": 0.5}),
+		"belt": v.mat(Color(0.15, 0.1, 0.07), {"shine": 0.8}),
+		"buckle": v.glow(Color(0.6, 0.5, 0.2)),
+		"lens": v.glow(Color(0.5, 0.55, 0.5)),
+	}
+
+
+func _body(at: Vector3, shape: Shape3D, mass: float) -> RigidBody3D:
 	var b := RigidBody3D.new()
 	b.position = at
-	var shape := CollisionShape3D.new()
-	if round_part:
-		var s := SphereShape3D.new()
-		s.radius = dims.x
-		shape.shape = s
-		_view.ball(dims.x, Vector3.ZERO, m, b, 8)
-	else:
-		var bs := BoxShape3D.new()
-		bs.size = dims
-		shape.shape = bs
-		_view.box(dims, Vector3.ZERO, m, b)
-	b.add_child(shape)
+	var cs := CollisionShape3D.new()
+	cs.shape = shape
+	b.add_child(cs)
 	var pm := PhysicsMaterial.new()
 	pm.friction = 0.6
 	pm.bounce = 0.25
 	b.physics_material_override = pm
-	b.mass = 1.0
+	b.mass = mass
 	b.angular_damp = 0.05
 	b.continuous_cd = true
 	_view.root.add_child(b)
@@ -230,17 +245,36 @@ func _part(at: Vector3, dims: Vector3, m: ShaderMaterial, round_part := false) -
 	return b
 
 
-func _pin(a: RigidBody3D, b: RigidBody3D, at: Vector3) -> void:
+## A limb segment: a capsule body, with a ball at its top joint to hide the seam.
+func _limb(at: Vector3, r: float, h: float, m: ShaderMaterial, mass: float) -> RigidBody3D:
+	var c := CapsuleShape3D.new()
+	c.radius = r
+	c.height = h
+	var b := _body(at, c, mass)
+	_view.capsule(r, h, Vector3.ZERO, m, b)
+	_view.ball(r * 1.08, Vector3(0, h * 0.5 - r, 0), m, b, 8)
+	return b
+
+
+func _pin(a: RigidBody3D, b: RigidBody3D, at: Vector3, swing := 70.0, twist := 40.0) -> void:
 	var j := ConeTwistJoint3D.new()
-	j.position = at
-	j.set_param(ConeTwistJoint3D.PARAM_SWING_SPAN, deg_to_rad(70.0))
-	j.set_param(ConeTwistJoint3D.PARAM_TWIST_SPAN, deg_to_rad(40.0))
+	# The cone's axis (joint x) points from the socket down the child part,
+	# so a limb hanging at rest sits in the middle of its cone.
+	var axis := (b.position - at).normalized()
+	var side := Vector3(0, 0, 1)
+	j.transform = Transform3D(Basis(axis, side.cross(axis).normalized(), side), at)
+	j.set_param(ConeTwistJoint3D.PARAM_SWING_SPAN, deg_to_rad(swing))
+	j.set_param(ConeTwistJoint3D.PARAM_TWIST_SPAN, deg_to_rad(twist))
 	_view.root.add_child(j)
 	j.node_a = j.get_path_to(a)
 	j.node_b = j.get_path_to(b)
 	_joints.append(j)
+	_links.append({"a": a, "b": b, "la": a.transform.affine_inverse() * at, "lb": b.transform.affine_inverse() * at})
 
 
+## The Dale-shaped dummy: rounded torso, a head with glasses, moustache and
+## a horseshoe of hair, arms and legs in two pieces each (elbows, knees),
+## hands and shoes. Built standing on the desk, facing down the corridor (+x).
 func _reset_dummy() -> void:
 	for j in _joints:
 		j.queue_free()
@@ -248,31 +282,53 @@ func _reset_dummy() -> void:
 		p.queue_free()
 	_joints.clear()
 	_parts.clear()
+	_links.clear()
+	if _dm.is_empty():
+		_dummy_mats()
 	var v = _view
 	var o := START
-	var shirt: ShaderMaterial = v.mat(Color(0.82, 0.8, 0.62))
-	var skin: ShaderMaterial = v.mat(Color(0.85, 0.66, 0.52))
-	var pants: ShaderMaterial = v.mat(Color(0.22, 0.24, 0.28))
-	var dark: ShaderMaterial = v.mat(Color(0.05, 0.05, 0.05))
-	var hair: ShaderMaterial = v.mat(Color(0.3, 0.2, 0.12))
-	# Built facing down the corridor (+x); its sides are ±z.
-	_torso = _part(o, Vector3(0.2, 0.48, 0.34), shirt)
-	_torso.mass = 2.0
-	v.box(Vector3(0.02, 0.32, 0.06), Vector3(0.105, 0.03, 0), v.mat(Color(0.5, 0.1, 0.36)), _torso)
-	var head := _part(o + Vector3(0, 0.37, 0), Vector3(0.12, 0, 0), skin, true)
+	# Torso: a squashed capsule shirt, trousers and belt at the bottom.
+	var tb := BoxShape3D.new()
+	tb.size = Vector3(0.24, 0.56, 0.36)
+	_torso = _body(o, tb, 2.5)
+	v.capsule(0.18, 0.6, Vector3(0, 0.02, 0), _dm.shirt, _torso).scale = Vector3(0.7, 1, 1)
+	v.cyl(0.175, 0.175, 0.2, Vector3(0, -0.2, 0), _dm.pants, _torso).scale = Vector3(0.72, 1, 1)
+	v.cyl(0.18, 0.18, 0.045, Vector3(0, -0.1, 0), _dm.belt, _torso).scale = Vector3(0.74, 1, 1)
+	v.box(Vector3(0.03, 0.05, 0.05), Vector3(0.13, -0.1, 0), _dm.buckle, _torso)
+	v.box(Vector3(0.02, 0.26, 0.055), Vector3(0.128, 0.08, 0), _dm.tie, _torso)
+	v.box(Vector3(0.03, 0.05, 0.08), Vector3(0.122, 0.22, 0), _dm.tie, _torso)
+	v.box(Vector3(0.06, 0.04, 0.2), Vector3(0.08, 0.26, 0), _dm.shirt, _torso, Vector3(0, 0, -0.3))
+	v.cyl(0.055, 0.055, 0.12, Vector3(0, 0.3, 0), _dm.skin, _torso)
 	for s in [-1.0, 1.0]:
-		v.box(Vector3(0.02, 0.045, 0.07), Vector3(0.11, 0.02, s * 0.045), dark, head)
-	v.box(Vector3(0.02, 0.025, 0.09), Vector3(0.115, -0.04, 0), hair, head)
-	v.box(Vector3(0.2, 0.05, 0.26), Vector3(-0.04, 0.07, 0), hair, head)
-	var arm_l := _part(o + Vector3(0, 0.02, -0.23), Vector3(0.09, 0.42, 0.09), shirt)
-	var arm_r := _part(o + Vector3(0, 0.02, 0.23), Vector3(0.09, 0.42, 0.09), shirt)
-	var leg_l := _part(o + Vector3(0, -0.5, -0.09), Vector3(0.12, 0.5, 0.12), pants)
-	var leg_r := _part(o + Vector3(0, -0.5, 0.09), Vector3(0.12, 0.5, 0.12), pants)
-	_pin(_torso, head, o + Vector3(0, 0.26, 0))
-	_pin(_torso, arm_l, o + Vector3(0, 0.22, -0.2))
-	_pin(_torso, arm_r, o + Vector3(0, 0.22, 0.2))
-	_pin(_torso, leg_l, o + Vector3(0, -0.25, -0.09))
-	_pin(_torso, leg_r, o + Vector3(0, -0.25, 0.09))
+		v.ball(0.075, Vector3(0, 0.2, s * 0.19), _dm.shirt, _torso, 8)
+		v.ball(0.08, Vector3(0, -0.25, s * 0.09), _dm.pants, _torso, 8)
+	# Head.
+	var hs := SphereShape3D.new()
+	hs.radius = 0.12
+	var head := _body(o + Vector3(0, 0.43, 0), hs, 0.8)
+	v.ball(0.12, Vector3.ZERO, _dm.skin, head, 10)
+	v.ball(0.122, Vector3(-0.025, 0.02, 0), _dm.hair, head, 10).scale = Vector3(0.9, 0.75, 1.02)
+	v.ball(0.105, Vector3(0.012, 0.035, 0), _dm.skin, head, 10)
+	for s in [-1.0, 1.0]:
+		v.box(Vector3(0.012, 0.042, 0.055), Vector3(0.112, 0.015, s * 0.042), _dm.dark, head)
+		v.box(Vector3(0.006, 0.03, 0.04), Vector3(0.118, 0.015, s * 0.042), _dm.lens, head)
+		v.ball(0.03, Vector3(-0.005, 0.0, s * 0.12), _dm.skin, head, 6)
+	v.box(Vector3(0.012, 0.01, 0.03), Vector3(0.118, 0.015, 0), _dm.dark, head)
+	v.box(Vector3(0.05, 0.03, 0.03), Vector3(0.125, -0.025, 0), _dm.skin, head)
+	v.box(Vector3(0.02, 0.022, 0.085), Vector3(0.118, -0.058, 0), _dm.hair, head)
+	_pin(_torso, head, o + Vector3(0, 0.3, 0), 40.0, 40.0)
+	# Arms: upper arm, then forearm with the hand.
+	for s in [-1.0, 1.0]:
+		var upper := _limb(o + Vector3(0, 0.08, s * 0.25), 0.052, 0.32, _dm.shirt, 0.6)
+		_pin(_torso, upper, o + Vector3(0, 0.21, s * 0.24), 80.0, 50.0)
+		var fore := _limb(o + Vector3(0, -0.2, s * 0.25), 0.046, 0.3, _dm.shirt, 0.5)
+		v.ball(0.05, Vector3(0, -0.17, 0), _dm.skin, fore, 6)
+		_pin(upper, fore, o + Vector3(0, -0.06, s * 0.25), 65.0, 20.0)
+		var thigh := _limb(o + Vector3(0, -0.45, s * 0.09), 0.072, 0.4, _dm.pants, 0.8)
+		_pin(_torso, thigh, o + Vector3(0, -0.27, s * 0.09), 60.0, 25.0)
+		var shin := _limb(o + Vector3(0, -0.82, s * 0.09), 0.06, 0.38, _dm.pants, 0.6)
+		v.box(Vector3(0.22, 0.07, 0.1), Vector3(0.05, -0.19, 0), _dm.shoe, shin)
+		_pin(thigh, shin, o + Vector3(0, -0.64, s * 0.09), 60.0, 15.0)
 	for a in _parts:
 		for b in _parts:
 			if a != b:
@@ -280,6 +336,26 @@ func _reset_dummy() -> void:
 		a.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
 		a.freeze = true
 	_flying = false
+
+
+## Physics joints stretch when something hits hard enough; this keeps every
+## joint shut so the dummy never comes apart: each child part is moved back
+## onto its socket (parents first) and takes on some of the parent's speed.
+func _hold_together() -> void:
+	for l in _links:
+		var a: RigidBody3D = l.a
+		var b: RigidBody3D = l.b
+		var wa: Vector3 = a.global_transform * l.la
+		var wb: Vector3 = b.global_transform * l.lb
+		var gap := wa - wb
+		if gap.length() < 0.012:
+			continue
+		var t := b.global_transform
+		t.origin += gap
+		b.global_transform = t
+		PhysicsServer3D.body_set_state(b.get_rid(), PhysicsServer3D.BODY_STATE_TRANSFORM, t)
+		var va := a.linear_velocity + a.angular_velocity.cross(wa - a.global_position)
+		b.linear_velocity = b.linear_velocity.lerp(va, 0.5)
 
 
 func _on_fling() -> void:
@@ -318,11 +394,12 @@ func _power() -> float:
 func _physics_process(delta: float) -> void:
 	if not _flying:
 		return
+	_hold_together()
 	_fly_t += delta
 	var v := _torso.linear_velocity
 	var dv := (v - _last_v).length()
-	if dv > 2.6:
-		_impacts += (dv - 2.6) * 18.0
+	if dv > 3.5:
+		_impacts += (dv - 3.5) * 9.0
 		if dv > 5.0:
 			sfx("thump", -10.0 + minf(dv, 12.0), _rng.randf_range(0.8, 1.1))
 	_last_v = v

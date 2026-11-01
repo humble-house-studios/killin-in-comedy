@@ -197,6 +197,20 @@ func cyl(r_top: float, r_bottom: float, h: float, at: Vector3, m: Material, pare
 	return mi
 
 
+## A capsule standing along y (total height h, caps included).
+func capsule(r: float, h: float, at: Vector3, m: Material, parent: Node = null, rot := Vector3.ZERO, segs := 8) -> MeshInstance3D:
+	var mesh := CapsuleMesh.new()
+	mesh.radius = r
+	mesh.height = maxf(h, r * 2.0)
+	mesh.radial_segments = segs
+	mesh.rings = 2
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	mi.material_override = m
+	_place(mi, at, parent, rot)
+	return mi
+
+
 ## A box you can bump into (StaticBody3D). m = null: invisible (glass).
 func solid(dims: Vector3, at: Vector3, m: Material, parent: Node = null, rot := Vector3.ZERO, bounce := 0.1, friction := 0.7) -> StaticBody3D:
 	var body := StaticBody3D.new()

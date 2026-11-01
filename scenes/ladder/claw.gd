@@ -6,6 +6,8 @@ extends "res://scenes/ladder/machine.gd"
 ## (ArcadeRules.CLAW_STRONG_EVERY); weaker grabs slip partway up. Prizes
 ## carried to the chute (front left) pay tickets. The TOP-SHELF STAR beats the
 ## machine. Gloria's Eye (her perk) lights the claw green at full strength.
+## On a controller the claw drives straight from the stick or D-pad (the pad
+## cursor stands aside, `hold`) and A drops; arrow keys + Enter/Space too.
 
 const VIEW_AT := Vector2(0, 150)
 const VIEW := Vector2(720, 850)
@@ -26,6 +28,10 @@ enum S { IDLE, DROP, CLOSE, RISE, CARRY, OPEN_UP }
 var _state := S.IDLE
 var _claw := Vector3(0.25, RAIL_Y, -0.1)
 var _dir := Vector2.ZERO
+var _stick := Vector2.ZERO
+var _dpad := {}
+var _keys := {}
+var _pad_told := false
 var _held: RigidBody3D
 var _strong := false
 var _grabs := 0
@@ -78,6 +84,8 @@ func _ready() -> void:
 	add_child(_grip)
 	_controls()
 	_update_grip()
+	pad.hold = true
+	pad.guide = [["L", "Move the claw"], ["DPAD", "Move the claw"], ["A", "Drop"]]
 
 
 func _kind_for(i: int) -> String:
@@ -237,10 +245,77 @@ func _controls() -> void:
 	_drop.custom_minimum_size = Vector2(258, 242)
 	_drop.pressed.connect(_on_drop)
 	_drop.set_meta("pad_default", true)
+	_drop.set_meta("pad_button", JOY_BUTTON_A)
 	add_child(_drop)
 
 
 # ---------------------------------------------------------------- playing
+
+const PAD_DEAD := 0.25
+const DPAD := {
+	JOY_BUTTON_DPAD_LEFT: Vector2(-1, 0), JOY_BUTTON_DPAD_RIGHT: Vector2(1, 0),
+	JOY_BUTTON_DPAD_UP: Vector2(0, -1), JOY_BUTTON_DPAD_DOWN: Vector2(0, 1),
+}
+const KEYS := {
+	KEY_LEFT: Vector2(-1, 0), KEY_RIGHT: Vector2(1, 0), KEY_UP: Vector2(0, -1), KEY_DOWN: Vector2(0, 1),
+	KEY_A: Vector2(-1, 0), KEY_D: Vector2(1, 0), KEY_W: Vector2(0, -1), KEY_S: Vector2(0, 1),
+}
+
+
+## The controller (pushed in by the office while you sit here) and the
+## keyboard steer the claw directly. Events only, never Input polling.
+func _input(event: InputEvent) -> void:
+	if event is InputEventJoypadMotion:
+		if event.axis == JOY_AXIS_LEFT_X or event.axis == JOY_AXIS_LEFT_Y:
+			var v: float = event.axis_value if absf(event.axis_value) > PAD_DEAD else 0.0
+			if event.axis == JOY_AXIS_LEFT_X:
+				_stick.x = v
+			else:
+				_stick.y = v
+			_tell_pad()
+			get_viewport().set_input_as_handled()
+	elif event is InputEventJoypadButton and DPAD.has(event.button_index):
+		_dpad[event.button_index] = event.pressed
+		_tell_pad()
+		get_viewport().set_input_as_handled()
+	elif event is InputEventKey and not event.echo:
+		if KEYS.has(event.keycode):
+			_keys[event.keycode] = event.pressed
+			get_viewport().set_input_as_handled()
+		elif event.pressed and event.keycode in [KEY_ENTER, KEY_SPACE, KEY_KP_ENTER]:
+			_on_drop()
+			get_viewport().set_input_as_handled()
+
+
+func _tell_pad() -> void:
+	if pad:
+		pad.active = true
+	if not _pad_told and pad:
+		_pad_told = true
+		pad.show_guide()
+
+
+## Standing up: let go of everything (the release won't reach us any more).
+func set_active(on: bool) -> void:
+	super.set_active(on)
+	if not on:
+		_dir = Vector2.ZERO
+		_stick = Vector2.ZERO
+		_dpad.clear()
+		_keys.clear()
+
+
+## Where the controls are pushing: on-screen arrows, stick, D-pad, keys.
+func _steer() -> Vector2:
+	var v := _dir + _stick
+	for b in _dpad:
+		if _dpad[b]:
+			v += DPAD[b]
+	for k in _keys:
+		if _keys[k]:
+			v += KEYS[k]
+	return v.limit_length(1.0)
+
 
 func _clamp_claw() -> void:
 	_claw.x = clampf(_claw.x, -HALF.x + 0.1, HALF.x - 0.1)
@@ -290,8 +365,9 @@ func _process(delta: float) -> void:
 	var target_open := OPEN
 	match _state:
 		S.IDLE:
-			_claw.x += _dir.x * SPEED * delta
-			_claw.z += _dir.y * SPEED * delta
+			var steer := _steer()
+			_claw.x += steer.x * SPEED * delta
+			_claw.z += steer.y * SPEED * delta
 			_clamp_claw()
 		S.DROP:
 			_claw.y -= DROP_SPEED * delta
