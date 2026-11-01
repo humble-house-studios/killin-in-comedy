@@ -7,8 +7,8 @@ on:
     branches: [main]
     paths-ignore: ["**.md"]
   workflow_dispatch:
-  # Daily, just after Cloudflare's free allowance resets (00:00 UTC), so Dale's
-  # Aura lines keep filling in even on days nobody pushes.
+  # Daily, after the free AI allowances reset, so lines keep getting recorded
+  # in Groq's voice even on days nobody pushes.
   schedule:
     - cron: "17 0 * * *"
 
@@ -112,36 +112,36 @@ jobs:
           echo "$reply" | python3 -c "import sys,json; d=json.load(sys.stdin); print('::notice title=Dale says::' + d.get('reply', d.get('error','?'))[:200]); print('::notice title=Dale models::' + json.dumps(d.get('models',{}))[:900]); print('::notice title=Dale audio::%d base64 chars' % len(d.get('audio','')))" || echo "::warning title=Dale voice::Smoke test failed: ${reply:0:300}"
 
 
-      # Dale's scripted lines in his Aura voice (Cloudflare "zeus"), as many as
-      # the free daily allowance allows; Piper covers the rest until a later
-      # build. The first day's clips (old cache) are reused where lines match.
-      - uses: actions/cache/restore@v4
-        if: steps.deploy.outputs.url != ''
-        continue-on-error: true
-        with:
-          path: audio/dale
-          key: dale-lines-none
-          restore-keys: dale-lines-
+      # The best voice for every scripted line: Groq's Orpheus (Dale "troy",
+      # each coworker their own). Its free allowance is small and shared with
+      # Dale's live replies, so only the daily run (and manual runs) record,
+      # up to 35 lines, Dale first; pushes reuse what's done. Piper covers
+      # the rest until then, and a line is never saved in a lesser voice.
       - uses: actions/cache@v4
         if: steps.deploy.outputs.url != ''
         with:
-          path: audio/aura
-          key: aura-lines-v1-${{ hashFiles('data/dale_lines.gd') }}-${{ github.run_id }}
+          path: audio/best
+          key: best-lines-v1-${{ hashFiles('data/dale_lines.gd', 'data/coworker_lines.gd') }}-${{ github.run_id }}
           restore-keys: |
-            aura-lines-v1-${{ hashFiles('data/dale_lines.gd') }}-
-            aura-lines-v1-
-      - name: Record Dale's lines in his Aura voice
+            best-lines-v1-${{ hashFiles('data/dale_lines.gd', 'data/coworker_lines.gd') }}-
+            best-lines-v1-
+      - name: Record lines in Groq's voice
         if: steps.deploy.outputs.url != ''
         continue-on-error: true
+        env:
+          RUN_EVENT: ${{ github.event_name }}
         run: |
-          python3 tools/record_aura.py "${{ steps.deploy.outputs.url }}" audio/dale | tee aura.log
-          echo "::notice title=Aura lines::$(tail -1 aura.log)"
+          command -v ffmpeg >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg)
+          max=0
+          [ "$RUN_EVENT" = "schedule" ] || [ "$RUN_EVENT" = "workflow_dispatch" ] && max=35
+          python3 tools/record_best.py "${{ steps.deploy.outputs.url }}" $max | tee best.log
+          echo "::notice title=Groq voice lines::$(tail -1 best.log)"
       - uses: actions/upload-artifact@v4
         if: steps.deploy.outputs.url != ''
         continue-on-error: true
         with:
-          name: aura-lines
-          path: audio/aura
+          name: best-lines
+          path: audio/best
           if-no-files-found: ignore
           retention-days: 3
 
@@ -194,19 +194,19 @@ jobs:
         with:
           name: dale-lines
           path: audio/dale
-      # Dale's Aura clips replace his Piper ones wherever they exist.
+      # Lines recorded in Groq's voice replace their Piper placeholders.
       - uses: actions/download-artifact@v4
         continue-on-error: true
         with:
-          name: aura-lines
-          path: audio/aura
-      - name: Use Dale's Aura voice where recorded
+          name: best-lines
+          path: audio/best
+      - name: Use the best voice where recorded
         shell: bash
         run: |
-          if [ -d audio/aura ]; then
-            n=$(ls audio/aura | wc -l)
-            mkdir -p audio/dale && cp -f audio/aura/* audio/dale/ 2>/dev/null; rm -rf audio/aura
-            echo "::notice title=Aura lines::$n of Dale's lines in his Aura voice"
+          if [ -d audio/best ]; then
+            n=$(ls audio/best | wc -l)
+            mkdir -p audio/dale && cp -f audio/best/* audio/dale/ 2>/dev/null; rm -rf audio/best
+            echo "::notice title=Groq voice lines::$n lines in Groq's voice"
           fi
 
       - name: Install export templates

@@ -79,21 +79,6 @@ async function geminiSpeak(env, text, models) {
   return "";
 }
 
-// Dale's recorded story voice (Aura "zeus"), used by the build to record his
-// scripted lines (tools/record_aura.py).
-async function auraSpeak(env, text, models) {
-  try {
-    const b64 = await audioToBase64(await env.AI.run("@cf/deepgram/aura-2-en", { text, speaker: "zeus" }));
-    if (b64 && b64.length > 200) {
-      models.speak = "@cf/deepgram/aura-2-en/zeus";
-      return b64;
-    }
-  } catch (e) {
-    models.speak_error_aura = String(e).slice(0, 160);
-  }
-  return "";
-}
-
 // Gemini sends raw 16-bit mono PCM; wrap it so the game can play it.
 function wavFromPcm16(pcm, rate) {
   const out = new Uint8Array(44 + pcm.length);
@@ -145,9 +130,9 @@ export default {
     if (new URL(req.url).pathname === "/say") {
       const text = clip(body.text, 400).trim();
       if (!text) return json({ error: "no text" }, 400);
-      const audio = body.engine === "groq" ? await groqSpeak(env, text, models)
-        : body.engine === "gemini" ? await geminiSpeak(env, text, models)
-        : body.engine === "aura" ? await auraSpeak(env, text, models) : await speak(env, text, models);
+      const voice = GROQ_VOICES.includes(body.voice) ? body.voice : "";
+      const audio = body.engine === "groq" ? await groqSpeak(env, text, models, voice)
+        : body.engine === "gemini" ? await geminiSpeak(env, text, models) : await speak(env, text, models);
       return json({ audio, models });
     }
     try {
@@ -198,11 +183,10 @@ function pick(ids, prefs, skip) {
   }
   return "";
 }
-const GROQ_SPEAK = [
-  ["canopylabs/orpheus-v1-english", "troy"],
-  ["canopylabs/orpheus-v1-english", "daniel"],
-  ["playai-tts", "Fritz-PlayAI"],
-];
+// Groq's Orpheus: the best-sounding voice we have (Samuel's pick). Dale is
+// "troy"; the build records each coworker in their own Orpheus voice.
+const GROQ_TTS = "canopylabs/orpheus-v1-english";
+const GROQ_VOICES = ["troy", "daniel", "austin", "hannah", "diana", "autumn"];
 
 const EXT = { "audio/wav": "wav", "audio/mp4": "m4a", "audio/webm": "webm", "audio/ogg": "ogg", "audio/mpeg": "mp3", "audio/aac": "m4a" };
 
@@ -250,8 +234,9 @@ async function groqThink(env, messages, models) {
   throw new Error(last);
 }
 
-async function groqSpeak(env, text, models) {
-  for (const [model, voice] of GROQ_SPEAK) {
+async function groqSpeak(env, text, models, only = "") {
+  const model = GROQ_TTS;
+  for (const voice of only ? [only] : ["troy", "daniel"]) {
     try {
       const r = await fetch(GROQ + "/audio/speech", {
         method: "POST",
@@ -259,7 +244,9 @@ async function groqSpeak(env, text, models) {
         body: JSON.stringify({ model, voice, input: text, response_format: "wav" }),
       });
       if (!r.ok) {
-        models["speak_error_groq_" + model + "_" + voice] = r.status + " " + (await r.text()).slice(0, 400);
+        models["speak_error_groq_" + voice] = r.status + " " + (await r.text()).slice(0, 400);
+        // Out for the day: another voice won't help.
+        if (r.status === 429) break;
         continue;
       }
       const b64 = bytesToBase64(new Uint8Array(await r.arrayBuffer()));
@@ -268,7 +255,7 @@ async function groqSpeak(env, text, models) {
         return b64;
       }
     } catch (e) {
-      models["speak_error_groq_" + model] = String(e).slice(0, 150);
+      models["speak_error_groq_" + voice] = String(e).slice(0, 150);
     }
   }
   return "";
@@ -330,11 +317,15 @@ async function think(env, body, heard, models) {
   return "Sorry, I zoned out. Spreadsheet brain. Say that again?";
 }
 
-// Dale's live-reply voice: Groq's Orpheus first (the one Samuel likes), then
-// Cloudflare, then Gemini once both of those are out for the day.
+// Dale's live-reply voice, best first: Groq's Orpheus (Samuel's pick, and
+// the voice his lines are recorded in), then Gemini, then Cloudflare.
 async function speak(env, text, models) {
   if (env.GROQ_API_KEY) {
     const b64 = await groqSpeak(env, text, models);
+    if (b64) return b64;
+  }
+  if (env.GEMINI_API_KEY) {
+    const b64 = await geminiSpeak(env, text, models);
     if (b64) return b64;
   }
   for (const [model, input] of SPEAK) {
@@ -349,7 +340,7 @@ async function speak(env, text, models) {
       models["speak_error_" + model] = String(e).slice(0, 120);
     }
   }
-  return env.GEMINI_API_KEY ? await geminiSpeak(env, text, models) : "";
+  return "";
 }
 
 // Workers AI hands back audio in a few shapes, depending on the model.

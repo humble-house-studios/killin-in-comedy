@@ -123,16 +123,19 @@ right there, it's right on iPhone, Android and Steam. To keep that true:
   voice server (`voice/`, a Cloudflare Worker on free Workers AI: Whisper hears,
   Llama answers as Dale with `DaleStory.persona()` keeping later chapters
   secret; with a `GROQ_API_KEY` secret, free Groq hears and thinks; live
-  replies are spoken by Groq Orpheus ("troy", Samuel's pick), then Cloudflare
-  MeloTTS/Aura, then Gemini's free TTS when `GEMINI_API_KEY` is set; Gemini
-  gets the bare line, since style notes get read out loud).
+  replies are spoken by Groq Orpheus ("troy", Samuel's pick: best voice
+  first), then Gemini's free TTS (`GEMINI_API_KEY`; gets the bare line, style
+  notes get read out loud), then Cloudflare MeloTTS/Aura).
   `deploy.yml`'s `voice` job deploys it when the repo has
   `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` secrets and writes its URL
   into `data/voice_server.gd` for the office build (empty = no TALK). Every scripted line
   (Dale and the arcade crew, one Piper voice each) is pre-recorded by the
   `lines` job with `tools/record_lines.py` (free Piper TTS, no daily limit) into
   `audio/dale/<md5[:12]>.mp3`; `_say()` plays it, so the AI allowance is only
-  spent on live replies. Add lines freely: the next build records them. Published at
+  spent on live replies. Piper is only the placeholder: the daily build
+  re-records up to 35 lines in Groq's Orpheus (`tools/record_best.py`, Dale
+  "troy" first, each coworker their own voice) and lays them over Piper; a line
+  is only ever saved in that best voice. Add lines freely. Published at
   https://humble-house-studios.github.io/killin-in-comedy/office/ (second export
   in `deploy.yml`). Screenshots: `tools/office_shot.gd`. `main.gd` must not touch
   the window when it isn't the root (`_owns_window()`).
