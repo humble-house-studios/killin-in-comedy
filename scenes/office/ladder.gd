@@ -53,6 +53,8 @@ var _talk_id := ""
 var _time := 0.0
 var _locked_hint := ""
 var _doors_ready := false
+## What the office's goal marker is over: its "!" (if any) hides.
+var goal_id := ""
 
 
 func setup(o: Node) -> void:
@@ -829,6 +831,33 @@ func _refresh_machines() -> void:
 
 # ---------------------------------------------------------------- every frame
 
+## Re-check who shows a "!" (the goal marker just moved).
+func refresh_alerts() -> void:
+	_refresh_people()
+
+
+## Where the office's goal marker floats for key (engine/goal_target.gd), or
+## null. Doors: in the doorway, on your side of it.
+func goal_spot(key: String, me: Vector3):
+	if key.begins_with("door_"):
+		var d: Dictionary = _doors.get(key.substr(5), {})
+		if d.is_empty():
+			return null
+		var c: Vector3 = d.center
+		var side := Vector3(0, 0, signf(me.z - c.z)) if d.along_x else Vector3(signf(me.x - c.x), 0, 0)
+		return c + Vector3(0, 1.65, 0) + side * 0.35
+	if _machines.has(key):
+		var pc = _machines[key].pc
+		return office._above_screen(pc.screen, pc.size.y)
+	if _people.has(key):
+		var p: Dictionary = _people[key]
+		var root: Node3D = p.root
+		if p.get("object", false):
+			return root.global_position + Vector3(0, 0.45, 0)
+		return root.global_position + Vector3(0, 2.1 - (0.42 if p.seated else 0.0), 0)
+	return null
+
+
 func objective() -> String:
 	return state.objective(crew.secrets.size())
 
@@ -1022,14 +1051,14 @@ func _refresh_people() -> void:
 		if _people.has(id):
 			var p: Dictionary = _people[id]
 			p.root.visible = Coworkers.present(id, state.beaten.size())
-			p.alert.visible = p.root.visible and crew.has_news(id, _ctx()) and _talk_id != id
+			p.alert.visible = p.root.visible and crew.has_news(id, _ctx()) and _talk_id != id and goal_id != id
 	if _people.has("memo"):
-		_people.memo.alert.visible = not state.is_done("memo") and _talk_id != "memo"
+		_people.memo.alert.visible = not state.is_done("memo") and _talk_id != "memo" and goal_id != "memo"
 	for id in _crowd:
 		_crowd[id].visible = crew.tier(id) >= 2
 	if _stage_dale:
 		_stage_dale.visible = state.is_done("stage") and state.true_ending(crew.secrets.size())
-		_people.dale_stage.alert.visible = _stage_dale.visible and not state.is_done("true_end") and _talk_id != "dale_stage"
+		_people.dale_stage.alert.visible = _stage_dale.visible and not state.is_done("true_end") and _talk_id != "dale_stage" and goal_id != "dale_stage"
 
 
 func _tick_people(delta: float, me: Vector3) -> void:

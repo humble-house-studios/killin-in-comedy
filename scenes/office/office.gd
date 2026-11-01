@@ -31,6 +31,9 @@ extends Node
 ##   behind you opens onto the rooms of the ladder: the arcade (coworkers to
 ##   talk to, machines to win tickets), the trading floor, the boardroom, the
 ##   corner office and the stage. Same walking, sitting and talking.
+## - Goal marker: a spinning yellow diamond over whatever the to-do wants next
+##   (engine/goal_target.gd picks it), or over the next door on the way; off
+##   screen, a chevron on the screen edge points at it with the distance.
 ## Mouse: click to look around, WASD walk, click the monitor to play, Esc lets go.
 ## Touch: tap the computer (or SIT DOWN) and the camera glides to the desk and
 ## frames the screen; then every tap goes into the game. STAND UP to walk again
@@ -137,6 +140,13 @@ const PAD_CARD := [
 	["BACK", "Leave a desk  (or hold B)"],
 ]
 const PadUI := preload("res://scenes/pad_cursor.gd")
+## The goal marker: warm yellow like the TO-DO, gone within ~1.5 m of what it
+## marks (the hint takes over there), gliding to each new goal.
+const MARKER_COL := Color(1.0, 0.85, 0.3)
+const MARKER_NEAR := 1.0
+const MARKER_FAR := 2.0
+const MARKER_GLIDE := 0.8
+const MARKER_CEIL := 2.35
 
 
 ## One playable computer: a game running in its own viewport, shown on a screen.
@@ -315,6 +325,24 @@ var _speaker := {}
 ## Who the last _dale_hit() ray found.
 var _hit_who := {}
 var _todo: Label
+## The goal marker (engine/goal_target.gd): the step the TO-DO is on, what the
+## diamond floats over right now (it or the next door), and where.
+var _goal_key := ""
+var _goal_hop := ""
+var _goal_first := true
+var _goal_stats := {}
+var _goal_check := 0.0
+var _goal_screens := {}
+var _goal_at := Vector3.ZERO
+var _goal_live := false
+var _goal_near := 0.0
+var _marker: Node3D
+var _marker_spin: Node3D
+var _marker_from := Vector3.ZERO
+var _marker_glide := 1.0
+var _marker_time := 0.0
+var _ding: AudioStreamPlayer
+var _dale_news := false
 var _talking := false
 ## The conversation in progress: {id, title, steps}, and where we are in it.
 var _talk := {}
@@ -359,6 +387,7 @@ func _ready() -> void:
 	_build_player()
 	_build_room_sound()
 	_build_hud()
+	_build_marker()
 	_build_talk_box()
 	_dale_story = DaleStory.new()
 	_pick_voice()
@@ -843,6 +872,7 @@ func _build_desk() -> void:
 	_world_vp.add_child(screen)
 	_screen_spots.append([screen, SCREEN_POS, tv_pos])
 	_add_computer(screen, Vector2(SCREEN_W, SCREEN_H), _game_vp, GAME_SIZE)
+	_goal_screens["comedy"] = [screen, SCREEN_H]
 
 	# Keyboard, mouse, mug.
 	_box(Vector3(0.46, 0.03, 0.16), Vector3(-0.05, 0.775, -2.2), _mat(Color(0.88, 0.85, 0.74), 7, Color(0.5, 0.48, 0.42)), false, Vector3(0.08, 0, 0))
@@ -902,6 +932,7 @@ func _build_pong_desk() -> void:
 		_box(Vector3(0.08, 0.08, 0.004), Vector3(spot[1], spot[2], SIDE_Z), _mat(Color(0.6, 0.95, 0.65)), false, Vector3(0, 0, -0.15), spot[0])
 		_label("BEAT\nMY\nBEST", Vector3(spot[1], spot[2], SIDE_Z + 0.004), 8, Color(0.1, 0.15, 0.1), Vector3(0, 0, -0.15), 0.0, spot[0])
 	_cyl(0.05, 0.12, Vector3(0.45, 0.82, 0.12), _mat(Color(0.98, 0.85, 0.3)), Vector3.ZERO, 8, -1.0, rig)
+	_goal_screens["pong"] = [screen, PONG_SCREEN.y]
 	if _pong_view:
 		_pong_frames = [_window_frame(a, screen.position, PONG_SCREEN, "PONG.EXE"),
 				_window_frame(a, screen.position, PONG_SCREEN_WIDE, "PONG.EXE")]
@@ -935,6 +966,7 @@ func _build_proof_desk() -> void:
 	_label("f(x) -> INF", Vector3(-0.35, 1.93, board_z + 0.025), 14, chalk, Vector3(0, 0, -0.03), 0.0, rig)
 	_label("PROOF LEFT AS\nAN EXERCISE", Vector3(0.4, 1.75, board_z + 0.025), 11, Color(1.0, 0.8, 0.75), Vector3(0, 0, 0.03), 0.0, rig)
 	_label("QED", Vector3(-0.55, 1.65, board_z + 0.025), 18, Color(1.0, 0.9, 0.5), Vector3(0, 0, 0.08), 0.0, rig)
+	_goal_screens["proof"] = [screen, PONG_SCREEN.y]
 	if _proof_view:
 		_window_frame(a, screen.position, PONG_SCREEN, "PROOF.EXE")
 		# Taps go in Proof Hand's own canvas units (its 1080×1920 base), not
@@ -972,6 +1004,7 @@ func _build_cube_desk() -> void:
 	_label("WORLD RECORD", Vector3(0, 2.08, -0.32), 10, Color(0.35, 0.95, 0.8), Vector3.ZERO, 0.0, rig)
 	_label("2.51", Vector3(0, 1.95, -0.32), 34, Color(1.0, 0.85, 0.3), Vector3.ZERO, 0.0, rig)
 	_label("CAN YOU GO SUB-60?", Vector3(0, 1.82, -0.32), 7, Color(0.85, 0.9, 1.0), Vector3.ZERO, 0.0, rig)
+	_goal_screens["cube"] = [screen, CUBE_SCREEN.y]
 	if _cube_vp:
 		_window_frame(a, screen.position, CUBE_SCREEN, "CUBE.EXE")
 		_add_computer(screen, CUBE_SCREEN, _cube_vp, CUBE_SIZE)
@@ -1021,6 +1054,7 @@ func _build_loot_cabinet() -> void:
 	var screen := Node3D.new()
 	screen.position = Vector3(0, cy, 0.18)
 	rig.add_child(screen)
+	_goal_screens["loot"] = [screen, LOOT_SCREEN.y]
 	if _loot_vp:
 		_add_computer(screen, LOOT_SCREEN, _loot_vp, LOOT_SIZE)
 	else:
@@ -1610,6 +1644,8 @@ func _end_talk() -> void:
 	if _speaker.is_empty():
 		_dale_story.finish(_talk.id, _talk_stats)
 		_dale_alert.visible = false
+		_dale_news = _dale_story.has_news(_goal_stats)
+		_goal_check = 0.0
 	_voice_chat.cancel()
 	_chatting = false
 	_set_talk(false)
@@ -1670,15 +1706,162 @@ func _tick_dale(delta: float) -> void:
 	_news_check -= delta
 	if _news_check <= 0.0 and not _talking:
 		_news_check = 2.0
-		var stats := DaleStory.read_stats()
-		_dale_alert.visible = _dale_story.has_news(stats)
-		if _todo:
-			var goal := _dale_story.objective(stats)
-			if _dale_story.next_chapter().is_empty():
-				goal = _ladder.objective()
-			_todo.text = "TO-DO: " + goal if goal != "" else ""
+		_goal_stats = DaleStory.read_stats()
+		_dale_news = _dale_story.has_news(_goal_stats)
+		# The goal marker stands in for his "!" when he's the goal.
+		_dale_alert.visible = _dale_news and _goal_hop != "dale"
+		_goal_check = 0.0
 	if _dale_alert.visible:
 		_dale_alert.position.y = 1.72 + sin(_dale_time * 3.0) * 0.04
+
+
+# ---------------------------------------------------------------- goal marker
+
+## A small low-poly diamond (two four-sided pyramids) that spins and bobs over
+## whatever the TO-DO wants next. One marker only: it replaces the "!".
+func _build_marker() -> void:
+	_marker = Node3D.new()
+	_marker.visible = false
+	_world_vp.add_child(_marker)
+	_marker_spin = Node3D.new()
+	_marker.add_child(_marker_spin)
+	var top := _mat(MARKER_COL * 0.6, 0, Color.BLACK, 24.0, MARKER_COL * 0.55)
+	var low := _mat(MARKER_COL * 0.4, 0, Color.BLACK, 24.0, MARKER_COL * 0.35)
+	_cyl(0.11, 0.16, Vector3(0, 0.08, 0), top, Vector3.ZERO, 4, 0.0, _marker_spin)
+	_cyl(0.11, 0.2, Vector3(0, -0.1, 0), low, Vector3(PI, 0, 0), 4, 0.0, _marker_spin)
+	_ding = AudioStreamPlayer.new()
+	_ding.stream = load("res://audio/ding.wav")
+	_ding.volume_db = -6.0
+	add_child(_ding)
+
+
+## Where the marker floats for a goal key, or null if there's no such spot.
+func _goal_spot(key: String):
+	if key == "dale":
+		return _dale.to_global(Vector3(0, 1.85, 0))
+	if _goal_screens.has(key):
+		return _above_screen(_goal_screens[key][0], _goal_screens[key][1])
+	return _ladder.goal_spot(key, _player.global_position)
+
+
+## Just above a screen and a little in front of it (clear of a cabinet's
+## marquee), under the ceiling.
+func _above_screen(screen: Node3D, height: float) -> Vector3:
+	var xf := screen.global_transform
+	var at := xf.origin + xf.basis.z.normalized() * 0.3 + Vector3(0, height * 0.5 + 0.4, 0)
+	at.y = minf(at.y, MARKER_CEIL if xf.origin.z < 4.0 else MARKER_CEIL + 0.3)
+	return at
+
+
+## Pick the goal (engine/goal_target.gd) a few times a second; when the step
+## changes, flash the TO-DO and ding; glide the marker to each new spot.
+func _update_goal() -> void:
+	var me := _player.global_position
+	var dist := {}
+	for id in GoalTarget.CABINETS:
+		var spot = _ladder.goal_spot(id, me)
+		if spot != null:
+			# A little stickiness so walking between two doesn't flip it.
+			dist[id] = Vector2(spot.x - me.x, spot.z - me.z).length() - (1.0 if id == _goal_hop else 0.0)
+	var state: LadderState = _ladder.state
+	var goal := GoalTarget.goal(_dale_story, _goal_stats, state, _ladder.crew)
+	var hop := GoalTarget.point(_dale_story, _goal_stats, state, _ladder.crew, _ladder.room(), dist)
+	var todo := _dale_story.objective(_goal_stats)
+	if _dale_story.next_chapter().is_empty():
+		todo = _ladder.objective()
+	_todo.text = "TO-DO: " + todo if todo != "" else ""
+	if goal != _goal_key:
+		_goal_key = goal
+		if not _goal_first:
+			_flash_todo()
+	_goal_first = false
+	if hop != _goal_hop:
+		_marker_from = _marker.position
+		_marker_glide = 0.0 if _marker.visible else 1.0
+		_goal_hop = hop
+		_ladder.goal_id = hop
+		_ladder.refresh_alerts()
+		_dale_alert.visible = _dale_news and hop != "dale"
+
+
+func _flash_todo() -> void:
+	_ding.play()
+	var t := create_tween()
+	for i in 3:
+		t.tween_property(_todo, "modulate", Color(2.2, 2.2, 2.2), 0.1)
+		t.tween_property(_todo, "modulate", Color.WHITE, 0.22)
+
+
+func _tick_goal(delta: float) -> void:
+	_goal_check -= delta
+	if _goal_check <= 0.0 and not _talking:
+		_goal_check = 0.25
+		_update_goal()
+	_marker_time += delta
+	_marker_glide = minf(1.0, _marker_glide + delta / MARKER_GLIDE)
+	var spot = _goal_spot(_goal_hop) if _goal_hop != "" else null
+	_goal_live = spot != null and _seat == null and not _talking
+	if not _goal_live:
+		_marker.visible = false
+		return
+	var at: Vector3 = spot
+	if _marker_glide < 1.0:
+		var e := _marker_glide * _marker_glide * (3.0 - 2.0 * _marker_glide)
+		at = _marker_from.lerp(spot, e) + Vector3(0, sin(e * PI) * 0.35, 0)
+	_goal_at = at
+	_marker.position = at + Vector3(0, sin(_marker_time * 2.6) * 0.05, 0)
+	_marker_spin.rotation.y = fmod(_marker_time * 2.2, TAU)
+	var cam := _camera.global_position
+	var d := Vector2(at.x - cam.x, at.z - cam.z).length()
+	_goal_near = smoothstep(MARKER_NEAR, MARKER_FAR, d)
+	# Shrinks away up close; grows a little far off so it still reads.
+	_marker.scale = Vector3.ONE * maxf(_goal_near, 0.001) * clampf(d / 5.0, 1.0, 2.0)
+	_marker.visible = _goal_near > 0.01
+
+
+## Off screen: a chevron on the screen edge (inside the safe area) pointing
+## at the marker, with how far it is.
+func _draw_goal_arrow(size: Vector2) -> void:
+	if not _goal_live or _goal_near < 0.5:
+		return
+	var vp := Vector2(_world_vp.size)
+	if vp.x < 1.0 or vp.y < 1.0:
+		return
+	var k := minf(size.x, size.y) / 720.0
+	var behind := _camera.is_position_behind(_goal_at)
+	var sp := _camera.unproject_position(_goal_at) * (size / vp)
+	var m := 60.0 * k
+	var rect := Rect2(Vector2(_inset.x + m, _inset.y + m), size - Vector2(_inset.x + _inset.z, _inset.y + _inset.w) - Vector2(m, m) * 2.0)
+	if not behind and rect.has_point(sp):
+		return
+	var c := rect.get_center()
+	var dir := sp - c
+	if behind:
+		dir = -dir
+		if dir.y < 0.0 and absf(dir.x) < absf(dir.y):
+			# Straight behind you: point down-and-around, not up.
+			dir.y = absf(dir.y)
+	if dir.length() < 1.0:
+		dir = Vector2(0, 1)
+	var half := rect.size * 0.5
+	var t := minf(half.x / maxf(absf(dir.x), 0.001), half.y / maxf(absf(dir.y), 0.001))
+	var at := c + dir * t
+	var n := dir.normalized()
+	var side := Vector2(-n.y, n.x)
+	var pts := PackedVector2Array([at + n * 22.0 * k, at - n * 12.0 * k + side * 20.0 * k, at - n * 4.0 * k, at - n * 12.0 * k - side * 20.0 * k])
+	var rim := PackedVector2Array([at + n * 30.0 * k, at - n * 17.0 * k + side * 28.0 * k, at - n * 6.0 * k, at - n * 17.0 * k - side * 28.0 * k])
+	var pulse := 0.85 + 0.15 * sin(_marker_time * 5.0)
+	_hud.draw_colored_polygon(rim, Color(0, 0, 0, 0.75))
+	_hud.draw_colored_polygon(pts, Color(MARKER_COL.r, MARKER_COL.g, MARKER_COL.b, pulse))
+	var me := _player.global_position
+	var metres := int(roundf(Vector2(_goal_at.x - me.x, _goal_at.z - me.z).length()))
+	var label := "%d m" % metres
+	var font: Font = preload("res://fonts/press_start_2p.ttf")
+	var fs := int(16 * k)
+	var w := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+	var tp := at - n * 48.0 * k + Vector2(-w * 0.5, fs * 0.5)
+	_hud.draw_string_outline(font, tp, label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, int(6 * k), Color.BLACK)
+	_hud.draw_string(font, tp, label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(1.0, 0.92, 0.55))
 
 
 ## Everyone you can talk to: Dale ({} as the speaker) and, up the ladder,
@@ -2179,6 +2362,7 @@ func _process(delta: float) -> void:
 	_tick_link(delta)
 	_tick_dale(delta)
 	_ladder.tick(delta)
+	_tick_goal(delta)
 	_tick_room_sound(delta)
 	_sit_button.visible = _touch and not _pad and _seat == null and not _talking
 	_sit_button.text = "TALK" if _dale_nearer_than_computers() else "SIT DOWN"
@@ -2248,7 +2432,7 @@ func _update_hint(aim, close: bool) -> void:
 	elif _touch:
 		if not _moved:
 			text = "TAP A COMPUTER\nTO SIT DOWN"
-		elif _dale_alert.visible and _player.global_position.z < 4.0:
+		elif _dale_news and _player.global_position.z < 4.0:
 			text = "DALE WANTS A WORD"
 	elif Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		text = "CLICK TO LOOK AROUND\nWASD WALK - MOUSE LOOK - ESC LETS GO"
@@ -2274,6 +2458,7 @@ func _draw_hud() -> void:
 			_hud.draw_arc(c, 9, 0, TAU, 16, Color(1, 1, 1, 0.9), 3)
 		else:
 			_hud.draw_rect(Rect2(c - Vector2(3, 3), Vector2(6, 6)), Color(1, 1, 1, 0.85))
+	_draw_goal_arrow(size)
 	if _pad:
 		_draw_pad_hud(size)
 	if _touches.values().has("move"):

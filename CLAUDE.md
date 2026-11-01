@@ -102,7 +102,10 @@ right there, it's right on iPhone, Android and Steam. To keep that true:
   Tap him, read his lines, pick replies. Each chapter sends you to the next
   desk with one goal (Pong boss → cube world record → 2 comedy sets → a Loot
   Machine run → prove a theorem → promotion: the door opens), shown as a
-  TO-DO top left. Design and future floors: `docs/narrative.md`. Chapters in
+  TO-DO top left, plus a goal marker (a spinning yellow diamond over the next
+  thing to do, or the next door on the way; an edge chevron with the distance
+  when it's off screen), picked by `engine/goal_target.gd` from the same
+  chain. Design and future floors: `docs/narrative.md`. Chapters in
   `data/dale_lines.gd`, unlocked by the shared stats via
   `engine/dale_story.gd` (memory in `user://dale.cfg`); the office counts
   `pong_bosses`/`cube_records`/`proof_wins` with `engine/office_goals.gd`. After each story bit, HOLD TO TALK records the mic
