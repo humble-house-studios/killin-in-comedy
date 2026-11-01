@@ -3,3 +3,4 @@ build/
 games/
 audio/dale/
 audio/aura/
+__pycache__/
