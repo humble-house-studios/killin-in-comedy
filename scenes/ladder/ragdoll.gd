@@ -455,6 +455,8 @@ func _process(delta: float) -> void:
 		cam.position = cam.position.lerp(want, minf(1.0, delta * 3.0))
 		cam.look_at(Vector3(3.0, 1.2, 0))
 	elif _torso:
+		# Again just before drawing, so a hard hit never shows a gap.
+		_hold_together()
 		var style: bool = hub != null and hub.state.has("style")
 		_live.text = "%d POINTS" % ArcadeRules.ragdoll_score(_distance(), _impacts, _spins(), style)
 		var at := _torso.position
