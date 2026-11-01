@@ -147,7 +147,13 @@ right there, it's right on iPhone, Android and Steam. To keep that true:
   `_add_computer()`; `hub` is the ladder node. Rules in `engine/ladder_state.gd`
   (`user://ladder.cfg`), `engine/coworkers.gd` + `data/coworker_lines.gd`
   (`user://coworkers.cfg`), `arcade_rules.gd`, `market.gd`, `pitch.gd`,
-  `final_set.gd`, tested in `tests/test_ladder.gd`. Rooms get their own lights
+  `final_set.gd`, tested in `tests/test_ladder.gd`. The claw machine, coin
+  pusher, Fall Guy ragdoll and the corner-office golf (CORNER LINKS, 3 holes)
+  are real 3D physics games: each builds a little world with
+  `scenes/ladder/view3d.gd` (own World3D and physics, drawn at 1/3 size with
+  chunky pixels; `retro3d.gdshader` per-vertex lights, fog, dither;
+  `retro_post.gdshader` grain/scanlines). Fall Guy is the grimy, flickering
+  corridor look. `tools/machine_shot.gd` screenshots one machine on its own. Rooms get their own lights
   through `ps1.gdshader`'s `room_*` uniforms. Rooms out of reach hide and their
   machines pause. Screenshots: `tools/ladder_shot.gd`; a scripted walkthrough of
   every door, screen and coworker: `godot --headless -s res://tools/ladder_walk.gd`

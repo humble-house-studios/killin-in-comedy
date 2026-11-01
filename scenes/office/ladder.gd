@@ -9,7 +9,7 @@ extends Node
 ##     basement ARCHIVE off the west wall.
 ##   TRADING FLOOR (z 12-20): your tickets cash out as a portfolio; double it.
 ##   BOARDROOM (z 20-26): pitch the board, three yeses of five.
-##   CORNER OFFICE (z 26-32): the founder's memo on the desk, a putting toy.
+##   CORNER OFFICE (z 26-32): the founder's memo on the desk, a 3D mini-golf toy.
 ##   THE STAGE (z 32-40): an open mic. Land your set. With every secret and
 ##     the archive found, Dale is in the crowd for the true ending.
 ## Each screen is a machine scene (scenes/ladder/) in its own SubViewport,

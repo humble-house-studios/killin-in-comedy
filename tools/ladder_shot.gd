@@ -44,7 +44,7 @@ func _init() -> void:
 	var claw = office._ladder._machines.claw
 	office._set_seat(claw.pc)
 	await _frames(80)
-	claw.node._nudge(-80)
+	claw.node._nudge(-0.3, 0.2)
 	claw.node._on_drop()
 	await _frames(70)
 	_shot("claw_play")
