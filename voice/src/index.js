@@ -25,7 +25,10 @@ const SPEAK = [
 // GEMINI_API_KEY is set: natural voices, steered by a short style note.
 const GEMINI = "https://generativelanguage.googleapis.com/v1beta";
 const GEMINI_VOICES = ["Achird", "Umbriel", "Puck"];
-const GEMINI_STYLE = "Say this like a warm, chubby, slightly nervous fifty-year-old office guy cracking a joke, natural and quick:";
+// A short style cue in Gemini's documented "Say ...: text" form; a long one
+// can get read out loud. If a clip still runs far longer than the line could,
+// it's retried with no cue at all.
+const GEMINI_STYLE = "Say warmly, with a nervous chuckle:";
 let geminiTts = null;
 
 async function geminiModels(env) {
@@ -50,11 +53,12 @@ async function geminiSpeak(env, text, models) {
   }
   for (const model of names.slice(0, 3)) {
     for (const voice of GEMINI_VOICES) {
+      for (const styled of [true, false]) {
       const r = await fetch(GEMINI + "/models/" + model + ":generateContent?key=" + env.GEMINI_API_KEY, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: GEMINI_STYLE + " " + text }] }],
+          contents: [{ parts: [{ text: styled ? GEMINI_STYLE + " " + text : text }] }],
           generationConfig: {
             responseModalities: ["AUDIO"],
             speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } },
@@ -67,12 +71,17 @@ async function geminiSpeak(env, text, models) {
         const mime = part.inlineData.mimeType || "";
         const rate = parseInt((mime.match(/rate=(\d+)/) || [])[1] || "24000", 10);
         const pcm = base64ToBytes(part.inlineData.data);
-        models.speak = "gemini/" + model + "/" + voice;
+        const secs = pcm.length / 2 / rate;
+        models.speak_seconds = Math.round(secs * 10) / 10;
+        if (styled && !/wav/i.test(mime) && secs > text.length * 0.09 + 2.5) continue;
+        models.speak = "gemini/" + model + "/" + voice + (styled ? "" : "/plain");
         return /wav/i.test(mime) ? part.inlineData.data : bytesToBase64(wavFromPcm16(pcm, rate));
       }
       models["speak_error_gemini_" + model + "_" + voice] = r.status + " " + JSON.stringify(j).slice(0, 200);
+      break;
+      }
       // Over the limit or a bad model: other voices won't help.
-      if (r.status === 429 || r.status === 404) break;
+      if (/^(429|404)/.test(models["speak_error_gemini_" + model + "_" + voice] || "")) break;
     }
   }
   return "";
