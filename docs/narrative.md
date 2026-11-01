@@ -32,7 +32,7 @@ the heart. Dale cheers sincerely, then undercuts it with a joke.
 | 3 | OPEN MIC | Your desk | Maybe you're a comic | Clear 2 comedy sets | `comedy_sets` |
 | 4 | EASY MODE | Loot Machine | Gambling makes it easy (fun, "not problematic at all") | Play a Loot Machine run | `loot_runs` |
 | 5 | THE BIG PROBLEMS | Proof Desk | Solve a Millennium Problem | Prove a theorem | `proof_wins` |
-| 6 | THE LADDER | Stairwell | Promotion: upstairs noticed | Next room — coming soon | — |
+| 6 | THE LADDER | The door behind you | Promotion: upstairs noticed | Finishing this talk opens the door | — |
 
 Why this order: it's a difficulty and ambition ramp. Pong teaches the office
 (walk, sit, play), the cube is a short skill flex, stand-up is the heart of the
@@ -48,22 +48,49 @@ shared save `user://office_relics.cfg`.
 - Ch 2: he tried cubing for a week in 2011 (peeled the stickers).
 - Ch 3: he was a comic called "Big Deal" for a week in 2009.
 - Ch 5: he tried a Millennium Problem in 2016; the chalkboard is his.
-- Ch 6: fifteen years, never past the stairwell. "Come with me, Dale."
+- Ch 6: fifteen years, never past the door. He's never even tried the handle.
 - After: he's thinking about trying stand-up again. The seed for his own arc.
 
-## Next: climbing the ladder (ideas, not built)
-Each promotion is a new room with new desks, a new guide, and a bigger
-ambition. Dale comes along or visits.
-- **Floor 2 — Management.** Corner office, a squeaky-free chair. Desks about
-  pitching, budgets and meetings as games (a "meeting bingo" roguelike, a
-  pitch-deck card battler). Guide: a manager who's secretly a frustrated artist.
-- **Floor 3 — The Stage.** The studio's launch event / livestream: on-camera
-  ambitions (hosting, streaming, a talk show desk). Dale's Big Deal comeback
-  could be the floor's finale.
-- **The Roof — Founder.** Start your own studio. The game becomes about making
-  games: your earlier desks become your studio's catalog.
-- Running threads to pay off later: the second-floor smoothie machine, Dale's
-  purple pen, Thursday being the only day anything happens.
+## The Ladder (built: scenes/office/ladder.gd)
+Dale's last chapter opens the office door. Each room is one rung up the
+studio, and each pays out what the next one spends:
+paycheck → tokens → tickets → portfolio → board votes → material.
+
+| Room | What you play | How you beat it |
+|---|---|---|
+| Arcade (the break room) | Claw King, Push Your Luck (coin pusher), Fall Guy (fling the Dale dummy), prize counter | Buy the DOOR KEY (300 tickets) |
+| Archive (basement, secret) | Shelved games with notes about the founder | Ray's key opens it; finding it counts for the true ending |
+| Trading floor | Five stocks from your world on a 90s ticker; RUMORS come before NEWS | Double your cashed-out tickets by day 8 |
+| Boardroom | Answer each board member's objection with a matching card (YES, AND is wild) | 3 yeses of 5 |
+| Corner office | The founder's memo; a putting toy; the fabled smoothie machine | Read the memo |
+| The stage (The Brick Wall) | Five bits, 100 laughs; secrets become killer bits | Land the set |
+
+Rules: `engine/ladder_state.gd` (currencies, doors, to-do), `engine/arcade_rules.gd`,
+`engine/market.gd`, `engine/pitch.gd`, `engine/final_set.gd`. Screens:
+`scenes/ladder/` (each a machine in its own SubViewport on a 3D screen).
+
+### Coworkers (data/coworker_lines.gd, engine/coworkers.gd)
+Talking is improv. Every reply has a stance (YES, AND / ASK / RIFF / PUSH).
+Each coworker loves one (+1 trust) and hates one (-1, and they close off until
+you play another machine round). Three tiers: a small bonus, their lore
+secret, their perk. A prize-counter gift is worth a tier; so is a callback
+(bringing one coworker's secret to another).
+
+| Who | Where | Loves / hates | Secret | Perk | Wants |
+|---|---|---|---|---|---|
+| Gloria, QA lead | Claw | Ask / Riff | The first game's credits were blank | Gloria's Eye: shows the claw's full-strength grab | Top-shelf plush |
+| Kev, intern | Pusher | Yes, And / Push | Nobody has met the CEO | Insider tip: a starred stock will pop | Ticker tie |
+| Bernie, HR | Fall Guy | Riff / Ask | Dale's file is blank | HR badge (one redraw in the pitch) + style x2 | Stress ball |
+| Theo, rival | Prize counter | Push / Yes, And | He wants to be a chef | 150 tickets + his yes vote | Beat any machine |
+| Ray, night janitor | Back corner (after 2 machines beaten) | Yes, And / Push | The building was a comedy club | The archive key | Hot coffee |
+
+### The mystery
+Dale is the founder. He did stand-up for one week as "Big Deal", bought the
+comedy club (The Brick Wall), turned it into the studio in 2011, built a
+ladder with a corner office on top, got scared of the top and took the QA
+desk by the window. The memo says so and sends you out to the open mic.
+With all five secrets and the archive found, Dale is in the crowd for the
+true ending.
 
 ## Writing rules
 - Lines under ~110 characters; reply buttons under 28. Three replies per talk.

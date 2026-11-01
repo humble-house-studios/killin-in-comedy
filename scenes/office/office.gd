@@ -27,6 +27,10 @@ extends Node
 ##   phone's own voice reading his lines. His story (engine/dale_story.gd,
 ##   data/dale_lines.gd) unlocks chapter by chapter as you play the games;
 ##   he's your guide from desk to desk, and a to-do (top left) says what's next.
+## - The ladder (scenes/office/ladder.gd): once Dale's story is done, the door
+##   behind you opens onto the rooms of the ladder: the arcade (coworkers to
+##   talk to, machines to win tickets), the trading floor, the boardroom, the
+##   corner office and the stage. Same walking, sitting and talking.
 ## Mouse: click to look around, WASD walk, click the monitor to play, Esc lets go.
 ## Touch: tap the computer (or SIT DOWN) and the camera glides to the desk and
 ## frames the screen; then every tap goes into the game. STAND UP to walk again
@@ -300,6 +304,12 @@ var _news_check := 0.0
 ## Milestones Dale asks for that the Loot link doesn't count (Pong boss, cube
 ## record, proof win), and the to-do label that shows his next goal.
 var _goals := OfficeGoals.new()
+## The rooms past the door, and who you're talking to ({} = Dale; else a
+## person from _ladder.people(): {id, node, c, r, eye/look offsets}).
+var _ladder: Node
+var _speaker := {}
+## Who the last _dale_hit() ray found.
+var _hit_who := {}
 var _todo: Label
 var _talking := false
 ## The conversation in progress: {id, title, steps}, and where we are in it.
@@ -338,6 +348,9 @@ func _ready() -> void:
 		_look_i = clampi(int(cfg.get_value("office", "look", 0)), 0, 1)
 	_build_game()
 	_build_views()
+	_ladder = preload("res://scenes/office/ladder.gd").new()
+	add_child(_ladder)
+	_ladder.setup(self)
 	_build_room()
 	_build_player()
 	_build_room_sound()
@@ -682,7 +695,10 @@ func _build_room() -> void:
 	_box(Vector3(7.4, 0.1, 7.4), Vector3(0, -0.05, 0.5), carpet, true)
 	_box(Vector3(7.4, 0.1, 7.4), Vector3(0, 2.65, 0.5), ceiling, true)
 	_box(Vector3(7.4, 2.6, 0.1), Vector3(0, 1.3, -3.05), wall, true)
-	_box(Vector3(7.4, 2.6, 0.1), Vector3(0, 1.3, 4.05), wall, true)
+	# South wall, with a gap for the door to the ladder (ladder.gd hangs the door).
+	_box(Vector3(5.0, 2.6, 0.1), Vector3(-1.2, 1.3, 4.05), wall, true)
+	_box(Vector3(1.4, 2.6, 0.1), Vector3(3.0, 1.3, 4.05), wall, true)
+	_box(Vector3(1.0, 0.5, 0.1), Vector3(1.8, 2.35, 4.05), wall, true)
 	_box(Vector3(0.1, 2.6, 7.2), Vector3(-3.55, 1.3, 0.5), wall, true)
 	_box(Vector3(0.1, 2.6, 7.2), Vector3(3.55, 1.3, 0.5), wall, true)
 	for b in [[Vector3(7.0, 0.1, 0.02), Vector3(0, 0.05, -2.99)], [Vector3(7.0, 0.1, 0.02), Vector3(0, 0.05, 3.99)],
@@ -702,10 +718,6 @@ func _build_room() -> void:
 	_box(Vector3(0.12, 0.05, 1.9), Vector3(-3.45, 0.93, -0.5), trim)
 	_box(Vector3(1.6, 0.004, 1.7), Vector3(-2.55, 0.003, -0.45), _mat(Color(0.58, 0.66, 0.56), 1, Color(0.5, 0.58, 0.5), 28.0, Color(0.16, 0.12, 0.05)), false, Vector3(0, 0.12, 0))
 
-	# Door behind you.
-	_box(Vector3(0.95, 2.1, 0.05), Vector3(1.8, 1.05, 3.98), _mat(Color(0.6, 0.42, 0.26), 3, Color(0.52, 0.36, 0.21), 40.0))
-	_box(Vector3(0.1, 0.04, 0.06), Vector3(1.45, 1.0, 3.93), _mat(Color(0.85, 0.75, 0.4)))
-
 	_build_desk()
 	_build_pong_desk()
 	_build_proof_desk()
@@ -714,6 +726,7 @@ func _build_room() -> void:
 	_build_props()
 	_build_vent()
 	_build_dale()
+	_ladder.build()
 	_set_look(_look_i, false)
 
 
@@ -1337,17 +1350,20 @@ func _talk_button(text: String, action: Callable) -> void:
 	_talk_buttons.add_child(b)
 
 
-## Walk up to Dale's desk and start the next conversation (or leave).
-func _set_talk(on: bool) -> void:
+## Walk up to Dale's desk (or a coworker) and start the next conversation
+## (or leave). who: a person from _ladder.people(), or {} for Dale.
+func _set_talk(on: bool, who := {}) -> void:
 	if on == _talking:
 		return
+	if on:
+		_speaker = who
 	if on and _seat:
 		_seat.release()
 		_seat = null
 	_talking = on
 	_glide_from = _camera.global_transform
 	_glide_from_fov = _camera.fov
-	_glide_time = 0.5 + 0.12 * _glide_from.origin.distance_to(_dale.global_position) if on else 0.5
+	_glide_time = 0.5 + 0.12 * _glide_from.origin.distance_to(_talk_node().global_position) if on else 0.5
 	_glide = 0.0
 	_touches.clear()
 	_stick = Vector2.ZERO
@@ -1359,29 +1375,45 @@ func _set_talk(on: bool) -> void:
 	_place_stand_button()
 	if on:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-		var fwd := _dale.global_transform.basis.z.normalized()
+		var node := _talk_node()
+		var fwd := node.global_transform.basis.z
+		fwd = Vector3(fwd.x, 0, fwd.z).normalized()
 		_player.velocity = Vector3.ZERO
-		_player.global_position = Vector3(_dale.global_position.x, 0.0, _dale.global_position.z) + fwd * 1.5
+		_player.global_position = Vector3(node.global_position.x, 0.0, node.global_position.z) + fwd * 1.5
 		_yaw = atan2(fwd.x, fwd.z)
 		_pitch = -0.15
-		_dale_alert.visible = false
-		_talk_stats = DaleStory.read_stats()
-		_talk = _dale_story.next_talk(_talk_stats)
+		if _speaker.is_empty():
+			_dale_alert.visible = false
+			_talk_stats = DaleStory.read_stats()
+			_talk = _dale_story.next_talk(_talk_stats)
+		else:
+			_talk = _ladder.talk(_speaker.id)
 		_talk_i = 0
 		_show_step()
 	else:
 		_hush()
 		_voice_chat.cancel()
 		_chatting = false
+		if not _speaker.is_empty():
+			_ladder.end_talk(_speaker.id, _talk_i >= _talk.steps.size() - 1)
+		_speaker = {}
+
+
+## Who you're talking to: Dale, or a coworker (or the memo) up the ladder.
+func _talk_node() -> Node3D:
+	return _dale if _speaker.is_empty() else _speaker.node
 
 
 ## Where the camera sits while you chat: across his desk, Dale in the top part
 ## of the screen so the talk box doesn't cover his face.
 func _talk_view() -> Transform3D:
 	var landscape := _world_vp.size.x > _world_vp.size.y
-	var xf := _dale.global_transform
+	var xf := _talk_node().global_transform
 	var eye := xf * (Vector3(0, 1.3, 1.55) if landscape else Vector3(0, 1.28, 1.9))
 	var look := xf * (Vector3(0, 1.02, 0) if landscape else Vector3(0, 0.78, 0))
+	if not _speaker.is_empty():
+		eye = xf * (_speaker.eye_l if landscape else _speaker.eye_p)
+		look = xf * (_speaker.look_l if landscape else _speaker.look_p)
 	return Transform3D(Basis.looking_at(look - eye, Vector3.UP), eye)
 
 
@@ -1391,6 +1423,8 @@ func _show_step() -> void:
 	var steps: Array = _talk.steps
 	var title: String = _talk.title
 	_talk_name.text = "DALE" + ("  -  %s: %s" % [_dale_story.file_label(), title] if title != "" else "")
+	if not _speaker.is_empty():
+		_talk_name.text = title
 	if _talk_i >= steps.size():
 		_end_talk()
 		return
@@ -1402,20 +1436,32 @@ func _show_step() -> void:
 		_talk_text.visible = false
 		_talk_text.visible_characters = -1
 		for c in step.choices:
-			_talk_button(c.text, _choose.bind(c))
+			var tag: String = c.get("tag", "")
+			_talk_button(("%s: %s" % [tag, c.text]) if tag != "" else c.text, _choose.bind(c))
 		_talk_pick = 0
 		_show_pick()
 		return
-	_say(step.dale)
+	_say(step.get("dale", step.get("line", "")))
 	_end_buttons()
 
 
 func _choose(choice: Dictionary) -> void:
-	_dale_story.add_trust(int(choice.get("trust", 0)))
 	for c in _talk_buttons.get_children():
 		c.queue_free()
+	var reply: String
+	if _speaker.is_empty():
+		_dale_story.add_trust(int(choice.get("trust", 0)))
+		reply = choice.reply
+	else:
+		# A coworker answers, then any payout lines (a bonus, a secret, a perk)
+		# follow as their own lines.
+		var lines: Array = _ladder.choose(_speaker.id, choice)
+		reply = lines[0] if not lines.is_empty() else ""
+		var steps: Array = _talk.steps
+		for i in range(lines.size() - 1, 0, -1):
+			steps.insert(_talk_i + 1, {"line": lines[i]})
 	_talk_last = _talk_i == _talk.steps.size() - 1
-	_say(choice.reply)
+	_say(reply)
 	_end_buttons()
 
 
@@ -1426,6 +1472,11 @@ func _end_buttons() -> void:
 		_talk_button("NEXT >>", _advance)
 		return
 	# The story bit is done; remember it now, so chatting on doesn't lose it.
+	if not _speaker.is_empty():
+		_talk_button("SEE YA", _advance)
+		_talk_pick = 0
+		_show_pick()
+		return
 	_dale_story.finish(_talk.id, _talk_stats)
 	if _voice_chat.available():
 		_add_hold_button()
@@ -1530,10 +1581,11 @@ func _on_talk_box_input(event: InputEvent) -> void:
 
 
 func _end_talk() -> void:
-	_dale_story.finish(_talk.id, _talk_stats)
+	if _speaker.is_empty():
+		_dale_story.finish(_talk.id, _talk_stats)
+		_dale_alert.visible = false
 	_voice_chat.cancel()
 	_chatting = false
-	_dale_alert.visible = false
 	_set_talk(false)
 
 
@@ -1585,7 +1637,7 @@ func _tick_dale(delta: float) -> void:
 		var shown := mini(n, _talk_text.visible_characters + maxi(1, int(TALK_CPS * delta + randf())))
 		_talk_text.visible_characters = -1 if shown >= n else shown
 		typing = shown < n
-	var talking: bool = typing or _voice_chat.speaking() or (_voice != "" and _talking and DisplayServer.tts_is_speaking())
+	var talking: bool = _speaker.is_empty() and (typing or _voice_chat.speaking() or (_voice != "" and _talking and DisplayServer.tts_is_speaking()))
 	var open := 0.6 + 0.6 * absf(sin(_dale_time * 13.0)) if talking else 0.25
 	_dale_mouth.scale.y = lerpf(_dale_mouth.scale.y, open, minf(1.0, delta * 20.0))
 	# Every couple of seconds, see whether the games unlocked a new chapter.
@@ -1596,32 +1648,83 @@ func _tick_dale(delta: float) -> void:
 		_dale_alert.visible = _dale_story.has_news(stats)
 		if _todo:
 			var goal := _dale_story.objective(stats)
+			if _dale_story.next_chapter().is_empty():
+				goal = _ladder.objective()
 			_todo.text = "TO-DO: " + goal if goal != "" else ""
 	if _dale_alert.visible:
 		_dale_alert.position.y = 1.72 + sin(_dale_time * 3.0) * 0.04
 
 
-## Ray from a HUD point to Dale: the distance, or -1 if it misses him.
+## Everyone you can talk to: Dale ({} as the speaker) and, up the ladder,
+## whoever is around (coworkers, the memo, Dale at the stage).
+## Only people in the room you're standing in count (never through a wall).
+func _talkers() -> Array:
+	var out: Array = []
+	if _ladder == null or _ladder.room() == "office":
+		out.append({"id": "", "node": _dale, "c": Vector3(0, 1.05, 0.1), "r": 0.45})
+	if _ladder:
+		out.append_array(_ladder.people())
+	return out
+
+
+## Ray from a HUD point to whoever you can talk to: the distance to the
+## nearest one it hits (remembered in _hit_who), or -1 if it misses.
 func _dale_hit(point: Vector2) -> float:
 	if _dale == null or _hud.size.x <= 0:
 		return -1.0
 	var px := point / _hud.size * Vector2(_world_vp.size)
 	var o := _camera.project_ray_origin(px)
 	var d := _camera.project_ray_normal(px)
-	var c := _dale.global_transform * Vector3(0, 1.05, 0.1)
-	var t := (c - o).dot(d)
-	if t < 0.0 or (o + d * t).distance_to(c) > 0.45:
-		return -1.0
-	return t
+	var best := -1.0
+	for who in _talkers():
+		var c: Vector3 = who.node.global_transform * who.c
+		var t := (c - o).dot(d)
+		if t < 0.0 or (o + d * t).distance_to(c) > who.r:
+			continue
+		if best >= 0.0 and t >= best:
+			continue
+		if _occluded(o, c, 0.6):
+			continue
+		best = t
+		_hit_who = {} if who.id == "" else who
+	return best
+
+
+## The nearest person to talk to: {who, dist}.
+func _nearest_talker() -> Dictionary:
+	var me := _player.global_position
+	var best := {}
+	var bd := INF
+	for who in _talkers():
+		var dist := me.distance_to(who.node.global_position)
+		if dist < bd:
+			bd = dist
+			best = {} if who.id == "" else who
+	return {"who": best, "dist": bd}
 
 
 func _dale_nearer_than_computers() -> bool:
 	var me := _player.global_position
-	var to_dale := me.distance_to(_dale.global_position)
+	var to_dale: float = _nearest_talker().dist
+	if to_dale == INF:
+		return false
 	for pc in _computers:
-		if me.distance_to(pc.screen.global_position) < to_dale:
+		if pc.screen.is_visible_in_tree() and me.distance_to(pc.screen.global_position) < to_dale:
 			return false
 	return true
+
+
+## Is there a wall (or anything solid) between a and b? `slack` metres short
+## of b are ignored, so the thing you're aiming at doesn't block itself.
+func _occluded(a: Vector3, b: Vector3, slack := 0.05) -> bool:
+	var space := _world_vp.find_world_3d().direct_space_state
+	var dir := b - a
+	var len := dir.length()
+	if len <= slack:
+		return false
+	var q := PhysicsRayQueryParameters3D.create(a, a + dir / len * (len - slack))
+	q.exclude = [_player.get_rid()]
+	return not space.intersect_ray(q).is_empty()
 
 
 func _place_stand_button() -> void:
@@ -1793,10 +1896,12 @@ func _hud_button_at(point: Vector2) -> bool:
 
 func _sit_nearest() -> void:
 	if _dale_nearer_than_computers():
-		_set_talk(true)
+		_set_talk(true, _nearest_talker().who)
 		return
 	var best: Computer
 	for pc in _computers:
+		if not pc.screen.is_visible_in_tree():
+			continue
 		if best == null or _player.global_position.distance_to(pc.screen.global_position) \
 				< _player.global_position.distance_to(best.screen.global_position):
 			best = pc
@@ -1869,7 +1974,12 @@ func _apply_insets(force := false) -> void:
 	_hint.offset_left = 30 + _inset.x
 	_hint.offset_right = -30 - _inset.z
 	_title.offset_top = 90 + _inset.y
-	_toast.offset_top = 24 + _inset.y
+	# Sideways the toast fits between the corner buttons; upright it drops
+	# below them and runs the full width, so longer news still reads.
+	var wide := _hud.size.x > _hud.size.y
+	_toast.offset_top = (24 if wide else 140) + _inset.y
+	_toast.offset_left = 300 if wide else 30 + _inset.x
+	_toast.offset_right = -300 if wide else -30 - _inset.z
 	_todo.offset_top = 24 + _inset.y
 	_todo.offset_left = 24 + _inset.x
 	_todo.offset_right = 24 + _inset.x + 260
@@ -1971,11 +2081,17 @@ func _process(delta: float) -> void:
 		_camera.fov = target_fov
 	_screen_camera.global_transform = _camera.global_transform
 	_screen_camera.fov = _camera.fov
+	# Several screens can share a bus (the ladder's machines): the nearest wins.
+	var bus_vol := {}
 	for pc in _computers:
 		var dist := _camera.global_position.distance_to(pc.screen.global_position)
 		pc.hi_mat.set_shader_parameter("fade", clampf((4.0 - dist) / 1.5, 0.0, 1.0))
 		var vol := clampf((AUDIO_FAR - dist) / (AUDIO_FAR - AUDIO_NEAR), 0.0, 1.0)
-		AudioServer.set_bus_volume_db(pc.bus, linear_to_db(maxf(vol, 0.0001)))
+		if not pc.screen.is_visible_in_tree():
+			vol = 0.0
+		bus_vol[pc.bus] = maxf(bus_vol.get(pc.bus, 0.0), vol)
+	for bus in bus_vol:
+		AudioServer.set_bus_volume_db(bus, linear_to_db(maxf(bus_vol[bus], 0.0001)))
 
 	# Hover the game under the crosshair (mouse) so buttons light up.
 	if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and _press_pc == null:
@@ -1994,6 +2110,7 @@ func _process(delta: float) -> void:
 
 	_tick_link(delta)
 	_tick_dale(delta)
+	_ladder.tick(delta)
 	_tick_room_sound(delta)
 	_sit_button.visible = _touch and not _pad and _seat == null and not _talking
 	_sit_button.text = "TALK" if _dale_nearer_than_computers() else "SIT DOWN"
@@ -2061,18 +2178,20 @@ func _update_hint(aim, close: bool) -> void:
 	elif _touch:
 		if not _moved:
 			text = "TAP A COMPUTER\nTO SIT DOWN"
-		elif _dale_alert.visible:
+		elif _dale_alert.visible and _player.global_position.z < 4.0:
 			text = "DALE WANTS A WORD"
 	elif Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		text = "CLICK TO LOOK AROUND\nWASD WALK - MOUSE LOOK - ESC LETS GO"
 	elif close:
 		text = ""
 	elif _dale_aimed():
-		text = "CLICK TO TALK TO DALE"
+		text = "CLICK TO TALK"
 	elif aim != null:
 		text = "GET CLOSER"
 	elif not _moved:
 		text = "WALK UP TO A COMPUTER"
+	if not _talking and _seat == null and _ladder and _ladder.hint() != "":
+		text = _ladder.hint()
 	_hint.text = text
 
 
@@ -2112,7 +2231,7 @@ func _draw_pad_hud(size: Vector2) -> void:
 		if aim != null and aim.dist < PAD_SIT_RANGE:
 			what = "SIT DOWN"
 		elif _dale_aimed():
-			what = "TALK TO DALE"
+			what = "TALK"
 		if what != "":
 			var at := size * 0.5 + Vector2(-font.get_string_size(what, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x * 0.5, 70 * k)
 			PadUI.draw_badge(_hud, at, "A", 17 * k)
@@ -2198,7 +2317,7 @@ func _mouse_button(event: InputEventMouseButton) -> void:
 	if event.pressed:
 		var aim = _aim_at(_aim_point())
 		if _dale_aimed() and (aim == null or _dale_hit(_aim_point()) < aim.dist):
-			_set_talk(true)
+			_set_talk(true, _hit_who)
 		elif aim != null and aim.dist < REACH:
 			_press_pc = aim.pc
 			_press_pc.send_button(aim.uv, true)
@@ -2250,15 +2369,19 @@ func _pad_input(event: InputEvent) -> void:
 ## A while walking: sit at the computer you're facing, or the nearest one
 ## close by.
 func _pad_sit() -> void:
-	if _dale_aimed() or (_dale_nearer_than_computers() and _player.global_position.distance_to(_dale.global_position) < PAD_SIT_RANGE):
-		_set_talk(true)
+	if _dale_aimed():
+		_set_talk(true, _hit_who)
+		return
+	var near := _nearest_talker()
+	if _dale_nearer_than_computers() and near.dist < PAD_SIT_RANGE:
+		_set_talk(true, near.who)
 		return
 	var aim = _aim_at(_aim_point())
 	var pc: Computer = aim.pc if aim != null and aim.dist < PAD_SIT_RANGE else null
 	if pc == null:
 		for c in _computers:
 			var d := _player.global_position.distance_to(c.screen.global_position)
-			if d < PAD_SIT_RANGE and (pc == null or d < _player.global_position.distance_to(pc.screen.global_position)):
+			if c.screen.is_visible_in_tree() and d < PAD_SIT_RANGE and (pc == null or d < _player.global_position.distance_to(pc.screen.global_position)):
 				pc = c
 	if pc == null:
 		_toast.text = "WALK UP TO A COMPUTER"
@@ -2352,7 +2475,7 @@ func _touch_input(event: InputEvent) -> void:
 					_seat.send_button(uv, true)
 			elif _dale_hit(event.position) >= 0.0 and _glide >= 1.0 \
 					and (aim == null or _dale_hit(event.position) < aim.dist):
-				_set_talk(true)
+				_set_talk(true, _hit_who)
 			elif aim != null and _glide >= 1.0:
 				# Tap a computer from anywhere to sit down at it.
 				_set_seat(aim.pc)
@@ -2412,7 +2535,13 @@ func _aim_at(point: Vector2):
 		var uv := Vector2(hit.x / pc.size.x + 0.5, 0.5 - hit.y / pc.size.y)
 		if uv.x < 0 or uv.x > 1 or uv.y < 0 or uv.y > 1:
 			continue
+		if not pc.screen.is_visible_in_tree():
+			continue
 		if best == null or t < best.dist:
+			# Not through walls: screens in the other rooms stay out of reach.
+			if _ladder and (pc.screen.global_position.z > 4.0 or _player.global_position.z > 4.0) \
+					and _occluded(origin, origin + dir * t):
+				continue
 			best = {"uv": uv, "dist": t, "pc": pc}
 	return best
 

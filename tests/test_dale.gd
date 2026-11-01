@@ -129,7 +129,7 @@ func test_todo_says_what_dale_wants_next() -> void:
 	assert_eq(d.objective({"comedy_sets": 1}), "CLEAR 2 COMEDY SETS (1/2)")
 	for id in ["slots", "proof", "ladder"]:
 		d.finish(id, {})
-	assert_string_contains(d.objective({}), "SECOND FLOOR")
+	assert_string_contains(d.objective({}), "DOOR")
 	for ch in DaleLines.CHAPTERS.slice(1):
 		assert_ne(ch.goal, "", ch.id)
 

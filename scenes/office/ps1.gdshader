@@ -15,6 +15,14 @@ uniform float texel = 24.0;
 uniform vec3 emission : source_color = vec3(0.0);
 // 0 = no vertex wobble (the screen pass), 1 = full PS1 wobble.
 uniform float wobble = 1.0;
+// The rooms past the office door (scenes/office/ladder.gd) bring their own
+// lights, ambient and haze; office materials leave these at their defaults.
+uniform float office_lights = 1.0;
+uniform vec3 room_pos[6];
+uniform vec3 room_col[6];
+uniform float room_range = 0.0;
+uniform vec3 room_ambient = vec3(-1.0);
+uniform vec3 room_fog = vec3(-1.0);
 
 varying vec4 aff;
 varying vec3 light;
@@ -40,12 +48,21 @@ void vertex() {
 	vec3 wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	vec3 n = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	// Sky bounce from above, warm floor bounce from below.
-	vec3 lit = AMBIENT * (0.85 + 0.15 * n.y);
+	vec3 amb = room_ambient.x < 0.0 ? AMBIENT : room_ambient;
+	vec3 lit = amb * (0.85 + 0.15 * n.y);
 	for (int i = 0; i < LIGHTS; i++) {
 		vec3 d = L_POS[i] - wp;
 		float dist = max(length(d), 0.001);
 		float att = clamp(1.0 - dist / L_RANGE[i], 0.0, 1.0);
-		lit += L_COL[i] * att * att * (0.3 + 0.7 * max(dot(n, d / dist), 0.0));
+		lit += office_lights * L_COL[i] * att * att * (0.3 + 0.7 * max(dot(n, d / dist), 0.0));
+	}
+	if (room_range > 0.0) {
+		for (int i = 0; i < 6; i++) {
+			vec3 d = room_pos[i] - wp;
+			float dist = max(length(d), 0.001);
+			float att = clamp(1.0 - dist / room_range, 0.0, 1.0);
+			lit += room_col[i] * att * att * (0.3 + 0.7 * max(dot(n, d / dist), 0.0));
+		}
 	}
 	light = lit;
 	wnormal = n;
@@ -90,7 +107,7 @@ void fragment() {
 		col = mix(albedo2, albedo, step(0.22, min(f.x, f.y)));
 	}
 	col = col * light + emission;
-	col = mix(col, FOG_COL, fog);
+	col = mix(col, room_fog.x < 0.0 ? FOG_COL : room_fog, fog);
 	// Gentle warm grade: lift the shadows a touch toward peach.
 	col += vec3(0.03, 0.02, 0.0) * (1.0 - clamp(dot(col, vec3(0.333)), 0.0, 1.0));
 	// 15-bit colour with a 4x4 ordered dither.

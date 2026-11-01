@@ -101,7 +101,7 @@ right there, it's right on iPhone, Android and Steam. To keep that true:
   Humble House Games, the studio you just joined, bored, with bigger dreams.
   Tap him, read his lines, pick replies. Each chapter sends you to the next
   desk with one goal (Pong boss → cube world record → 2 comedy sets → a Loot
-  Machine run → prove a theorem → promotion, next floor TBD), shown as a
+  Machine run → prove a theorem → promotion: the door opens), shown as a
   TO-DO top left. Design and future floors: `docs/narrative.md`. Chapters in
   `data/dale_lines.gd`, unlocked by the shared stats via
   `engine/dale_story.gd` (memory in `user://dale.cfg`); the office counts
@@ -117,6 +117,19 @@ right there, it's right on iPhone, Android and Steam. To keep that true:
   https://humble-house-studios.github.io/killin-in-comedy/office/ (second export
   in `deploy.yml`). Screenshots: `tools/office_shot.gd`. `main.gd` must not touch
   the window when it isn't the root (`_owns_window()`).
+- **The ladder** (`scenes/office/ladder.gd`): past the office door, built into
+  the same 3D world (same walking, sitting, talking): the arcade (claw, coin
+  pusher, Fall Guy ragdoll, prize counter, five coworkers), the basement
+  archive, the trading floor, the boardroom, the corner office and the stage.
+  Every screen is a machine in `scenes/ladder/` (extends `machine.gd`, 720×1280,
+  its own SubViewport, Buttons only so the pad cursor works) added with
+  `_add_computer()`; `hub` is the ladder node. Rules in `engine/ladder_state.gd`
+  (`user://ladder.cfg`), `engine/coworkers.gd` + `data/coworker_lines.gd`
+  (`user://coworkers.cfg`), `arcade_rules.gd`, `market.gd`, `pitch.gd`,
+  `final_set.gd`, tested in `tests/test_ladder.gd`. Rooms get their own lights
+  through `ps1.gdshader`'s `room_*` uniforms. Rooms out of reach hide and their
+  machines pause. Screenshots: `tools/ladder_shot.gd` (wipes the ladder saves).
+  Design: `docs/narrative.md` (The Ladder).
 - The club look is drawn in code: `scenes/club.gdshader`, `scenes/stage.gdshader`
   and `scenes/stage_view.gd` (mic and crowd). Jokes live in `data/jokes.gd`.
 

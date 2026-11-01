@@ -86,7 +86,7 @@ func file_label() -> String:
 func objective(stats: Dictionary) -> String:
 	var ch := next_chapter()
 	if ch.is_empty():
-		return "NEXT: THE SECOND FLOOR (COMING SOON)"
+		return "GO THROUGH THE DOOR BEHIND YOU"
 	if unlocked(ch, stats):
 		return "TALK TO DALE (BY THE WINDOW)" if done.is_empty() else "TALK TO DALE"
 	var goal: String = ch.get("goal", "")

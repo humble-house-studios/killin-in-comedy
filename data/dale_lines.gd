@@ -121,21 +121,21 @@ const CHAPTERS := [
 	},
 	{
 		"id": "ladder",
-		"fact": "The new hire proved a theorem at the Proof Desk. Upstairs (the second floor, management) heard and wants to talk promotion. You've never been past the stairwell. You're finding out which room is next.",
+		"fact": "The new hire proved a theorem at the Proof Desk. Upstairs heard. You opened the door behind them: the break room arcade, then up the ladder (trading floor, boardroom, corner office). You've never been past that door yourself. You told them to talk to everyone in the arcade.",
 		"title": "THE LADDER",
 		"need": {"proof_wins": 1},
 		"goal": "PROVE A THEOREM AT THE PROOF DESK",
 		"hint": "Proof Desk, under the chalkboard. Prove one. Solve something big.",
 		"steps": [
 			{"dale": "You proved it. And somebody upstairs heard. UPSTAIRS, kid."},
-			{"dale": "Second floor. Management. Fifteen years and I've never been past the stairwell."},
-			{"dale": "They want to talk promotion. Corner office. A chair that doesn't squeak."},
+			{"dale": "See the door behind you? Break room arcade. Then the trading floor. Then up, up, up."},
+			{"dale": "Fifteen years and I've never been past that door. Never even tried the handle."},
 			{"choices": [
-				{"text": "What's up there?", "reply": "Nobody knows. Rumor says a smoothie machine. I've had dreams about it.", "trust": 0},
-				{"text": "Come with me, Dale.", "reply": "Me? I'm QA. ...You'd really want me up there? Huh.", "trust": 1},
-				{"text": "I'm not done down here.", "reply": "Good. The best ones never are.", "trust": 1},
+				{"text": "What's up there?", "reply": "Rumor says a corner office. And a smoothie machine. I've had dreams about it.", "trust": 0},
+				{"text": "Come with me, Dale.", "reply": "Me? I'm QA. ...You'd really want me up there? Huh. Maybe someday.", "trust": 1},
+				{"text": "Why haven't you gone?", "reply": "Long story. The short version is I'm a big chicken. A Big Deal chicken.", "trust": 1},
 			]},
-			{"dale": "I'll find out which room is next. Till then, keep playing. Get even better."},
+			{"dale": "It's unlocked now. Arcade first. Talk to people. Everybody down there knows something."},
 			{"dale": "Proud of you. Don't tell anyone I said that. I have a reputation."},
 		],
 	},
@@ -167,9 +167,9 @@ const REACT := {
 
 ## After the last chapter, while the next floor is still being built.
 const AFTER := [
-	"Still no word from upstairs. I sent a very polite email. In purple font.",
-	"Heard the second floor has a nap pod. I'm emotionally ready.",
-	"Keep sharpening up. When that elevator opens, you walk in like you own it.",
+	"How's the arcade? Gloria still feeding that claw? Eleven years. Respect.",
+	"If you see the corner office, tell me if the chair squeaks. Professional curiosity.",
+	"Everybody in that arcade knows something. Ask the right way and they'll tell you.",
 	"Took up juggling. One week. You know how it goes.",
 	"Maybe I'll try stand-up again. Big Deal returns. ...Maybe.",
 ]
