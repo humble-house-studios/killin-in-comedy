@@ -14,12 +14,82 @@ const THINK = [
   "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
   "@cf/meta/llama-3.1-8b-instruct-fast",
 ];
+// Cloudflare voices, cheapest first: MeloTTS costs a sliver of what Aura
+// does, so the free daily allowance lasts for many more replies.
 const SPEAK = [
-  ["@cf/deepgram/aura-2-en", (text) => ({ text, speaker: "zeus" })],
-  ["@cf/deepgram/aura-2-en", (text) => ({ text })],
-  ["@cf/deepgram/aura-1", (text) => ({ text, speaker: "orion" })],
   ["@cf/myshell-ai/melotts", (text) => ({ prompt: text, lang: "en" })],
+  ["@cf/deepgram/aura-2-en", (text) => ({ text, speaker: "zeus" })],
 ];
+
+// Google Gemini's free tier speaks Dale's live replies first when
+// GEMINI_API_KEY is set: natural voices, steered by a short style note.
+const GEMINI = "https://generativelanguage.googleapis.com/v1beta";
+const GEMINI_VOICES = ["Achird", "Umbriel", "Puck"];
+const GEMINI_STYLE = "Say this like a warm, chubby, slightly nervous fifty-year-old office guy cracking a joke, natural and quick:";
+let geminiTts = null;
+
+async function geminiModels(env) {
+  if (geminiTts) return geminiTts;
+  const r = await fetch(GEMINI + "/models?pageSize=200&key=" + env.GEMINI_API_KEY);
+  const j = await r.json();
+  if (!r.ok) throw new Error("gemini models " + r.status + " " + JSON.stringify(j).slice(0, 200));
+  const names = (j.models || []).map((m) => m.name.replace("models/", "")).filter((n) => /tts/i.test(n));
+  // Flash first (fast, roomier free limits), newest first.
+  names.sort((a, b) => (/flash/.test(b) - /flash/.test(a)) || b.localeCompare(a));
+  geminiTts = names;
+  return names;
+}
+
+async function geminiSpeak(env, text, models) {
+  let names;
+  try {
+    names = await geminiModels(env);
+  } catch (e) {
+    models.speak_error_gemini = String(e).slice(0, 200);
+    return "";
+  }
+  for (const model of names.slice(0, 3)) {
+    for (const voice of GEMINI_VOICES) {
+      const r = await fetch(GEMINI + "/models/" + model + ":generateContent?key=" + env.GEMINI_API_KEY, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: GEMINI_STYLE + " " + text }] }],
+          generationConfig: {
+            responseModalities: ["AUDIO"],
+            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } },
+          },
+        }),
+      });
+      const j = await r.json().catch(() => ({}));
+      const part = j.candidates && j.candidates[0] && j.candidates[0].content && (j.candidates[0].content.parts || []).find((p) => p.inlineData);
+      if (r.ok && part) {
+        const mime = part.inlineData.mimeType || "";
+        const rate = parseInt((mime.match(/rate=(\d+)/) || [])[1] || "24000", 10);
+        const pcm = base64ToBytes(part.inlineData.data);
+        models.speak = "gemini/" + model + "/" + voice;
+        return /wav/i.test(mime) ? part.inlineData.data : bytesToBase64(wavFromPcm16(pcm, rate));
+      }
+      models["speak_error_gemini_" + model + "_" + voice] = r.status + " " + JSON.stringify(j).slice(0, 200);
+      // Over the limit or a bad model: other voices won't help.
+      if (r.status === 429 || r.status === 404) break;
+    }
+  }
+  return "";
+}
+
+// Gemini sends raw 16-bit mono PCM; wrap it so the game can play it.
+function wavFromPcm16(pcm, rate) {
+  const out = new Uint8Array(44 + pcm.length);
+  const v = new DataView(out.buffer);
+  const tag = (at, s) => { for (let i = 0; i < 4; i++) out[at + i] = s.charCodeAt(i); };
+  tag(0, "RIFF"); v.setUint32(4, 36 + pcm.length, true); tag(8, "WAVE");
+  tag(12, "fmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  tag(36, "data"); v.setUint32(40, pcm.length, true);
+  out.set(pcm, 44);
+  return out;
+}
 
 const TAPPED_OUT = "I'm all talked out for today. Free AI limit. Catch me tomorrow!";
 
@@ -59,7 +129,8 @@ export default {
     if (new URL(req.url).pathname === "/say") {
       const text = clip(body.text, 400).trim();
       if (!text) return json({ error: "no text" }, 400);
-      const audio = body.engine === "groq" ? await groqSpeak(env, text, models) : await speak(env, text, models);
+      const audio = body.engine === "groq" ? await groqSpeak(env, text, models)
+        : body.engine === "gemini" ? await geminiSpeak(env, text, models) : await speak(env, text, models);
       return json({ audio, models });
     }
     try {
@@ -242,6 +313,10 @@ async function think(env, body, heard, models) {
 }
 
 async function speak(env, text, models) {
+  if (env.GEMINI_API_KEY) {
+    const b64 = await geminiSpeak(env, text, models);
+    if (b64) return b64;
+  }
   for (const [model, input] of SPEAK) {
     try {
       const r = await env.AI.run(model, input(text));

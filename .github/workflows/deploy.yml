@@ -43,6 +43,8 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          RUN_EVENT: ${{ github.event_name }}
         run: |
           if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
             echo "::notice title=Dale voice::No Cloudflare secrets yet, skipping voice chat."
@@ -74,6 +76,18 @@ jobs:
           fi
           echo "url=$url" >> "$GITHUB_OUTPUT"
           echo "::notice title=Dale voice::Live at $url"
+          # Gemini (free tier) is Dale's main live voice when its key is set.
+          if [ -n "$GEMINI_API_KEY" ]; then
+            echo "$GEMINI_API_KEY" | npx --yes wrangler@4 secret put GEMINI_API_KEY >/dev/null 2>&1 \
+              && echo "::notice title=Dale voice::Gemini key set" \
+              || echo "::warning title=Dale voice::Couldn't set the Gemini key"
+            # Voice check only on manual runs, to save the free daily allowance.
+            if [ "$RUN_EVENT" = "workflow_dispatch" ]; then
+              sleep 5
+              curl -s -m 60 -X POST "$url/say" -H 'Content-Type: application/json' -d '{"text":"Hey, new hire. Coffee is terrible today.","engine":"gemini"}' \
+                | python3 -c "import sys,json,base64; d=json.load(sys.stdin); a=base64.b64decode(d.get('audio','') or b''); print('::notice title=Gemini voice::%d bytes %s %s' % (len(a), a[:4], json.dumps(d.get('models',{}))[:900]))" || true
+            fi
+          fi
           # Groq (free, fast) hears and thinks for Dale when its key is set.
           if [ -n "$GROQ_API_KEY" ]; then
             echo "$GROQ_API_KEY" | npx --yes wrangler@4 secret put GROQ_API_KEY >/dev/null 2>&1 \

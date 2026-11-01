@@ -109,8 +109,9 @@ right there, it's right on iPhone, Android and Steam. To keep that true:
   (`scenes/office/dale_voice.gd`, the muted `Mic` bus) and sends it to Dale's
   voice server (`voice/`, a Cloudflare Worker on free Workers AI: Whisper hears,
   Llama answers as Dale with `DaleStory.persona()` keeping later chapters
-  secret, Aura speaks; with a `GROQ_API_KEY` secret, free Groq hears and thinks
-  and is the backup voice, saving Cloudflare's 10k-neuron daily allowance).
+  secret; with a `GROQ_API_KEY` secret, free Groq hears and thinks; live
+  replies are spoken by Gemini's free TTS when `GEMINI_API_KEY` is set, then
+  Cloudflare MeloTTS/Aura, then Groq Orpheus).
   `deploy.yml`'s `voice` job deploys it when the repo has
   `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` secrets and writes its URL
   into `data/voice_server.gd` for the office build (empty = no TALK). Every scripted line
