@@ -59,7 +59,8 @@ const CHAPTERS := [
 				{"text": "Have you tried it?", "reply": "For one week in 2011. I peeled the stickers off. That counts, right?", "trust": 1},
 				{"text": "Watch me.", "reply": "Ooh. Confidence. Put that on your resume.", "trust": 1},
 			]},
-			{"dale": "Work up through the levels. The last one is his exact scramble. Beat it."},
+			{"dale": "Hit WATCH first. See that kid do it. If he can, you can too."},
+			{"dale": "Then work up through the levels. The last one is his exact scramble. Beat it."},
 		],
 	},
 	{

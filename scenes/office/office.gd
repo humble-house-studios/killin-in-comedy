@@ -449,11 +449,15 @@ func _make_bus(bus_name: String) -> int:
 
 ## Route each game's sound players to that game's bus.
 func _on_node_added(node: Node) -> void:
-	if not (node is AudioStreamPlayer or node is AudioStreamPlayer2D):
+	if not (node is AudioStreamPlayer or node is AudioStreamPlayer2D or node is VideoStreamPlayer):
 		return
 	for view in _view_bus:
 		if view.is_ancestor_of(node):
 			node.bus = AudioServer.get_bus_name(_view_bus[view])
+			# Video players (the Cube Desk's record footage) mix through Godot
+			# already; they only need the bus.
+			if node is VideoStreamPlayer:
+				return
 			# The web build's default "sample" playback hands sounds to the
 			# browser and drops them for games embedded here; Godot's own
 			# mixer (stream playback) plays them through the per-game buses.
