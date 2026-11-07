@@ -562,7 +562,9 @@ func _tick_danger(delta: float) -> void:
 	var dir := Vector4.ONE
 	if _call_t >= 0.0 and office._seat:
 		want = 1.0 if _connected else 0.6
-	elif _visit_t >= 0.0 and _in_office():
+	elif _visit_t >= 0.0 and _in_office() and office._seat:
+		# Only while you're sitting at a screen: walking around, there's
+		# nothing to hide yet, so red edges just read as "something's wrong".
 		var cam: Node3D = office._camera
 		var at := Vector2(cam.global_position.x, cam.global_position.z)
 		var d := at.distance_to(_boss_pos)

@@ -192,6 +192,18 @@ keeps people playing.
 | **Morning card shortened. After the title, the first morning is one line of news.** | It cuts the number of screens before you can play: the title already taught the rules. |
 | **Records on the title (best day, best floor, times fired).** | A score to beat gives each 5-minute day a reason to replay. 5 minutes matches typical mobile session lengths. |
 
+**Follow-up (2026-11-07, Samuel's playtest):**
+
+- The red edges came on while you were just standing around when Marge
+  walked in, which read as "something's wrong" with nothing to do about it.
+  Now they only show while you're seated at a screen, where ALT-TAB is the
+  answer.
+- Pong's glass reflects the room, so seated with your back to the door you
+  can catch the boss walking up behind you in the screen, the way you would
+  at a real desk.
+- The office's Pong (the first desk) is a touch easier: +1 heart and a
+  slightly slower CPU paddle each run.
+
 **Comparable games:** Five Nights at Freddy's (a screen plus a threat you
 watch for), Untitled Goose Game (comedy stealth), Papers, Please (a job under
 pressure), and the real 90s "boss key" that swapped a DOS game for a fake

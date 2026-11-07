@@ -83,7 +83,12 @@ right there, it's right on iPhone, Android and Steam. To keep that true:
   office locally). Pong runs in an embedded Window so its window logic works
   untouched; its window on the CRT goes wide when the phone turns, so Pong plays
   its landscape mode (paddle under the right thumb), and while seated it takes
-  touches anywhere. A third desk (right wall, under a chalkboard) runs Proof
+  touches anywhere. As the intro desk it starts each run a touch easier than
+  the standalone game (+1 heart, one SLUGGISH CPU level: `_ease_pong()`). Its
+  glass really reflects the room (`scenes/office/glass_reflection.gd`: a
+  camera mirrored behind the glass, near plane on the glass, small film; a
+  stand-in you on `LAYER_REFLECT`, seen only there), so the boss shows up
+  behind you in it. A third desk (right wall, under a chalkboard) runs Proof
   Hand (`humble-house-studios/proof-hand`, full runs: antes, bosses, the
   Library, Axioms) in `res://games/proof/` the same way (the Loot link's
   `tick_proof` gives its runs relics and pays tokens); it needs its `Game`/`Save` autoloads, which `fetch_games.sh
@@ -172,7 +177,8 @@ right there, it's right on iPhone, Android and Steam. To keep that true:
   material by office.gd `set_after_hours()`),
   and tomorrow starts tired (suspicion from minutes stayed). Dev: AFTER HOURS
   NOW. Why: docs/look-busy.md, "After hours". The HUD counts down
-  to the boss's next visit; red screen edges show the side they're on.
+  to the boss's next visit; while you're seated at a screen, red screen
+  edges show the side they're on (none while walking: nothing to hide yet).
   Why: docs/look-busy.md, "Fun pass". Rules in
   `engine/workday.gd` (`user://look_busy.cfg`), tested in
   `tests/test_workday.gd`. Your own game: `engine/game_maker.gd` (pieces

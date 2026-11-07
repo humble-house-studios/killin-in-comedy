@@ -71,6 +71,9 @@ const GAME_SIZE := Vector2i(1280, 720)
 ## Pong monitor: a tall screen on the side desk by the left wall.
 const PONG_SCENE := "res://games/pong/main.tscn"
 const PONG_SIZE := Vector2i(720, 1280)
+## The office's Pong is the intro desk: a little easier (see _ease_pong()).
+const PONG_EASE_HEARTS := 1
+const PONG_EASE_SLOW := 1
 ## Tall games run in a 90s desktop window on a 4:3 CRT: the game's own
 ## screen (9:16), and the CRT glass around it.
 const PONG_SCREEN := Vector2(0.225, 0.4)
@@ -125,6 +128,8 @@ const AC_SEATED_DUCK := -5.0
 const STEP_DB := -10.0
 const LAYER_WORLD := 1
 const LAYER_SCREEN := 2
+## Seen only in reflections (glass_reflection.gd): the stand-in you.
+const LAYER_REFLECT := 4
 const STICK_RADIUS := 90.0
 const SafeArea := preload("res://scenes/safe_area.gd")
 ## Seated view: fov, and how much of the view the screen fills.
@@ -287,6 +292,7 @@ var _game_vp: SubViewport
 var _pong_view: Window
 ## What Pong's screen shows (the holder its window is embedded in).
 var _pong_screen: SubViewport
+var _pong_eased := false
 var _pong_pc: Computer
 var _proof_view: Window
 ## Pong's desktop window, tall and wide; one shows at a time (phone upright / sideways).
@@ -1109,6 +1115,10 @@ func _build_pong_desk() -> void:
 				_window_frame(a, screen.position, PONG_SCREEN_WIDE, "PONG.EXE")]
 		_pong_frames[1].visible = false
 		_pong_pc = _add_computer(screen, PONG_SCREEN, _pong_view, PONG_SIZE, true, _pong_screen)
+		# Its glass reflects the room (and the boss walking up behind you).
+		var glass := preload("res://scenes/office/glass_reflection.gd").new()
+		add_child(glass)
+		glass.setup(self, screen)
 	else:
 		# Run tools/fetch_games.sh to put Pong on this screen.
 		_label("NO SIGNAL", Vector3(0, 0, 0.002), 12, Color(0.9, 0.9, 1.0), Vector3.ZERO, 0.0, screen)
@@ -2830,6 +2840,7 @@ func _process(delta: float) -> void:
 func _tick_link(delta: float) -> void:
 	_toast_time = maxf(0.0, _toast_time - delta)
 	_toast.modulate.a = clampf(_toast_time, 0.0, 1.0)
+	_ease_pong()
 	if _link == null:
 		return
 	_link.tick("comedy", _game_vp.get_child(0))
@@ -2844,6 +2855,29 @@ func _tick_link(delta: float) -> void:
 	if not news.is_empty():
 		_toast.text = "\n".join(news)
 		_toast_time = 3.5
+
+
+## Pong is the first desk Dale sends you to, so the office's Pong starts each
+## run a touch easier than the standalone game: +1 heart and one level of
+## SLUGGISH CPU (the CPU paddle 15% slower). Set by variable name, like the
+## Loot relics, so phone-pong itself is unchanged.
+func _ease_pong() -> void:
+	if _pong_view == null or _pong_view.get_child_count() == 0:
+		return
+	var pong := _pong_view.get_child(0)
+	if pong.get("title") == null or pong.get("levels") == null:
+		return
+	if pong.get("title") or pong.get("game_over"):
+		_pong_eased = false
+		return
+	if _pong_eased:
+		return
+	_pong_eased = true
+	if int(pong.get("stage")) != 1:
+		return
+	pong.set("hearts", int(pong.get("hearts")) + PONG_EASE_HEARTS)
+	var levels: Dictionary = pong.get("levels")
+	levels["slow"] = int(levels.get("slow", 0)) + PONG_EASE_SLOW
 
 
 ## Count the milestones Dale's story needs into the shared stats.
