@@ -1,0 +1,36 @@
+# addons/hh_minigames is a copy: look-busy is its source of truth and sends
+# changes here as a pull request from the branch sync/minigames. Any other
+# pull request that edits the folder fails this check.
+name: Mini games come from look-busy
+
+on:
+  pull_request:
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Only sync/minigames may edit addons/hh_minigames
+        shell: bash
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          changed=$(git diff --name-only "origin/$BASE_REF...HEAD" -- addons/hh_minigames)
+          if [ -z "$changed" ]; then
+            echo "No mini game files changed."
+            exit 0
+          fi
+          if [ "$HEAD_REF" = "sync/minigames" ] && [ "$HEAD_REPO" = "$GITHUB_REPOSITORY" ]; then
+            echo "Mini game sync from look-busy: OK."
+            exit 0
+          fi
+          echo "$changed" | head -20 | while IFS= read -r f; do
+            echo "::error file=$f,title=Edit mini games in look-busy::$f is a copy. Edit mini games in look-busy (humble-house-studios/look-busy); it opens the sync PR here."
+          done
+          echo "Edit mini games in look-busy."
+          exit 1

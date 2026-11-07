@@ -1,0 +1,100 @@
+# Killin' in Comedy — design
+
+A roguelike deckbuilder about being a stand-up comedian: Slay the Spire
+structure, Balatro-style scoring, played live like a trading sim: the room is
+a moving chart, you build a bit and cash it in at the peak. Setup → punchline
+→ tag, reading the room, beating the light.
+
+This folder (`addons/hh_minigames/standup/`) is the whole game. Killin' in
+Comedy ships it on phones; Look Busy runs it on the office's main desk.
+
+## Where things are
+- Rules in `engine/` (no scene dependencies), tested headless with GUT in `tests/`.
+- Cards and audiences are `.tres` Resources in `data/`; jokes in `data/jokes.gd`.
+- All game numbers in `engine/balance.gd` so they can be tuned in one place.
+- Balance check: `godot --headless -s res://addons/hh_minigames/standup/tools/tune.gd`
+  plays 300 autopilot runs and prints win rates per set (`TUNE="open_mic=8000:60"` = laughs:seconds).
+- Screenshots: `tools/screenshot.gd` renders a live set under xvfb (see its header),
+  so layout changes can be checked in both orientations before pushing.
+- The club look is drawn in code: `club.gdshader`, `stage.gdshader` and
+  `stage_view.gd` (mic and crowd), with `crt.gdshader` on top.
+
+## MVP
+
+### Goal
+Prove the core loop is fun in under 10 minutes on a phone:
+**pick a path → play a set (card battle) → earn a card → repeat → headline show (boss).**
+
+### Core rules: the set (live, no turns)
+- **The set = a battle,** played in real time. Each audience needs a number of
+  **laughs** (thousands, growing each set) before **the light**: a live
+  countdown (60–90 s). Hit it and you lose the run. The game pauses with the
+  pause button or when the phone leaves the app.
+- **Mic time recharges every second** (max 5). Cards cost mic. Playing a card
+  draws the next one into the same slot, so fast thumbs = more jokes.
+- **The Room** is a live stock-chart line of **Heat**. It cools slowly, wanders,
+  drains faster during dead air (7 s without landing a bit), and jumps on
+  **crowd moves** that fire on a clock (shown with a countdown: "NEXT IN 3s:
+  Heckler! -6 Heat"). Heat is the multiplier: ×(1 + Heat ÷ 10). At 0 you lose
+  the room.
+- **Build a bit, then LAND IT** to cash in: **bit laughs × Room × chains**, minus
+  your crew's cut. A heckle while a bit is open **cuts it in half** and breaks the
+  chain, so land at a peak before the drop. Landing warms the room (+1 Heat per
+  chain link). When the light hits, the open bit lands automatically.
+- **Chains:** Setup → Punchline → Tag → Tag… Each link **multiplies the bit ×1.5**.
+  A Tag that chains also **re-fires the Punchline** before it. Other cards don't
+  break a chain. A Setup doubles the next Punchline. Rule of Three fires 3 times.
+- **Casino landing (ding ding ding):** every joke in the bit pops up in two rows
+  with a one-word reason (SETUP, LOVED, AGAIN) and a rising ding; each
+  multiplier slams in by name (×2.8 THE ROOM, ×2.25 CHAIN, ×0.85 CREW CUT); the
+  total spins up; a NICE / BIG LAUGH / HUGE / JACKPOT banner (by share of the
+  set's target) hits; then the payout showers into the laugh meter as coins,
+  and the counter only counts coins that have landed. Played cards fling their
+  laughs and coins into the bit. Hot rooms fizz with HA! pops; the meter dings
+  at 25/50/75%. Sounds: `ding`, `coin`, `jackpot` (tools/make_audio.py).
+- **Coach:** a line above the hand. Before each set a goal screen (target,
+  seconds, loves/hates); the clock waits for the first card. Urgent "HECKLE IN
+  3! LAND IT NOW" warnings always; one-time tips (bit/LAND IT, Setup→Punchline,
+  LOVED cards, chains, the Room) are remembered in `user://tips.cfg`.
+- **Read the room:** joke cards roll a **topic** (Dating, Family, Work, Tech,
+  Food, Animals). Each crowd **loves** some (×1.5 laughs, +1 Heat) and **hates**
+  others (×0.5, −1 Heat).
+- **Crew** (hired between sets, up to 3; each takes a cut of every bit):
+  Manager (see two crowd moves ahead), Writer (+1 card in hand), Booker (+15 s),
+  Hype Guy (+5 starting Heat), Lawyer (heckles only cut a quarter).
+- Numbers on cards are shown ×10 (`Balance.LAUGH_SCALE`).
+
+### Starter cards
+| Card | Cost | Beat | Effect |
+|---|---|---|---|
+| Setup | 1 | Setup | Next Punchline deals double |
+| Punchline | 1 | Punchline | +60 laughs |
+| Topper | 1 | Tag | +40 laughs; +30 more if it isn't your first card this bit |
+| Crowd Work | 1 | — | +3 Heat, see the crowd's next two moves |
+
+Starter deck: 4× Punchline, 3× Topper, 2× Setup, 1× Crowd Work.
+Reward pool: the other cards in `data/cards/` (one line of rules each).
+
+### Scope
+**In:** 1 class ("The Club Comic"), the career ladder of sets (Open Mic →
+club spots → Headline Show boss), 3 audiences + 1 boss, pick-1-of-3 card
+rewards, crew hires, win/lose/restart, text speech bubbles for card plays.
+
+**Out (later):** targetable hecklers in the crowd; material going stale across
+a run + Writing Session nodes that fuse two cards into a new bit; relics
+(Lucky Mic, The Notebook); Lightning Round / TV-spot boss sets; the other four comedian classes
+(Observational, Storyteller, One-Liner, Crowd Worker, Absurdist); career map
+with branching paths; Mad Libs Career Cutaway; voiced Bubble Voice System;
+final art; saves.
+
+### Build order
+Each step live on the play link before the next:
+1. ✅ Project + pipeline: blank screen live, switching layout when the phone turns
+2. ✅ Engine with GUT tests
+3. ✅ One battle, playable end to end, in both layouts
+4. ✅ Reward screen + line-up of sets
+5. ✅ Boss + win/lose + restart
+6. ✅ Stand-up redesign: beat chains, room tastes
+7. ✅ Live set: Room chart, real-time mic + clock, casino landing, big numbers, crew
+8. Branching career map
+9. Relics, then stale material + Writing Sessions
