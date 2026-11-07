@@ -37,6 +37,8 @@ var _options: Button
 var _cursor: Node
 var _t := 0.0
 var _waiting_menu := false
+## Web only: browsers hold sound until the first tap (office_music.gd).
+var _sound_hint: Label
 
 
 func _ready() -> void:
@@ -64,6 +66,10 @@ func _ready() -> void:
 	tag.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	tag.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	head.add_child(tag)
+	_sound_hint = _label("TAP ANYWHERE FOR MUSIC", 12, YELLOW, 4)
+	_sound_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_sound_hint.visible = false
+	head.add_child(_sound_hint)
 	_demo = BusyDemo.new()
 	_demo.office = office
 	_demo.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -152,6 +158,10 @@ func _process(delta: float) -> void:
 	if not visible:
 		return
 	_t += delta
+	var music: Node = office.get("_hub_music") if office else null
+	_sound_hint.visible = OS.has_feature("web") and music != null and not music.started
+	if _sound_hint.visible:
+		_sound_hint.modulate.a = 0.55 + 0.45 * sin(_t * 4.0)
 	# The logo breathes a little; the button pulses so the first tap is obvious.
 	_logo.pivot_offset = _logo.size * 0.5
 	_logo.rotation = sin(_t * 1.3) * 0.025

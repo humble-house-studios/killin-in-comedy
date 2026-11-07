@@ -416,6 +416,15 @@ var _menu: Control
 var _pause_button: Button
 var _settings := {}
 var _music_bus := {}
+## The office's own 8-bit jazz (scenes/office/office_music.gd), crossfaded
+## against the desk games' music.
+var _hub_music: Node
+## "<Game> Music" bus -> that game's looping music players (seen in _on_node_added).
+var _game_music := {}
+## "<Game> Music" bus -> 0..1: fades a game's music in when it starts.
+var _music_ramp := {}
+## Seconds for a game's music to fade in once it starts.
+const GAME_MUSIC_IN := 1.5
 var _was_captured := false
 var _touch_last := false
 var _dale_news := false
@@ -470,6 +479,9 @@ func _ready() -> void:
 	_build_room()
 	_build_player()
 	_build_room_sound()
+	_hub_music = preload("res://scenes/office/office_music.gd").new()
+	_hub_music.office = self
+	add_child(_hub_music)
 	_load_settings()
 	_build_hud()
 	_busy = preload("res://scenes/office/look_busy.gd").new()
@@ -589,6 +601,10 @@ func _on_node_added(node: Node) -> void:
 			# distance fade, under the menu's MUSIC volume).
 			if node is AudioStreamPlayer and _is_music(node) and AudioServer.get_bus_index(node.bus + " Music") >= 0:
 				node.bus = node.bus + " Music"
+				var twin := AudioServer.get_bus_index(node.bus)
+				if not _game_music.has(twin):
+					_game_music[twin] = []
+				_game_music[twin].append(node)
 			# Video players (the Cube Desk's record footage) mix through Godot
 			# already; they only need the bus.
 			if node is VideoStreamPlayer:
@@ -598,6 +614,14 @@ func _on_node_added(node: Node) -> void:
 			# mixer (stream playback) plays them through the per-game buses.
 			node.playback_type = AudioServer.PLAYBACK_TYPE_STREAM
 			return
+
+
+## Is any of this game's looping music playing right now?
+func _game_music_playing(twin: int) -> bool:
+	for p in _game_music.get(twin, []):
+		if is_instance_valid(p) and p.playing and not p.stream_paused:
+			return true
+	return false
 
 
 func _is_music(player: AudioStreamPlayer) -> bool:
@@ -2734,6 +2758,7 @@ func _process(delta: float) -> void:
 	_screen_camera.fov = _camera.fov
 	# Several screens can share a bus (the ladder's machines): the nearest wins.
 	var bus_vol := {}
+	var game_mix := 0.0
 	for pc in _computers:
 		var dist := _camera.global_position.distance_to(pc.screen.global_position)
 		if pc.overlay:
@@ -2749,8 +2774,18 @@ func _process(delta: float) -> void:
 		AudioServer.set_bus_volume_db(bus, linear_to_db(maxf(bus_vol[bus], 0.0001)))
 		if not _music_bus.has(bus):
 			_music_bus[bus] = AudioServer.get_bus_index(AudioServer.get_bus_name(bus) + " Music")
-		if _music_bus[bus] >= 0:
-			AudioServer.set_bus_volume_db(_music_bus[bus], linear_to_db(maxf(bus_vol[bus], 0.0001)))
+		var twin: int = _music_bus[bus]
+		if twin >= 0:
+			# The game's music fades in when it starts (and the office jazz
+			# fades out by the same amount; it comes back as you walk away).
+			var ramp := move_toward(_music_ramp.get(twin, 0.0), 1.0 if _game_music_playing(twin) else 0.0, delta / GAME_MUSIC_IN)
+			_music_ramp[twin] = ramp
+			var mv: float = bus_vol[bus] * ramp
+			AudioServer.set_bus_volume_db(twin, linear_to_db(maxf(mv, 0.0001)))
+			game_mix = maxf(game_mix, mv)
+	_hub_music.game_mix = game_mix
+	_hub_music.seated = _seat != null
+	_hub_music.voice = _voice_chat != null and _voice_chat.speaking()
 
 	# Hover the game under the crosshair (mouse) so buttons light up.
 	if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and _press_pc == null:

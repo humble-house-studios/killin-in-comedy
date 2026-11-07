@@ -117,7 +117,19 @@ right there, it's right on iPhone, Android and Steam. To keep that true:
   the office). Every game bus sends to `Effects`; a game's looping music goes
   to its `<Game> Music` twin, which sends to `Music` (all declared in
   `default_bus_layout.tres`, since web only plays on buses that exist at start).
-  `tools/menu_shot.gd` renders the menu and checks New Game. Chapters in
+  `tools/menu_shot.gd` renders the menu and checks New Game.
+  **Office music** (`scenes/office/office_music.gd`): the office's own 8-bit
+  jazz (`make_office_jazz()` in make_audio.py: pulse lead + frame arps,
+  stepped-triangle walking bass, LFSR drums). "Clock-In Ballad"
+  (`office_title.ogg`) on Look Busy's title screen, "Golden Hour Shuffle"
+  (`office_jazz.ogg`) while you walk around. A desk game's looping music
+  fades in over 1.5 s when it starts (`GAME_MUSIC_IN`) on top of its distance
+  fade, and the jazz dips by the same amount (equal power), so sitting at
+  Pong or a comedy set crossfades to their music and walking away brings the
+  jazz back. Games with no music keep the jazz (a little quieter while
+  seated); it ducks under Dale's voice. Web starts it on the first tap (the
+  title shows TAP ANYWHERE FOR MUSIC till then). Check:
+  `godot --headless -s res://tools/music_check.gd` (PASS/FAIL). Chapters in
   `data/dale_lines.gd`, unlocked by the shared stats via
   `engine/dale_story.gd` (memory in `user://dale.cfg`); the office counts
   `pong_bosses`/`cube_records`/`proof_wins` with `engine/office_goals.gd`. After each story bit, HOLD TO TALK records the mic
