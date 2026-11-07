@@ -43,13 +43,13 @@ right there, it's right on iPhone, Android and Steam. To keep that true:
 - If GitHub Pages isn't on yet, tell him: repo → **Settings → Pages → Source:
   GitHub Actions.**
 - The old office link (`/office/`) forwards to
-  https://humble-house-studios.github.io/look-busy/.
+  https://humble-house-studios.github.io/Look-busy/.
 
 ## The game is a shared mini game — edit it in look-busy
 - The whole stand-up game lives in `addons/hh_minigames/standup/` (rules in
   `engine/`, cards and crowds in `data/`, numbers in `engine/balance.gd`,
   jokes in `data/jokes.gd`). **That folder is a copy.** Its source of truth is
-  `humble-house-studios/look-busy` (`addons/hh_minigames/`), which also runs
+  `humble-house-studios/Look-busy` (`addons/hh_minigames/`), which also runs
   it on the office's main desk.
 - Changes arrive here as a PR from the branch `sync/minigames`, opened by
   look-busy's `sync-minigames.yml`. Merge it to ship them. Any other PR that

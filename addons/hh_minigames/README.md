@@ -6,7 +6,7 @@ Comedy** ships on phones.
 
 ## Source of truth: look-busy
 
-**Edit mini games only in [humble-house-studios/look-busy](https://github.com/humble-house-studios/look-busy).**
+**Edit mini games only in [humble-house-studios/Look-busy](https://github.com/humble-house-studios/Look-busy).**
 Every push to look-busy's `main` that touches `addons/hh_minigames/**` copies
 this folder into killin-in-comedy on the branch `sync/minigames` and opens (or
 updates) a pull request there. killin-in-comedy rejects any other pull request

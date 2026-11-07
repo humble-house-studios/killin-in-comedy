@@ -30,7 +30,7 @@ jobs:
             exit 0
           fi
           echo "$changed" | head -20 | while IFS= read -r f; do
-            echo "::error file=$f,title=Edit mini games in look-busy::$f is a copy. Edit mini games in look-busy (humble-house-studios/look-busy); it opens the sync PR here."
+            echo "::error file=$f,title=Edit mini games in look-busy::$f is a copy. Edit mini games in look-busy (humble-house-studios/Look-busy); it opens the sync PR here."
           done
           echo "Edit mini games in look-busy."
           exit 1

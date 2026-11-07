@@ -11,7 +11,7 @@ Project rules are in `CLAUDE.md`, the design in `addons/hh_minigames/standup/DES
 ## Where the game lives
 The game is the shared stand-up mini game in `addons/hh_minigames/standup/`.
 That folder is a **copy** kept in sync from
-[look-busy](https://github.com/humble-house-studios/look-busy) (the office
+[look-busy](https://github.com/humble-house-studios/Look-busy) (the office
 game, which runs it on a desk): edit mini games there, and the change comes
 back here as a pull request from `sync/minigames`.
 
